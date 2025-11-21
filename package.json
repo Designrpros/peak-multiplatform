@@ -1,7 +1,7 @@
 {
   "name": "peak-multiplatform",
   "productName": "Peak Multiplatform",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Peak Multiplatform Browser",
   "main": "main.js",
   "author": "Vegar Berentsen <designr.pros@gmail.com>",
@@ -69,7 +69,14 @@
     },
     "win": {
       "target": [
-        "nsis"
+        {
+          "target": "nsis",
+          "arch": [
+            "x64",
+            "ia32",
+            "arm64"
+          ]
+        }
       ],
       "icon": "assets/Peak.png",
       "artifactName": "Peak-win-${arch}.${ext}"
@@ -78,8 +85,7 @@
       "target": [
         "AppImage",
         "deb",
-        "rpm",
-        "snap"
+        "rpm"
       ],
       "icon": "assets/Peak.png",
       "category": "Utility",
