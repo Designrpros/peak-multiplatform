@@ -1,7 +1,7 @@
 {
   "name": "peak-multiplatform",
   "productName": "Peak Multiplatform",
-  "version": "0.0.6",
+  "version": "0.0.7",
   "description": "Peak Multiplatform Browser",
   "main": "main.js",
   "author": "Vegar Berentsen <designr.pros@gmail.com>",
@@ -52,7 +52,7 @@
   "build": {
     "appId": "com.peak.multiplatform",
     "productName": "Peak Multiplatform",
-    "version": "0.0.6",
+    "version": "0.0.7",
     "directories": {
       "output": "dist"
     },
@@ -101,7 +101,7 @@
       "desktop": {
         "entry": {
           "Name": "Peak Multiplatform",
-          "Exec": "/opt/Peak Multiplatform/peak-multiplatform"
+          "Exec": "'/opt/Peak Multiplatform/peak-multiplatform'"
         }
       }
     },
