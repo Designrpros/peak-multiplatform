@@ -5,7 +5,6 @@ on:
     tags:
       - 'v*' # Trigger on git tags like v1.0.0
 
-# --- NEW: Grant permission to create releases ---
 permissions:
   contents: write
 
@@ -35,13 +34,23 @@ jobs:
           sudo apt-get install -y build-essential libarchive-tools rpm
           sudo apt-get install -y libcairo2-dev libpango1.0-dev libjpeg-dev libgif-dev librsvg2-dev
 
+      # --- CHANGED: Added --omit=optional to skip 'canvas' ---
       - name: Install Dependencies
-        run: npm ci
+        run: npm ci --omit=optional
 
-      # Build and Publish using electron-builder
-      # We use "npm run dist" which calls electron-builder. 
-      # It detects the GH_TOKEN and tries to create the release automatically.
       - name: Build
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npm run dist
+
+      - name: Release
+        uses: softprops/action-gh-release@v1
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: |
+            dist/*.exe
+            dist/*.dmg
+            dist/*.zip
+            dist/*.deb
+            dist/*.rpm
+            dist/*.AppImage
