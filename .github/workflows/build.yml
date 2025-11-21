@@ -1,10 +1,10 @@
 name: Build/Release
 
 on:
-  workflow_dispatch: # Allows manual triggering from GitHub UI
+  workflow_dispatch:
   push:
     tags:
-      - 'v*' # Trigger on git tags like v1.0.0
+      - 'v*'
 
 permissions:
   contents: write
@@ -41,9 +41,9 @@ jobs:
           sudo apt-get install -y build-essential libarchive-tools rpm
           sudo apt-get install -y libcairo2-dev libpango1.0-dev libjpeg-dev libgif-dev librsvg2-dev
 
-      # 1. Install dependencies (ignoring scripts prevents instant crash on native modules)
+      # FIX: Removed '--omit=optional' so dmg-license installs for macOS
       - name: Install Dependencies
-        run: npm install --omit=optional --ignore-scripts
+        run: npm install --ignore-scripts
 
       # 2. Force remove canvas (Safe method for all platforms)
       - name: Remove Canvas
@@ -54,7 +54,7 @@ jobs:
       - name: Rebuild Native Modules
         run: npx electron-builder install-app-deps
 
-      # 4. Build for the specific platform using the matrix script
+      # 4. Build for the specific platform
       - name: Build
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
