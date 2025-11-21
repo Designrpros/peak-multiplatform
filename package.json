@@ -95,7 +95,8 @@
       "executableArgs": [
         "--no-sandbox",
         "--disable-gpu",
-        "--disable-gpu-sandbox"
+        "--disable-gpu-sandbox",
+        "--disable-software-compositing"
       ]
     }
   }

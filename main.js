@@ -9,6 +9,16 @@ const { pathToFileURL } = require('url');
 const mime = require('mime-types'); 
 dotenv.config();
 
+// --- CRITICAL LINUX FIXES (MUST BE BEFORE app.whenReady()) ---
+if (process.platform === 'linux') {
+    // Fix for rendering/stacking bug (working only above VSCode)
+    app.commandLine.appendSwitch('disable-gpu'); 
+    app.commandLine.appendSwitch('disable-software-compositing');
+    // Fix for missing Tray Icon on GNOME/Unity (forces AppIndicator protocol)
+    app.commandLine.appendSwitch('enable-features', 'AppIndicatorSupport');
+}
+// -------------------------------------------------------------
+
 const Store = require('electron-store');
 Store.initRenderer();
 
