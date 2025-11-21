@@ -1,0 +1,220 @@
+/* src/components/SettingsView/style.css */
+
+.settings-view-container {
+    /* Main container is a Flex column: Header, Tabs, Content) */
+    display: flex;
+    flex-direction: column;
+    /* CRITICAL FIX: Ensure background covers the entire window and remove outer padding */
+    background-color: var(--window-background-color); 
+    box-sizing: border-box;
+    height: 100%; 
+    width: 100%; 
+    padding: 0; /* Ensures the BG is uniform edge-to-edge */
+    overflow: hidden; 
+    color: var(--peak-primary); 
+}
+
+/* --- FIXED HEADER ELEMENTS (Apply Padding here) --- */
+
+.settings-title {
+    font-size: 28px;
+    font-weight: 600;
+    margin-bottom: 0; 
+    /* Apply fixed padding to the header */
+    padding: 24px 24px 12px 24px; 
+    flex-shrink: 0; /* Prevents header from collapsing */
+}
+
+.horizontal-tabs-bar {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    border-bottom: 1px solid var(--border-color);
+    /* Apply horizontal padding to match header */
+    margin: 0 24px 20px 24px; 
+    flex-shrink: 0; /* Prevents tab bar from collapsing */
+}
+
+.settings-nav-item {
+    padding: 8px 16px;
+    font-size: 14px;
+    color: var(--peak-secondary);
+    text-decoration: none;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: background-color 0.1s, color 0.1s;
+    cursor: pointer;
+    
+    border-bottom: 2px solid transparent; 
+    margin-bottom: -1px; /* Overlap border-bottom of container */
+}
+
+.settings-nav-item i {
+    width: 16px;
+    height: 16px;
+    color: inherit;
+    flex-shrink: 0;
+}
+
+.settings-nav-item:hover {
+    background-color: rgba(0, 0, 0, 0.05);
+    color: var(--peak-primary);
+}
+
+.settings-nav-item.active {
+    color: var(--peak-accent); 
+    font-weight: 600;
+    border-bottom: 2px solid var(--peak-accent); 
+    background-color: transparent;
+}
+
+.settings-nav-item.active i {
+    color: var(--peak-accent);
+}
+
+@media (prefers-color-scheme: dark) {
+    .settings-nav-item:hover {
+        background-color: rgba(255, 255, 255, 0.08);
+    }
+}
+
+/* --- SCROLLABLE CONTENT CONTAINER FIX --- */
+.tab-content-container {
+    /* CRITICAL FIX: Make this element grow to fill the remaining space */
+    flex-grow: 1; 
+    /* CRITICAL FIX: Ensures the scrollable element respects its flex boundary height */
+    height: 100%; 
+    /* This enables the vertical scroll bar for the content */
+    overflow-y: auto; 
+    
+    /* Center and limit width for readability, relative to the scroll container */
+    max-width: 750px; 
+    margin: 0 auto;
+    width: 100%; 
+    
+    /* Apply Padding: 0 top, 24px side, 20px bottom. This area is scrollable. */
+    padding: 0 24px 20px 24px; 
+    box-sizing: border-box;
+    
+    /* Ensure the background is correct */
+    background-color: var(--window-background-color); 
+}
+
+.settings-tab-content {
+    /* Each tab content is a block of settings */
+    display: none;
+    animation: fadeIn 0.2s; 
+    padding-bottom: 20px; 
+}
+
+.settings-tab-content.active {
+    display: block; /* Only the active content is visible */
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(5px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+/* --- END NEW --- */
+
+
+.section-header {
+    font-size: 20px;
+    font-weight: 500;
+    margin-top: 32px; 
+    margin-bottom: 16px;
+    color: var(--peak-secondary);
+}
+
+.setting-group {
+    /* Style for setting container */
+    border: 1px solid var(--border-color); 
+    border-radius: 8px;
+    padding: 16px;
+    margin-bottom: 20px;
+}
+
+.setting-item {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 8px;
+}
+
+.setting-item label {
+    font-weight: 500;
+    flex-shrink: 0;
+}
+
+.setting-item input[type="text"],
+.setting-item input[type="password"] {
+    flex-grow: 1;
+    padding: 8px 12px;
+    border-radius: 6px;
+    border: 1px solid var(--border-color);
+    background-color: var(--control-background-color);
+    color: var(--peak-primary);
+    font-size: 14px;
+    outline: none;
+}
+
+.setting-item input[type="text"]:focus,
+.setting-item input[type="password"]:focus {
+    border-color: var(--peak-accent);
+}
+
+.setting-item .action-button {
+    padding: 8px 16px;
+    font-size: 14px;
+    width: auto;
+    border-radius: 6px;
+    cursor: pointer;
+    background-color: var(--peak-accent);
+    color: white; 
+    border: none;
+    margin-left: 0;
+}
+
+.setting-description {
+    font-size: 12px;
+    color: var(--peak-secondary);
+    margin-top: 8px;
+    padding-left: 4px;
+}
+
+.toggle-item input[type="checkbox"] {
+    margin-left: auto;
+    width: 16px;
+    height: 16px;
+}
+
+/* --- Feature List --- */
+.feature-list {
+    list-style: none;
+    padding: 0;
+}
+
+.feature-list li {
+    font-size: 14px;
+    line-height: 1.5;
+    padding: 8px 0;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+}
+
+@media (prefers-color-scheme: dark) {
+    .feature-list li {
+        border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    }
+}
+
+.feature-icon {
+    width: 16px;
+    height: 16px;
+    color: var(--peak-accent);
+    flex-shrink: 0;
+    margin-top: 2px;
+}

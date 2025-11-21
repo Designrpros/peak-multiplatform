@@ -1,0 +1,982 @@
+/* src/components/Inspector/style.css */
+
+/* --- BASE LAYOUT --- */
+#inspector-container {
+    width: 320px;
+    flex-shrink: 0;
+    background-color: var(--window-background-color);
+    border-left: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+/* --- COMPACT HEADER --- */
+.inspector-header {
+    display: flex;
+    align-items: center;
+    height: 50px;
+    padding: 0 16px;
+    border-bottom: 1px solid var(--border-color);
+    flex-shrink: 0;
+    z-index: 10;
+    gap: 8px;
+}
+
+.inspector-search-wrapper {
+    flex-grow: 1;
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.search-icon {
+    position: absolute;
+    left: 8px;
+    color: var(--peak-secondary);
+    pointer-events: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+}
+.search-icon svg { width: 14px; height: 14px; }
+
+.inspector-search-input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 6px 6px 6px 32px; /* Left padding for icon */
+    font-size: 13px;
+    border: none;
+    background-color: transparent;
+    color: var(--peak-primary);
+    outline: none;
+    font-weight: 500;
+}
+
+.inspector-search-input::placeholder {
+    color: var(--peak-secondary);
+    font-weight: 400;
+    opacity: 0.8;
+}
+
+.header-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+}
+
+.icon-btn {
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    padding: 6px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--peak-secondary);
+    transition: background-color 0.1s, color 0.1s;
+}
+
+.icon-btn:hover {
+    background-color: rgba(128,128,128,0.1);
+    color: var(--peak-primary);
+}
+.icon-btn svg { width: 16px; height: 16px; }
+
+/* --- CONTENT LIST --- */
+.inspector-content {
+    flex-grow: 1;
+    overflow-y: auto;
+    padding: 8px 0;
+}
+
+.inspector-list-item {
+    padding: 10px 16px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    transition: background-color 0.1s;
+    margin: 2px 0;
+}
+
+.inspector-list-item:hover {
+    background-color: var(--control-background-color);
+}
+
+.inspector-item-text {
+    flex: 1;
+    min-width: 0;
+}
+
+.inspector-item-title {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--peak-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-bottom: 2px;
+}
+
+.inspector-item-subtitle {
+    font-size: 11px;
+    color: var(--peak-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.empty-inspector-state {
+    text-align: center;
+    color: var(--peak-secondary);
+    font-size: 13px;
+    padding: 40px 20px;
+    opacity: 0.7;
+}
+
+/* AI Assist Styles */
+.chat-input-bar { padding: 12px 16px; background-color: var(--window-background-color); border-top: 1px solid var(--border-color); display: flex; flex-direction: column; gap: 8px; }
+.chat-input-bar textarea { width: 100%; min-height: 36px; resize: none; border: 1px solid var(--border-color); border-radius: 8px; padding: 8px; background-color: var(--control-background-color); color: var(--peak-primary); font-family: -apple-system, BlinkMacSystemFont, sans-serif; font-size: 13px; outline: none; }
+.chat-input-controls { display: flex; justify-content: space-between; align-items: center; }
+.control-pill { font-size: 11px; padding: 4px 8px; border-radius: 4px; border: 1px solid var(--border-color); background-color: var(--window-background-color); color: var(--peak-primary); }
+.action-button { width: 26px; height: 26px; border-radius: 50%; background-color: var(--peak-accent); color: white; border: none; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+.assistant-message .message-content { color: var(--peak-primary); padding: 0; max-width: 95%; }
+.user-message .message-content { background-color: var(--peak-accent); color: white; border-radius: 12px; padding: 8px 12px; }
+.message-list { display: flex; flex-direction: column; gap: 16px; padding: 20px; }
+
+/* This file is dedicated to styling the Whiteboard properties panel */
+
+.whiteboard-properties-pane {
+    padding: 0; 
+    display: flex;
+    flex-direction: column;
+    gap: 0; 
+    overflow-y: auto;
+}
+
+/* This container ensures internal padding and scrollability for content */
+.inspector-content-inner.object-view {
+    padding: 0; 
+    flex-grow: 1;
+    overflow-y: auto;
+    padding-bottom: 16px; 
+}
+
+
+/* --- 1. SECTION HEADERS --- */
+
+.inspector-section {
+    padding: 12px 16px; 
+    border-bottom: 1px solid var(--border-color);
+    transition: background-color 0.1s;
+}
+
+.inspector-section:last-child {
+    border-bottom: none;
+}
+
+.inspector-sub-title {
+    font-size: 11px; /* Lightweight font size */
+    font-weight: 700;
+    color: var(--peak-secondary); /* Subdued color for header */
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    margin: 0;
+    margin-bottom: 8px; /* Tighter spacing */
+}
+
+.inspector-tabs-header {
+    display: grid;
+    /* Divide the header space into 3 equal columns for tabs */
+    grid-template-columns: repeat(3, 1fr); 
+    border-bottom: 1px solid var(--border-color);
+    flex-shrink: 0;
+    z-index: 10;
+}
+
+.inspector-tabs-header .tab-btn {
+    /* Reset icon-btn style for tab behavior */
+    background: transparent;
+    border: none;
+    padding: 12px 0; /* Vertical padding */
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--peak-secondary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    transition: color 0.1s;
+    
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px; /* Overlap border-bottom */
+}
+
+.inspector-tabs-header .tab-btn:hover {
+    color: var(--peak-primary);
+    background-color: rgba(128,128,128,0.05);
+}
+
+.inspector-tabs-header .tab-btn.active {
+    color: var(--peak-accent);
+    border-bottom: 2px solid var(--peak-accent);
+    background-color: transparent;
+}
+
+/* New Content Wrapper for Active/Tabbed Views */
+/* This container is where the actual scrollable content sits */
+.inspector-content-wrapper-tabbed,
+.inspector-content-wrapper-active {
+    flex-grow: 1;
+    overflow-y: hidden; /* Only the inner panels should scroll */
+    display: flex;
+    flex-direction: column;
+}
+
+.inspector-content-inner.asset-panel,
+.inspector-content-inner.layer-panel,
+.inspector-content-inner.export-panel {
+    /* These are the individual tab panels, they must scroll internally */
+    flex-grow: 1;
+    overflow-y: auto;
+    padding: 16px 0; /* Add top/bottom padding for content */
+}
+
+/* Layer List Specific Styles */
+.layer-list-tree {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+li.layer-item {
+    padding: 8px 16px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: background-color 0.1s;
+}
+
+li.layer-item:hover {
+    background-color: var(--control-background-color);
+}
+
+li.layer-item.selected {
+    background-color: var(--peak-accent);
+    color: white;
+}
+
+li.layer-item.selected .inspector-item-title,
+li.layer-item.selected .inspector-item-subtitle {
+    color: white;
+}
+
+li.layer-item .layer-action-btn {
+    margin-left: auto;
+}
+
+
+/* --- 2. PROPERTY ROWS (Key-Value Pairs) --- */
+
+.property-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 6px;
+    min-height: 28px;
+}
+
+.property-row.wide {
+    /* Used for Textarea/Color pickers that take up most of the width */
+    align-items: flex-start;
+}
+
+.property-row label {
+    font-size: 12px;
+    font-weight: 500;
+    flex-shrink: 0;
+    color: var(--peak-primary);
+    min-width: 60px;
+    line-height: 28px;
+}
+
+/* Display (Read-Only) Values */
+.property-row.display {
+    padding: 0; 
+    margin-bottom: 6px;
+    height: 24px;
+}
+
+.property-row span {
+    font-size: 13px;
+    color: var(--peak-secondary);
+}
+
+/* --- 3. INPUT STYLING (Minimalist/Liquid) --- */
+
+.property-input {
+    flex-grow: 1;
+    padding: 4px 8px; 
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background-color: var(--control-background-color);
+    color: var(--peak-primary);
+    font-size: 13px;
+    outline: none;
+    height: 28px; 
+    max-width: 100%; /* Default to 100% width, specific controls override */
+    transition: border-color 0.2s, box-shadow 0.2s;
+    text-align: right; /* Numbers align right for pro feel */
+}
+
+/* For full-width controls like Color or Text input that shouldn't be constrained */
+.property-row.wide .property-input {
+    max-width: none;
+    text-align: left;
+}
+
+/* Color Picker & Textarea Overrides */
+.property-input.color-input {
+    width: 32px;
+    height: 28px;
+    padding: 0;
+    border-radius: 6px;
+    box-shadow: none;
+    background-color: var(--control-background-color);
+    flex-grow: 0; /* Important: Don't let it stretch */
+}
+
+.property-input.textarea {
+    max-width: none; /* Allow full width */
+    height: auto;
+    min-height: 80px;
+    line-height: 1.4;
+    resize: vertical;
+    text-align: left;
+    padding: 8px;
+}
+
+.property-input:focus {
+    /* Subtle accent box-shadow glow */
+    border-color: transparent;
+    box-shadow: 0 0 0 2px rgba(0, 122, 255, 0.1), inset 0 0 0 1px var(--peak-accent); 
+    background-color: var(--window-background-color); 
+}
+
+/* --- 4. TRANSFORM GRID (Figma Style) --- */
+/* Reworked to be a single, compact row of 6 inputs for X, Y, W, H, R, S */
+.transform-grid {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr); /* 6 equal columns for compact control */
+    gap: 4px; 
+    margin-bottom: 0;
+}
+
+.transform-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0px; 
+    border: 1px solid var(--border-color);
+    border-radius: 4px; 
+    padding: 4px;
+    background-color: var(--control-background-color);
+    overflow: hidden;
+}
+
+.transform-field label {
+    font-size: 9px; 
+    font-weight: 500;
+    color: var(--peak-secondary);
+    line-height: 1;
+    margin-bottom: 2px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.transform-input {
+    padding: 0;
+    border: none;
+    background: transparent;
+    font-size: 13px;
+    height: 16px; 
+    color: var(--peak-primary);
+    text-align: left;
+    max-width: 100%; 
+}
+
+/* --- 5. LAYERING CONTROLS (NEW & COMPACT) --- */
+/* This section now also uses a grid to align with the transform fields */
+.layering-section {
+    padding-top: 0;
+    margin-top: -8px; /* Pulls it up closer to the transform controls */
+    padding-bottom: 10px;
+}
+
+.layering-controls {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr); /* 4 compact buttons */
+    gap: 4px;
+}
+
+.layering-btn {
+    padding: 6px; /* Reduced padding for compact look */
+    border-radius: 4px;
+    background-color: var(--control-background-color);
+    border: 1px solid var(--border-color);
+    color: var(--peak-primary);
+    box-shadow: none;
+}
+
+.layering-btn:hover {
+    background-color: var(--peak-accent);
+    color: white;
+    transform: none; /* No translation on hover */
+    border-color: var(--peak-accent);
+}
+
+.layering-btn i {
+    width: 16px;
+    height: 16px;
+    color: inherit; /* Inherit color from button state */
+}
+
+/* --- 6. ASSET GALLERY --- */
+/* (Styles are mostly preserved from existing, already good CSS) */
+.asset-gallery-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr); 
+    gap: 8px;
+    padding: 0 0 4px 0; 
+}
+
+.asset-gallery-item {
+    padding: 8px 5px; 
+    border-radius: 6px;
+    border: 1px solid var(--border-color); 
+    background-color: var(--control-background-color);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.1s;
+}
+
+.asset-gallery-item:hover {
+    background-color: var(--peak-accent);
+    color: white;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(0, 122, 255, 0.2);
+}
+
+.asset-gallery-item i {
+    color: var(--peak-primary);
+}
+
+.asset-gallery-item:hover i {
+    color: white !important; 
+}
+
+.asset-gallery-item .asset-name {
+    font-size: 10px;
+    color: var(--peak-secondary);
+    margin-top: 4px;
+}
+
+.asset-gallery-item:hover .asset-name {
+    color: rgba(255, 255, 255, 0.8);
+}
+
+
+/* --- 7. EXPORT BUTTONS --- */
+
+.export-option-btn {
+    width: 100%;
+    padding: 8px 16px; 
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background-color: var(--control-background-color);
+    color: var(--peak-primary);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.1s;
+    margin-bottom: 6px; 
+    display: flex; 
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+
+.export-option-btn:hover {
+    background-color: var(--peak-accent);
+    color: white;
+    transform: translateY(-1px);
+    border-color: var(--peak-accent);
+}
+
+.export-option-btn.danger {
+     background-color: #ff3b30;
+     color: white;
+     border-color: #ff3b30;
+}
+
+/* --- FIGMA STYLE INSPECTOR ADDITIONS --- */
+
+/* Tabs */
+.figma-tabs {
+    display: flex;
+    border-bottom: 1px solid var(--border-color);
+    background: var(--window-background-color);
+    padding: 0 8px;
+}
+
+.figma-tab {
+    padding: 10px 16px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--peak-secondary);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+}
+
+.figma-tab:hover { color: var(--peak-primary); }
+.figma-tab.active {
+    color: var(--peak-primary);
+    border-bottom-color: var(--peak-primary);
+}
+
+/* Content Container */
+.figma-inspector-content, .figma-assets-panel {
+    padding: 16px;
+    overflow-y: auto;
+    height: 100%;
+}
+
+/* Section Headers */
+.inspector-section-header {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--peak-secondary);
+    text-transform: uppercase;
+    margin-bottom: 8px;
+    letter-spacing: 0.5px;
+    margin-top: 8px;
+}
+
+/* Divider */
+.inspector-divider {
+    height: 1px;
+    background: var(--border-color);
+    margin: 12px -16px; /* Bleed to edges */
+}
+
+/* Grid Layouts */
+.inspector-row {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 8px;
+    align-items: center;
+}
+.inspector-row.grid-2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+}
+
+.inspector-row.alignment-row {
+    justify-content: space-between;
+    padding: 0 4px;
+}
+
+/* Inputs (Figma Style) */
+.figma-input-wrapper {
+    display: flex;
+    align-items: center;
+    background: transparent; 
+    border-radius: 2px;
+    position: relative;
+    flex: 1; /* Ensure it takes space in grid */
+    min-width: 0;
+}
+
+.figma-input-wrapper:hover .figma-input {
+    border-color: var(--border-color);
+}
+
+/* Small wrapper for % input in color row */
+.figma-input-wrapper.small {
+    flex: 0 0 60px;
+}
+
+.figma-label {
+    position: absolute;
+    left: 8px;
+    font-size: 12px;
+    color: var(--peak-secondary);
+    pointer-events: none;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+}
+.figma-label svg { width: 12px; height: 12px; }
+
+.figma-input {
+    width: 100%;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    padding: 6px 4px 6px 28px; /* Space for label */
+    font-size: 12px;
+    color: var(--peak-primary);
+    outline: none;
+    transition: border-color 0.1s;
+}
+
+.figma-input:focus {
+    border-color: var(--peak-accent);
+    background: var(--control-background-color);
+}
+
+.figma-input.figma-hex-text {
+    padding-left: 8px; /* No icon for hex usually */
+}
+
+/* Selects */
+.figma-select-wrapper {
+    flex: 1;
+    position: relative;
+}
+.figma-select-wrapper.full {
+    width: 100%;
+}
+.figma-select {
+    width: 100%;
+    appearance: none;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    padding: 6px 8px;
+    font-size: 12px;
+    color: var(--peak-primary);
+    outline: none;
+    cursor: pointer;
+}
+.figma-select:hover { border-color: var(--border-color); }
+.figma-select:focus { border-color: var(--peak-accent); background: var(--control-background-color); }
+
+
+/* Color Row */
+.figma-property-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.figma-color-swatch-wrapper {
+    width: 24px;
+    height: 24px;
+    position: relative;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    overflow: hidden;
+    flex-shrink: 0;
+}
+
+.figma-color-preview {
+    width: 100%; height: 100%;
+}
+.figma-color-input {
+    position: absolute; top: 0; left: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer;
+}
+
+/* Multi-select */
+.multi-select-label {
+    font-size: 12px;
+    color: var(--peak-secondary);
+    text-align: center;
+    padding: 20px 0;
+}
+
+/* Assets Panel Overrides */
+.asset-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+}
+
+.asset-item {
+    height: 80px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: transform 0.1s;
+    position: relative;
+}
+.asset-item:hover { transform: scale(1.02); z-index: 1; }
+
+.asset-item.sticky { justify-content: flex-start; padding-top: 12px; }
+.asset-label { font-size: 11px; color: var(--peak-secondary); margin-top: 4px; text-align: center; }
+
+.empty-state-figma {
+    padding: 40px 20px;
+    text-align: center;
+    color: var(--peak-secondary);
+    font-size: 13px;
+}
+
+/* Buttons */
+.export-btn {
+    width: 100%;
+    padding: 8px;
+    border: 1px solid var(--border-color);
+    background: var(--window-background-color);
+    color: var(--peak-primary);
+    font-size: 12px;
+    font-weight: 500;
+    border-radius: 6px;
+    cursor: pointer;
+}
+.export-btn:hover { border-color: var(--peak-secondary); }
+
+/* Override existing .icon-btn for the specific sizing in Figma panels if needed */
+/* Note: Original class still works for general UI, new specific usage handles alignment buttons */
+
+/* --- SHORTCUTS PANEL --- */
+
+/* CRITICAL FIX: Ensure proper row display for shortcuts */
+.shortcut-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 0;
+    font-size: 12px;
+    color: var(--peak-primary);
+    width: 100%; /* Ensure it fills container */
+}
+
+.shortcut-name {
+    font-weight: 400;
+}
+
+.shortcut-keys {
+    display: flex;
+    gap: 4px;
+}
+
+.kbd-key {
+    background-color: var(--control-background-color);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    padding: 2px 6px;
+    font-size: 11px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: var(--peak-secondary);
+    min-width: 20px;
+    text-align: center;
+    box-shadow: 0 1px 0 rgba(0,0,0,0.05);
+}
+
+/* Enhance active tab style for better visibility */
+.figma-tab.active {
+    color: var(--peak-primary);
+    border-bottom: 2px solid var(--peak-accent); 
+}
+
+.layer-item {
+    padding: 4px 8px; 
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    transition: background-color 0.1s;
+    position: relative;
+    min-height: 28px;
+    color: var(--peak-primary);
+}
+
+.layer-item:hover {
+    background-color: var(--control-background-color);
+}
+
+.layer-item.selected {
+    background-color: rgba(0, 122, 255, 0.1); 
+    color: var(--peak-accent);
+    font-weight: 500;
+}
+
+.layer-actions {
+    margin-left: auto;
+    display: flex;
+    gap: 2px;
+    opacity: 0; 
+    transition: opacity 0.1s;
+}
+
+.layer-item:hover .layer-actions {
+    opacity: 1; 
+}
+
+.layer-action-btn {
+    width: 20px; 
+    height: 20px;
+    padding: 0;
+    color: var(--peak-secondary);
+}
+
+.layer-action-btn:hover {
+    color: var(--peak-primary);
+    background: rgba(0,0,0,0.05);
+}
+
+/* Title Editing */
+.inspector-item-title {
+    outline: none;
+    padding: 2px 4px;
+    border-radius: 2px;
+    cursor: text;
+}
+
+.inspector-item-title:focus {
+    background: var(--window-background-color);
+    box-shadow: 0 0 0 2px var(--peak-accent);
+}
+
+
+/* --- TERMINAL OPS STYLES --- */
+
+/* Re-using inspector-section/sub-title from Whiteboard CSS for consistency */
+.guide-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 0 16px 16px 16px;
+}
+
+.cmd-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 12px;
+}
+
+.cmd-row code {
+    font-family: monospace;
+    background: rgba(128,128,128,0.1);
+    padding: 2px 6px;
+    border-radius: 4px;
+    color: var(--peak-accent);
+    font-size: 11px;
+}
+
+.cmd-row span {
+    color: var(--peak-secondary);
+}
+
+/* Snippets Grid */
+.snippet-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+    padding: 0 16px 16px 16px;
+}
+
+.snippet-btn {
+    padding: 8px;
+    background: var(--control-background-color);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    font-size: 11px;
+    color: var(--peak-primary);
+    cursor: pointer;
+    text-align: left;
+    font-family: monospace;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    transition: border-color 0.1s;
+}
+
+.snippet-btn:hover {
+    border-color: var(--peak-accent);
+    background: var(--window-background-color);
+}
+
+/* AI Chat in Inspector */
+.term-chat-history {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    background: var(--text-background-color);
+}
+
+.term-chat-msg {
+    font-size: 13px;
+    padding: 10px;
+    border-radius: 8px;
+    max-width: 90%;
+    line-height: 1.4;
+}
+
+.term-chat-msg.ai {
+    background: var(--control-background-color);
+    align-self: flex-start;
+    color: var(--peak-primary);
+}
+
+.term-chat-msg.user {
+    background: var(--peak-accent);
+    align-self: flex-end;
+    color: white;
+}
+
+.term-chat-input-box {
+    padding: 12px;
+    border-top: 1px solid var(--border-color);
+    background: var(--window-background-color);
+    display: flex; flex-direction: column; gap: 8px;
+}
+
+.term-analyze-btn {
+    width: 100%;
+    background: rgba(128,128,128,0.1);
+    border: none;
+    padding: 6px;
+    border-radius: 6px;
+    color: var(--peak-primary);
+    font-size: 11px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    font-weight: 500;
+    transition: background-color 0.1s;
+}
+
+.term-analyze-btn:hover {
+    background: rgba(128,128,128,0.15);
+}
+
+/* Panel Toggling */
+.term-panel {
+    display: none;
+    height: 100%;
+    flex-direction: column;
+}
+.term-panel.active {
+    display: block; /* or flex for ai panel, overridden in JS */
+}

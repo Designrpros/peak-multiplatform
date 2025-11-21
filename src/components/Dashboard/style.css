@@ -1,0 +1,125 @@
+/* src/components/Dashboard/style.css */
+
+#dashboard-content.centered-content-container {
+    align-items: flex-start; 
+    overflow-y: auto; 
+    padding-bottom: 60px;
+}
+
+.dashboard-vstack {
+    max-width: 1000px;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 32px; 
+    padding-top: 60px;
+    padding-bottom: 40px;
+}
+
+.dashboard-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    padding: 0 12px;
+    /* FIX: Removed bottom border for cleaner look, or keep it subtle */
+    border-bottom: 1px solid var(--border-color); 
+    padding-bottom: 16px;
+}
+
+.dashboard-title { font-size: 32px; font-weight: 700; margin: 0; color: var(--peak-primary); }
+.date-display { font-size: 14px; color: var(--peak-secondary); font-weight: 500; text-transform: uppercase; letter-spacing: 0.5px; }
+
+.section-title {
+    font-size: 13px; font-weight: 600; color: var(--peak-secondary);
+    text-transform: uppercase; letter-spacing: 1px; margin: 0 0 12px 12px;
+}
+
+/* RECENT ACTIVITY */
+.recent-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 12px;
+    padding: 0 12px;
+}
+
+.recent-item {
+    background-color: var(--control-background-color);
+    /* FIX: Borderless */
+    border: none; 
+    border-radius: 10px;
+    padding: 12px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    transition: transform 0.1s, background-color 0.1s;
+}
+.recent-item:hover { transform: translateY(-1px); background-color: rgba(0,0,0,0.04); }
+
+.recent-icon {
+    width: 32px; height: 32px; border-radius: 8px;
+    background: rgba(128,128,128,0.1); color: var(--peak-secondary);
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.recent-icon svg { width: 16px; height: 16px; }
+
+.recent-info { display: flex; flex-direction: column; gap: 2px; overflow: hidden; }
+.recent-title { font-size: 13px; font-weight: 500; color: var(--peak-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.recent-url { font-size: 11px; color: var(--peak-secondary); opacity: 0.8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* BOOKMARKS */
+.bookmark-section { display: flex; flex-direction: column; }
+.bookmark-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 12px;
+    padding: 0 12px;
+}
+
+.bookmark-item {
+    position: relative;
+    background-color: var(--window-background-color);
+    /* FIX: Borderless */
+    border: none; 
+    border-radius: 12px;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    cursor: pointer;
+    transition: background-color 0.1s, transform 0.1s;
+}
+.bookmark-item:hover { background-color: var(--control-background-color); }
+
+.bookmark-item.dragging { opacity: 0.4; border: 1px dashed var(--peak-secondary); }
+.bookmark-item.drag-over { border: 2px solid var(--peak-accent); transform: scale(1.02); }
+
+.bookmark-delete {
+    position: absolute; top: 4px; right: 4px; width: 20px; height: 20px;
+    background-color: rgba(0,0,0,0.1); border-radius: 50%; display: none;
+    align-items: center; justify-content: center; color: var(--peak-secondary);
+    transition: background 0.1s, color 0.1s;
+}
+.bookmark-item:hover .bookmark-delete { display: flex; }
+.bookmark-delete:hover { background-color: #ff3b30; color: white; }
+.bookmark-delete svg { width: 12px; height: 12px; stroke-width: 2.5; }
+
+.bookmark-icon { width: 32px; height: 32px; border-radius: 6px; object-fit: contain; }
+.bookmark-text { text-align: center; }
+.bookmark-title { font-size: 13px; font-weight: 500; color: var(--peak-primary); }
+
+.empty-state-text { grid-column: 1 / -1; text-align: center; color: var(--peak-secondary); font-size: 13px; padding: 20px; font-style: italic; }
+.bookmark-fallback-icon { width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; background: rgba(128,128,128,0.1); border-radius: 6px; color: var(--peak-secondary); }
+
+/* DOTS */
+.page-indicators {
+    position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
+    display: flex; gap: 8px; padding: 8px 12px; background: rgba(0,0,0,0.05); border-radius: 20px;
+}
+.page-indicators .indicator {
+    width: 8px; height: 8px; border-radius: 50%; background-color: var(--peak-secondary); opacity: 0.3;
+    cursor: pointer; transition: all 0.2s;
+}
+.page-indicators .indicator.active { opacity: 1; background-color: var(--peak-primary); transform: scale(1.1); }

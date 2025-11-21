@@ -1,0 +1,124 @@
+/* src/components/TabBar/style.css */
+
+#tab-bar-container {
+    height: 48px; 
+    border-bottom: 1px solid var(--border-color);
+    background-color: var(--window-background-color);
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    padding: 0 8px; 
+    z-index: 10; 
+    -webkit-app-region: drag;
+    padding-left: 8px;
+}
+
+.tab-scroller {
+    -webkit-app-region: no-drag;
+}
+
+.tab-scroller {
+    display: flex;
+    overflow-x: auto; 
+    overflow-y: hidden;
+    white-space: nowrap;
+    flex-grow: 1;
+    -ms-overflow-style: none; /* IE and Edge */
+    scrollbar-width: none; /* Firefox */
+    
+    padding-left: 0;
+    padding-right: 0;
+}
+
+.tab-scroller::-webkit-scrollbar {
+    display: none; /* Chrome, Safari, Opera */
+}
+
+.tab-button {
+    flex-shrink: 0; 
+    display: inline-flex;
+    align-items: center;
+    /* FIX: Increase padding to accommodate large icon */
+    padding: 5px 12px;
+    margin: 4px 4px;
+    border-radius: 8px;
+    font-size: 12px;
+    color: var(--peak-secondary);
+    cursor: pointer;
+    transition: background-color 0.1s;
+    min-width: 80px;
+    max-width: 160px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.tab-button:hover {
+    background-color: rgba(0, 0, 0, 0.05);
+}
+
+@media (prefers-color-scheme: dark) {
+    .tab-button:hover {
+        background-color: rgba(255, 255, 255, 0.08);
+    }
+}
+
+.tab-button.selected-tab {
+    background-color: rgba(0, 0, 0, 0.1);
+    color: var(--peak-primary);
+    font-weight: 500;
+}
+
+@media (prefers-color-scheme: dark) {
+    .tab-button.selected-tab {
+        background-color: var(--control-background-color);
+    }
+}
+
+
+/* --- FIX: Set main icon size to 20px --- */
+/* This targets the main tab icon (globe, file, etc.) */
+.tab-button > svg {
+    width: 20px !important;
+    height: 20px !important;
+    
+    /* FIX: Increase margin to match */
+    margin-right: 6px;
+    stroke-width: 2; 
+}
+/* --- End of fix --- */
+
+
+.tab-button span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* --- FIX: Correctly target the close button SVG --- */
+/* This targets the "x" icon */
+.tab-button svg.close-button {
+    margin-left: 8px;
+    margin-right: 0;
+    width: 12px !important;   /* Keep size different, as requested */
+    height: 12px !important;  /* Keep size different, as requested */
+    stroke-width: 2.25;
+    opacity: 0.8;
+}
+
+.tab-button:not(.selected-tab) svg.close-button {
+    opacity: 0;
+}
+
+.tab-button:hover svg.close-button {
+    opacity: 1;
+}
+
+/* Add these new styles for Drag & Drop feedback */
+.tab-button.drag-over-left {
+    border-left: 2px solid var(--peak-accent);
+    padding-left: 10px; /* Adjust slightly to prevent jump */
+}
+
+.tab-button.drag-over-right {
+    border-right: 2px solid var(--peak-accent);
+    padding-right: 10px;
+}

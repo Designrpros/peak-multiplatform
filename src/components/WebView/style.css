@@ -1,0 +1,29 @@
+/* src/components/WebView/style.css */
+
+.webview-container {
+    width: 100%;
+    flex-grow: 1; 
+    display: flex;
+    flex-direction: column;
+}
+
+.tab-content {
+    width: 100%;
+    flex-grow: 1; 
+    box-sizing: border-box;
+    overflow: hidden;
+    
+    /* FIX: Changed from 'block' to 'flex' */
+    display: flex; 
+    flex-direction: column;
+}
+
+webview {
+    width: 100%;
+    flex-grow: 1; 
+    border: none; /* FIX: Ensure no border is displayed */
+    
+    /* FIX: Removed 'display: flex;' which causes a renderer crash.
+       It will default to 'display: block' and still fill the
+       flex container correctly. */
+}

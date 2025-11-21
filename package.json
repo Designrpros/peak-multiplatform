@@ -1,0 +1,97 @@
+{
+  "name": "peak-multiplatform",
+  "productName": "Peak Multiplatform",
+  "version": "1.0.0",
+  "description": "Peak Multiplatform Browser",
+  "main": "main.js",
+  "author": "Vegar Berentsen <designr.pros@gmail.com>",
+  "homepage": "https://peak-browser.vercel.app",
+  "scripts": {
+    "start": "electron .",
+    "rebuild": "electron-rebuild",
+    "postinstall": "electron-builder install-app-deps",
+    "dist": "electron-builder",
+    "dist:mac": "electron-builder --mac --x64 --arm64",
+    "dist:win": "electron-builder --win --x64 --ia32 --arm64",
+    "dist:linux": "electron-builder --linux --x64 --arm64"
+  },
+  "dependencies": {
+    "@babel/runtime": "latest",
+    "@codemirror/lang-css": "^6.2.1",
+    "@codemirror/lang-html": "^6.4.0",
+    "@codemirror/lang-java": "latest",
+    "@codemirror/lang-javascript": "^6.2.1",
+    "@codemirror/lang-json": "^6.0.1",
+    "@codemirror/lang-markdown": "^6.2.0",
+    "@codemirror/lang-python": "latest",
+    "@codemirror/lang-xml": "latest",
+    "@codemirror/state": "latest",
+    "@codemirror/theme-one-dark": "^6.1.2",
+    "@codemirror/view": "latest",
+    "@uiw/codemirror-theme-vscode": "latest",
+    "@xterm/addon-clipboard": "latest",
+    "@xterm/addon-fit": "latest",
+    "@xterm/addon-search": "latest",
+    "@xterm/addon-web-links": "latest",
+    "@xterm/xterm": "latest",
+    "axios": "^1.13.2",
+    "codemirror": "^6.0.2",
+    "dotenv": "^16.6.1",
+    "electron-store": "^8.1.0",
+    "fabric": "latest",
+    "highlight.js": "^11.11.1",
+    "marked": "^12.0.2",
+    "node-pty": "latest",
+    "vscode-icons-js": "latest"
+  },
+  "devDependencies": {
+    "@electron/rebuild": "^4.0.1",
+    "electron": "^28.0.0",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "com.peak.multiplatform",
+    "productName": "Peak Multiplatform",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "**/*",
+      "!dist/*"
+    ],
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "icon": "assets/Peak.png",
+      "artifactName": "Peak-mac-${arch}.${ext}"
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "assets/Peak.png",
+      "artifactName": "Peak-win-${arch}.${ext}"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb",
+        "rpm",
+        "snap"
+      ],
+      "icon": "assets/Peak.png",
+      "category": "Utility",
+      "executableName": "peak-multiplatform",
+      "synopsis": "Peak Multiplatform",
+      "maintainer": "designr.pros@gmail.com",
+      "artifactName": "Peak-linux-${arch}.${ext}",
+      "executableArgs": [
+        "--no-sandbox",
+        "--disable-gpu",
+        "--disable-gpu-sandbox"
+      ]
+    }
+  }
+}

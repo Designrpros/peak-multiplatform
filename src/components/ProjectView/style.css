@@ -1,0 +1,262 @@
+/* src/components/ProjectView/style.css */
+
+.project-view-container {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: row;
+    background-color: var(--text-background-color);
+    transition: all 0.2s ease-in-out; 
+}
+
+.project-sidebar {
+    width: 240px;
+    flex-shrink: 0;
+    background-color: var(--window-background-color);
+    border-right: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+    box-sizing: border-box;
+    overflow-y: hidden; 
+    transition: width 0.2s ease-in-out; 
+}
+
+.project-view-container.sidebar-collapsed .project-sidebar {
+    width: 0;
+    min-width: 0;
+    border-right: none;
+    overflow: hidden;
+}
+
+.project-editor-area {
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+/* --- SIDEBAR HEADER --- */
+.project-sidebar-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 12px 8px 12px; 
+    border-bottom: 1px solid var(--border-color); 
+    flex-shrink: 0;
+}
+
+.sidebar-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.sidebar-action-icon {
+    cursor: pointer;
+    color: var(--peak-secondary);
+    width: 16px;
+    height: 16px;
+    padding: 2px;
+    border-radius: 4px;
+    transition: color 0.1s, background-color 0.1s;
+}
+
+.sidebar-action-icon:hover {
+    color: var(--peak-primary);
+    background-color: var(--border-color);
+}
+
+/* --- FILE TREE --- */
+.file-tree-scroll-container {
+    overflow-y: auto; 
+    flex-grow: 1;
+    padding: 0 12px 12px 12px; 
+}
+
+.file-tree-header {
+    margin: 0;
+    font-weight: 600; 
+    font-size: 14px;
+    padding: 4px 0; 
+    color: var(--peak-primary);
+    flex-grow: 1; 
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+ul.file-tree {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    padding-left: 8px; 
+}
+
+li.tree-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 8px; 
+    font-size: 13px;
+    border-radius: 4px;
+    cursor: pointer;
+    color: var(--peak-secondary);
+    /* Transition for drag highlight */
+    transition: background-color 0.1s, color 0.1s;
+}
+
+li.tree-item:hover, li.tree-item.selected { 
+    background-color: var(--border-color);
+    color: var(--peak-primary);
+}
+
+/* Drag & Drop Feedback */
+li.tree-item.drag-over-folder {
+    background-color: var(--peak-accent) !important;
+    color: white !important;
+}
+
+/* Force icon color change on drag over for visibility */
+li.tree-item.drag-over-folder i, 
+li.tree-item.drag-over-folder svg {
+    color: white !important;
+    stroke: white !important;
+}
+
+li.tree-item .main-icon {
+    width: 14px !important;
+    min-width: 14px !important; 
+    height: 14px !important;
+    flex-shrink: 0;
+    display: flex !important; 
+    align-items: center;
+    justify-content: center;
+}
+
+li.tree-item .main-icon svg {
+    width: 100% !important; 
+    height: 100% !important;
+    stroke-width: 2;
+    color: inherit;
+}
+
+li.tree-item img.main-icon.file-logo {
+    object-fit: contain; 
+}
+
+li.tree-item span {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.directory-item .chevron-icon {
+    width: 10px; height: 10px; stroke-width: 2; color: var(--peak-secondary); flex-shrink: 0; margin-left: 0; 
+}
+.file-item { padding-left: 14px; }
+ul.file-tree.nested { list-style: none; padding: 0; margin: 0; padding-left: 16px; }
+.children-container { overflow: hidden; padding-left: 0; }
+.loading-placeholder, .error-placeholder { font-size: 12px; color: var(--peak-secondary); padding: 4px 8px; margin: 0; }
+
+/* Footer */
+.project-sidebar-footer {
+    flex-shrink: 0;
+    padding: 8px 12px 12px 12px; 
+    border-top: 1px solid var(--border-color);
+    background-color: var(--window-background-color);
+}
+
+.sidebar-filter-input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 6px 10px;
+    font-size: 13px;
+    border-radius: 6px;
+    border: 1px solid var(--border-color);
+    background-color: var(--text-background-color);
+    color: var(--peak-primary);
+    outline: none;
+}
+.sidebar-filter-input:focus { border-color: var(--peak-accent); background-color: var(--control-background-color); }
+
+/* --- EDITOR HEADER (Title Bar) --- */
+.editor-title-bar {
+    height: 38px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between; 
+    padding: 0 12px;
+    border-bottom: 1px solid var(--border-color);
+    background-color: var(--window-background-color);
+    gap: 10px; 
+}
+
+.current-file-path {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--peak-primary);
+    flex-grow: 1; 
+    min-width: 0; 
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    outline: none; 
+    cursor: text;
+    padding: 2px 0;
+    border-bottom: 1px solid transparent;
+}
+.current-file-path:focus { border-bottom: 1px solid var(--peak-primary); text-overflow: clip; }
+
+.editor-actions {
+    display: flex;
+    gap: 0; 
+    flex-shrink: 0;
+    margin-left: auto; 
+}
+
+.editor-action-link {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8px 10px; 
+    border-radius: 6px;
+    transition: background-color 0.1s;
+    text-decoration: none;
+}
+.editor-action-link:hover { background-color: var(--border-color); }
+
+.editor-toolbar-icon {
+    width: 18px; height: 18px; color: var(--peak-secondary); cursor: pointer; transition: color 0.1s; flex-shrink: 0;
+}
+.editor-action-link:hover .editor-toolbar-icon { color: var(--peak-primary); }
+
+/* --- EDITOR CONTENT --- */
+.editor-pane-wrapper {
+    flex-grow: 1; 
+    overflow: hidden;
+    position: relative;
+}
+.editor-pane-wrapper.terminal-visible { overflow: hidden; }
+
+.project-editor-pane {
+    width: 100%; height: 100%; position: relative; overflow: hidden; 
+}
+.project-editor-placeholder {
+    width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; color: var(--peak-secondary); font-size: 14px;
+}
+.project-editor-pane.code-mirror-active .project-editor-placeholder { display: none; }
+.project-editor-pane > .cm-editor { height: 100%; }
+
+.project-editor-pane .cm-scroller {
+    font-size: 14px; font-family: monospace; background-color: var(--text-background-color); padding: 16px 0;
+}
+.project-editor-pane .cm-content {
+    max-width: 800px; margin: 0 auto; padding-top: 50px; padding-bottom: 50px;
+    font-size: 17px; line-height: 1.6; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+/* --- TERMINAL --- */
+.terminal-panel {
+    height: 300px; min-height: 150px; border-top: 1px solid var(--border-color); flex-shrink: 0; overflow: hidden;
+    display: flex; flex-direction: column; padding: 12px; padding-top: 0;
+}

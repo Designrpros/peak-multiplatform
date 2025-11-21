@@ -1,0 +1,141 @@
+/* src/components/GlobalToolbar/style.css */
+
+#global-toolbar {
+    height: 38px; 
+    padding-top: 0; 
+    
+    background-color: var(--window-background-color);
+    border-bottom: none;
+    
+    display: flex;
+    align-items: center;
+    /* FIX: Removed 70px padding, use 12px to match the right side */
+    padding-left: 12px; 
+    padding-right: 12px;
+    gap: 12px;
+    flex-shrink: 0;
+    -webkit-app-region: drag; /* This lets you drag the frameless window */
+    box-sizing: border-box; 
+}
+
+#global-toolbar .nav-button,
+#global-toolbar .address-bar,
+#global-toolbar .global-toolbar-controls {
+    -webkit-app-region: no-drag;
+}
+
+.navigation-controls, .global-navigation-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.nav-button {
+    background: transparent;
+    border: none;
+    color: var(--peak-primary);
+    padding: 4px;
+    cursor: pointer;
+    opacity: 0.8;
+    display: flex; 
+    align-items: center;
+    border-radius: 4px; 
+    transition: background-color 0.1s;
+}
+
+.nav-button:hover:not(:disabled) {
+    background-color: rgba(0,0,0,0.05);
+}
+@media (prefers-color-scheme: dark) {
+    .nav-button:hover:not(:disabled) {
+        background-color: rgba(255,255,255,0.08);
+    }
+}
+
+
+/* --- FIX: Target the SVG element directly --- */
+.nav-button > svg {
+    width: 16px !important;
+    height: 16px !important;
+    stroke-width: 2.25;
+}
+
+.nav-button:disabled {
+    color: var(--peak-secondary);
+    opacity: 0.5;
+    cursor: default;
+}
+
+.address-bar-container, .global-address-bar-container {
+    flex-grow: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.address-bar {
+    width: 100%;
+    max-width: 400px;
+    padding: 6px 12px;
+    border-radius: 6px;
+    border: 1px solid var(--border-color);
+    font-size: 14px;
+    outline: none;
+    transition: border-color 0.1s;
+    text-align: center;
+    background-color: rgba(0,0,0,0.03);
+    color: var(--peak-primary);
+}
+
+@media (prefers-color-scheme: dark) {
+    .address-bar {
+        background-color: rgba(255,255,255,0.08);
+    }
+}
+
+
+.address-bar:focus {
+    border-color: var(--peak-accent);
+    background-color: var(--control-background-color);
+}
+
+.global-toolbar-controls {
+    display: flex;
+    align-items: center;
+    /* FIX: Tighter gap for more buttons */
+    gap: 10px;
+    padding-left: 8px;
+}
+
+.toolbar-button {
+    cursor: pointer;
+    color: var(--peak-secondary);
+    transition: color 0.1s, background-color 0.1s;
+    
+    /* Wrapper styles */
+    padding: 4px;
+    border-radius: 4px;
+    box-sizing: content-box;
+    display: flex; 
+    align-items: center;
+    justify-content: center;
+}
+
+/* --- FIX: Target the SVG element directly --- */
+svg.toolbar-button {
+    width: 16px !important;
+    height: 16px !important;
+    stroke-width: 2.25;
+}
+
+
+.toolbar-button:hover {
+    color: var(--peak-primary);
+    background-color: rgba(0,0,0,0.05);
+}
+@media (prefers-color-scheme: dark) {
+    .toolbar-button:hover {
+        color: var(--peak-primary);
+        background-color: rgba(255,255,255,0.08);
+    }
+}
