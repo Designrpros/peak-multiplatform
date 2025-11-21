@@ -14,8 +14,14 @@ jobs:
 
     strategy:
       matrix:
-        # Build on all three platforms simultaneously
         os: [macos-latest, ubuntu-latest, windows-latest]
+        include:
+          - os: macos-latest
+            npm_script: npm run dist:mac
+          - os: windows-latest
+            npm_script: npm run dist:win
+          - os: ubuntu-latest
+            npm_script: npm run dist:linux
 
     steps:
       - name: Check out Git repository
@@ -32,28 +38,31 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential libarchive-tools rpm
+          # Dependencies often needed for canvas/native modules
           sudo apt-get install -y libcairo2-dev libpango1.0-dev libjpeg-dev libgif-dev librsvg2-dev
 
-      # 1. Install without running scripts (prevents immediate crash)
+      # 1. Install dependencies (ignoring scripts prevents instant crash on native modules)
       - name: Install Dependencies
-        run: npm ci --omit=optional --ignore-scripts
+        run: npm install --omit=optional --ignore-scripts
 
-      # 2. Force delete the canvas folder so the rebuilder ignores it
-      - name: Remove Canvas (Windows Fix)
+      # 2. Force remove canvas (Safe method for all platforms)
+      - name: Remove Canvas
         shell: bash
-        run: rm -rf node_modules/canvas
+        run: rm -rf node_modules/canvas || true
 
-      # 3. Manually rebuild the remaining native modules (like node-pty)
+      # 3. Rebuild native modules (Essential for node-pty)
       - name: Rebuild Native Modules
         run: npx electron-builder install-app-deps
 
+      # 4. Build for the specific platform using the matrix script
       - name: Build
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npm run dist
+        run: ${{ matrix.npm_script }}
 
+      # 5. Release the artifacts
       - name: Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')
         with:
           files: |

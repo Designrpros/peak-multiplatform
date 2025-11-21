@@ -1,15 +1,11 @@
 // src/components/Dashboard/index.js
 
-// Accepts aggregated 'activityItems' from tab-manager.js
 function renderDashboardHTML(activityItems = [], bookmarks = []) {
     
     const recent = activityItems.slice(0, 6).map(item => {
         const timeString = new Date(item.sortTime || Date.now()).toLocaleDateString();
-        
-        // Basic metadata handling
         let title = item.title || 'Untitled';
         let meta = timeString;
-        
         if (item.type === 'web') meta = new URL(item.url).hostname;
         else if (item.type === 'chat') meta = item.model || 'AI Assistant';
         
@@ -18,7 +14,6 @@ function renderDashboardHTML(activityItems = [], bookmarks = []) {
              data-type="${item.type}" 
              data-id="${item.id || ''}" 
              data-url="${item.url || ''}">
-             
             <div class="recent-icon"><i data-lucide="${item.icon || 'clock'}"></i></div>
             <div class="recent-info">
                 <div class="recent-title">${title}</div>
@@ -67,6 +62,7 @@ function renderDashboardHTML(activityItems = [], bookmarks = []) {
             <div class="page-indicators">
                 <span class="indicator" id="dot-landing"></span>
                 <span class="indicator active" id="dot-dashboard"></span>
+                <span class="indicator" id="dot-finder"></span>
             </div>
         </div>
     `;
@@ -82,8 +78,6 @@ function attachDashboardListeners() {
     
     if (container) {
         container.addEventListener('click', (e) => {
-            
-            // 1. Delete Bookmark
             const deleteBtn = e.target.closest('.bookmark-delete');
             if (deleteBtn) {
                 e.stopPropagation(); 
@@ -91,14 +85,11 @@ function attachDashboardListeners() {
                 if (window.toggleBookmark) window.toggleBookmark(url);
                 return;
             }
-
-            // 2. Handle Unified Recent Items
             const recentItem = e.target.closest('.recent-item');
             if (recentItem) {
                 const type = recentItem.dataset.type;
                 const id = recentItem.dataset.id;
                 const url = recentItem.dataset.url;
-                
                 if (type === 'web') window.handleBookmarkClick(url);
                 else if (type === 'chat') window.openChatFromHistory(id);
                 else if (type === 'note') window.openNoteFromHistory(id);
@@ -109,20 +100,19 @@ function attachDashboardListeners() {
                 else if (type === 'docs') window.openDocsFromHistory(id);
                 return;
             }
-
-            // 3. Open Bookmark
             const bookmarkItem = e.target.closest('.bookmark-item');
             if (bookmarkItem) {
                 const url = bookmarkItem.dataset.url;
-                if (url && window.handleBookmarkClick) {
-                    window.handleBookmarkClick(url);
-                }
+                if (url && window.handleBookmarkClick) window.handleBookmarkClick(url);
             }
         });
     }
 
     const dotLanding = document.getElementById('dot-landing');
+    const dotFinder = document.getElementById('dot-finder');
+
     if (dotLanding) dotLanding.addEventListener('click', () => window.showLandingPage());
+    if (dotFinder) dotFinder.addEventListener('click', () => window.showFinderPage());
     
     const grid = document.getElementById('bookmark-grid-container');
     if (grid) {
@@ -159,7 +149,6 @@ function attachDashboardListeners() {
             if (!isNaN(fromIndex) && !isNaN(toIndex)) window.reorderBookmarks(fromIndex, toIndex);
         });
     }
-    
     return () => {};
 }
 

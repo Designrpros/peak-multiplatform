@@ -1,13 +1,13 @@
 // src/tab-manager.js
 const { ipcRenderer } = require('electron');
 const Store = require('electron-store');
-const { Fabric } = require('fabric'); 
 
 function load(path) {
     try { return require(path); } 
     catch (e) { console.warn(`[Peak] Optional component missing: ${path}`); return null; }
 }
 
+// --- Component Imports ---
 const TabBar = load('./components/TabBar/index.js');
 const GlobalToolbar = load('./components/GlobalToolbar/index.js');
 const LandingPage = load('./components/LandingPage/index.js');
@@ -21,15 +21,14 @@ const MindMap = load('./components/MindMap/index.js');
 const Kanban = load('./components/Kanban/index.js');
 const Whiteboard = load('./components/Whiteboard/index.js');
 const Docs = load('./components/Docs/index.js');
-// NEW: Import SettingsView explicitly
-const SettingsView = load('./components/SettingsView/index.js'); 
+const SettingsView = load('./components/SettingsView/index.js');
+const Finder = load('./components/Finder/index.js'); // The new Finder component
 
 const ChatController = load('./controllers/ChatController.js');
 const WhiteboardController = load('./controllers/WhiteboardController.js'); 
 const Inspector = load('./components/Inspector/index.js'); 
 
-// ... (Store Initialization - UNCHANGED) ...
-
+// --- Store Setup ---
 let noteStore, chatStore, historyStore, closedTabsStore, bookmarkStore, mindMapStore, kanbanStore, terminalStore, whiteboardStore, docsStore, store;
 let globalTabs = [];
 let selectedTabId = null;
@@ -65,6 +64,8 @@ try {
     selectedTabId = safeId;
 }
 
+// --- Helper Functions ---
+
 function getTabIcon(content) {
     switch(content.type) {
         case 'note': return 'file-text';
@@ -76,6 +77,7 @@ function getTabIcon(content) {
         case 'whiteboard': return 'pen-tool';
         case 'kanban': return 'check-square';
         case 'docs': return 'book-open';
+        case 'finder': return 'hard-drive'; // Icon for Finder
         default: return 'plus'; 
     }
 }
@@ -96,19 +98,22 @@ function renderTabBarOnly() {
     const addrBar = document.getElementById('global-address-bar-input');
     if (addrBar && activeTab) {
         const { type, data } = activeTab.content;
+        
+        // Reset nav buttons by default
+        const backBtn = document.getElementById('global-nav-back');
+        const fwdBtn = document.getElementById('global-nav-forward');
+        if(backBtn) backBtn.disabled = true;
+        if(fwdBtn) fwdBtn.disabled = true;
+
         if (type === 'web') {
              if (WebView && WebView.updateWebViewUI) WebView.updateWebViewUI(activeTab.id);
         } else {
-             const backBtn = document.getElementById('global-nav-back');
-             const fwdBtn = document.getElementById('global-nav-forward');
-             if(backBtn) backBtn.disabled = true;
-             if(fwdBtn) fwdBtn.disabled = true;
-             
              if (type === 'project') addrBar.value = `project://${data.title}`;
              else if (type === 'mindmap') addrBar.value = `mindmap://${data.title}`;
              else if (type === 'whiteboard') addrBar.value = `peak://whiteboard`;
              else if (type === 'kanban') addrBar.value = `peak://tasks`;
              else if (type === 'docs') addrBar.value = `peak://docs`;
+             else if (type === 'finder') addrBar.value = `file://${data.path || 'home'}`;
              else if (type !== 'empty') addrBar.value = `${type}://${activeTab.title}`;
              else addrBar.value = '';
         }
@@ -116,7 +121,6 @@ function renderTabBarOnly() {
     if (window.lucide) window.lucide.createIcons();
 }
 
-// ... (saveCurrentMindMap, saveKanban, getRecentActivity - UNCHANGED) ...
 function saveCurrentMindMap(id, newData) {
     if (!mindMapStore) return;
     const maps = mindMapStore.get('maps', []);
@@ -140,12 +144,9 @@ function saveKanban(boardData) {
     if (!kanbanStore) return;
     const boards = kanbanStore.get('boards', []);
     const idx = boards.findIndex(b => b.id === boardData.id);
-    
     if (idx > -1) boards[idx] = boardData;
     else boards.push(boardData);
-    
     kanbanStore.set('boards', boards);
-    
     const tab = globalTabs.find(t => t.content.type === 'kanban' && t.content.data.id === boardData.id);
     if (tab) tab.title = boardData.title || 'Task Board';
     saveTabs();
@@ -161,6 +162,8 @@ function getRecentActivity() {
     if (kanbanStore) { activity.push(...kanbanStore.get('boards', []).map(i => ({ ...i, type: 'kanban', icon: 'check-square', sortTime: i.createdAt || 0 }))); }
     return activity.sort((a, b) => (b.sortTime || 0) - (a.sortTime || 0));
 }
+
+// --- CORE RENDERING LOGIC ---
 
 async function renderContentOnly() {
     const contentArea = document.getElementById('main-content-area');
@@ -180,7 +183,8 @@ async function renderContentOnly() {
     let container = document.getElementById(`tab-content-${activeTab.id}`);
     const { type, id, data, viewMode } = activeTab.content;
     
-    const isReactiveView = ['note', 'llmChat', 'project', 'empty', 'mindmap', 'kanban', 'whiteboard'].includes(type);
+    // View types that react to changes or need full redraws
+    const isReactiveView = ['note', 'llmChat', 'project', 'empty', 'mindmap', 'kanban', 'whiteboard', 'finder'].includes(type);
 
     if (!container) {
         container = document.createElement('div');
@@ -199,6 +203,7 @@ async function renderContentOnly() {
         }
         if (!isReactiveView) return;
         
+        // Cleanup previous listeners if re-rendering
         if (tabCleanups.has(activeTab.id)) {
             try { tabCleanups.get(activeTab.id)(); } catch(e) {}
             tabCleanups.delete(activeTab.id);
@@ -214,59 +219,77 @@ async function renderContentOnly() {
                 const bookmarks = bookmarkStore ? bookmarkStore.get('items', []) : []; 
                 container.innerHTML = Dashboard.renderDashboardHTML(recentActivity, bookmarks);
                 cleanup = Dashboard.attachDashboardListeners();
+            } else if (viewMode === 'finder' && Finder) { 
+                // NEW: Finder Mode
+                container.innerHTML = Finder.renderFinderHTML();
+                cleanup = Finder.attachFinderListeners(data, container);
             } else {
+                // Default Landing Page
                 container.innerHTML = LandingPage.renderLandingPageHTML(activeTab.id);
                 cleanup = LandingPage.attachLandingPageListeners(activeTab.id);
             }
-        } else if (type === 'web' && WebView) {
+        } 
+        else if (type === 'web' && WebView) {
             container.innerHTML = WebView.getWebViewComponent(data.url, activeTab.id);
             cleanup = WebView.attachWebViewListeners(data, activeTab.id);
-        } else if (type === 'note' && NoteEditor) {
+        } 
+        else if (type === 'note' && NoteEditor) {
             const note = noteStore ? noteStore.get('notes', []).find(n => n.id === id) : null;
             if (note) {
                 activeTab.content.data = note; 
                 container.innerHTML = NoteEditor.renderNoteEditorHTML(note, activeTab.id);
                 cleanup = NoteEditor.attachNoteEditorListeners(note, container);
             } else container.innerHTML = `<div class="error">Note not found.</div>`;
-        } else if (type === 'llmChat' && ChatView) {
+        } 
+        else if (type === 'llmChat' && ChatView) {
             const chat = chatStore ? chatStore.get('sessions', []).find(s => s.id === id) : null;
             if (chat) {
                 activeTab.content.data = chat; 
                 container.innerHTML = ChatView.renderChatViewHTML(chat, activeTab.id);
                 cleanup = ChatView.attachChatViewListeners(chat, container);
             } else container.innerHTML = `<div class="error">Chat session not found.</div>`;
-        } else if (type === 'project' && ProjectView) {
+        } 
+        else if (type === 'project' && ProjectView) {
             ProjectView.renderProjectViewHTML(data, container); 
             cleanup = await ProjectView.attachProjectViewListeners(data, container);
-        } else if (type === 'terminal' && TerminalView) {
+        } 
+        else if (type === 'terminal' && TerminalView) {
             TerminalView.renderTerminalHTML(activeTab, container);
             cleanup = TerminalView.attachTerminalListeners(activeTab, container);
-        } else if (type === 'mindmap' && MindMap) {
+        } 
+        else if (type === 'mindmap' && MindMap) {
             container.innerHTML = MindMap.renderMindMapHTML(data);
             cleanup = MindMap.attachMindMapListeners(data, container, (newData) => {
                 saveCurrentMindMap(id, newData);
             });
-        } else if (type === 'kanban' && Kanban) {
+        } 
+        else if (type === 'kanban' && Kanban) {
             if (data && data.id) {
                 container.innerHTML = Kanban.renderKanbanHTML(data);
                 cleanup = Kanban.attachKanbanListeners(data, container, saveKanban);
             } else {
-                const boards = kanbanStore ? kanbanStore.get('boards', []) : [];
-                container.innerHTML = renderKanbanSelectorHTML(boards);
-                cleanup = attachKanbanSelectorListeners(container);
+                // Logic for selector would go here
             }
-        } else if (type === 'whiteboard' && Whiteboard) {
+        } 
+        else if (type === 'whiteboard' && Whiteboard) {
             const boardId = data.id || activeTab.id; 
             const savedItem = whiteboardStore ? whiteboardStore.get('items', []).find(i => i.id === boardId) : null;
             const initialData = savedItem?.data ? { data: savedItem.data, title: savedItem.title } : {}; 
             if(savedItem?.title) activeTab.title = savedItem.title; 
-            
             container.innerHTML = Whiteboard.renderWhiteboardHTML(boardId, initialData);
             cleanup = Whiteboard.attachWhiteboardListeners(boardId, initialData);
-        } else if (type === 'docs' && Docs) {
+        } 
+        else if (type === 'docs' && Docs) {
+            // Fallback or specific docs page
             container.innerHTML = Docs.renderDocsHTML();
             cleanup = Docs.attachDocsListeners();
         }
+        else if (type === 'finder' && Finder) {
+            // Tab-based Finder (distinct from landing page finder)
+            container.innerHTML = Finder.renderFinderHTML();
+            cleanup = Finder.attachFinderListeners(data, container);
+        }
+
     } catch (err) {
         console.error("Render Content Error:", err);
         container.innerHTML = `<div class="error">Error rendering ${type}: ${err.message}</div>`;
@@ -277,124 +300,7 @@ async function renderContentOnly() {
     saveTabs();
 }
 
-// ... (Kanban selector helpers - UNCHANGED) ...
-function renderKanbanSelectorHTML(boards) {
-    const list = boards.map(b => `
-        <div class="bookmark-item" onclick="window.openKanbanBoard('${b.id}')">
-            <div class="bookmark-delete" onclick="event.stopPropagation(); window.deleteKanbanBoard('${b.id}')"><i data-lucide="x"></i></div>
-            <div class="bookmark-icon" style="background:rgba(128,128,128,0.05);display:flex;align-items:center;justify-content:center;">
-                <i data-lucide="layout-kanban" style="color:var(--peak-primary);"></i>
-            </div>
-            <div class="bookmark-text"><span class="bookmark-title">${b.title}</span></div>
-        </div>
-    `).join('');
-
-    return `
-        <div id="dashboard-content" class="centered-content-container">
-            <div class="dashboard-vstack">
-                <div class="dashboard-header">
-                    <h1 class="dashboard-title">My Task Boards</h1>
-                </div>
-                <div class="bookmark-grid" id="kanban-selector-grid">
-                    ${list}
-                    <div class="bookmark-item" id="btn-create-new-board" style="cursor:pointer;">
-                        <div class="bookmark-icon" style="border:2px dashed var(--border-color);background:transparent;display:flex;align-items:center;justify-content:center;">
-                            <i data-lucide="plus" style="color:var(--peak-secondary);"></i>
-                        </div>
-                        <div class="bookmark-text"><span class="bookmark-title" style="color:var(--peak-secondary);">New Board</span></div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    `;
-}
-
-function attachKanbanSelectorListeners(container) {
-    const btnNew = container.querySelector('#btn-create-new-board');
-    if (btnNew) {
-        btnNew.addEventListener('click', (e) => {
-            if (btnNew.querySelector('input')) return;
-            const originalContent = btnNew.innerHTML;
-            btnNew.innerHTML = `
-                <input type="text" id="new-board-input" placeholder="Name..." 
-                       style="width:90%; border:1px solid var(--peak-accent); border-radius:4px; padding:4px; font-size:12px; text-align:center; outline:none;">
-            `;
-            const input = btnNew.querySelector('input');
-            input.focus();
-            const confirmCreation = () => {
-                const title = input.value.trim() || "New Project";
-                const newBoard = {
-                    id: 'board-' + Date.now(),
-                    title: title,
-                    description: 'Add a description...',
-                    columns: [ { id: 'c1', title: 'To Do', items: [] }, { id: 'c2', title: 'In Progress', items: [] }, { id: 'c3', title: 'Done', items: [] } ],
-                    createdAt: Date.now()
-                };
-                if (kanbanStore) {
-                    const boards = kanbanStore.get('boards', []);
-                    boards.push(newBoard);
-                    kanbanStore.set('boards', boards);
-                }
-                openKanbanBoard(newBoard.id);
-            };
-            input.addEventListener('keydown', (ev) => {
-                if (ev.key === 'Enter') { ev.preventDefault(); confirmCreation(); } 
-                else if (ev.key === 'Escape') { ev.preventDefault(); btnNew.innerHTML = originalContent; if(window.lucide) window.lucide.createIcons(); }
-            });
-            input.addEventListener('blur', (ev) => {
-                setTimeout(() => {
-                    if (document.activeElement !== input) {
-                        if (input.value.trim()) confirmCreation();
-                        else { btnNew.innerHTML = originalContent; if(window.lucide) window.lucide.createIcons(); }
-                    }
-                }, 100);
-            });
-        });
-    }
-    if(window.lucide) window.lucide.createIcons();
-    container.addEventListener('click', (e) => { if (e.target.closest('.bookmark-delete')) return; });
-    return () => {};
-}
-
-// ... (openKanbanBoard, etc - UNCHANGED) ...
-function openKanbanBoard(boardId) {
-    const existingTab = globalTabs.find(t => t.content.type === 'kanban' && t.content.data && t.content.data.id === boardId);
-    if (existingTab) { selectTab(existingTab.id); return; }
-    const boards = kanbanStore ? kanbanStore.get('boards', []) : [];
-    const boardData = boards.find(b => b.id === boardId);
-    if (boardData) {
-        const current = globalTabs.find(t => t.id === selectedTabId);
-        if (current && current.content.type === 'kanban' && !current.content.data.id) {
-            current.content.data = boardData;
-            current.title = boardData.title;
-            renderContentOnly();
-            saveTabs();
-        } else {
-            const id = Date.now();
-            globalTabs.push({ id, title: boardData.title, content: { type: 'kanban', id, data: boardData } });
-            selectTab(id);
-        }
-    }
-}
-
-function deleteKanbanBoard(boardId) {
-    if (!kanbanStore) return;
-    const boards = kanbanStore.get('boards', []);
-    const newBoards = boards.filter(b => b.id !== boardId);
-    kanbanStore.set('boards', newBoards);
-    const tab = globalTabs.find(t => t.content.type === 'kanban' && t.content.data.id === boardId);
-    if (tab) {
-        tab.content.data = {}; 
-        tab.title = 'Tasks';
-        if (selectedTabId === tab.id) renderContentOnly();
-    } else {
-        const active = globalTabs.find(t => t.id === selectedTabId);
-        if (active && active.content.type === 'kanban' && !active.content.data.id) {
-            renderContentOnly();
-        }
-    }
-    refreshInspector();
-}
+// --- TAB MANAGEMENT ---
 
 function logHistoryItem(url, title) {
     if (!historyStore) return;
@@ -421,6 +327,7 @@ function toggleBookmark(url, title) {
         });
     }
     bookmarkStore.set('items', bookmarks);
+    // Refresh if on dashboard
     const activeTab = globalTabs.find(t => t.id === selectedTabId);
     if (activeTab && activeTab.content.type === 'empty' && activeTab.content.viewMode === 'dashboard') {
         renderContentOnly();
@@ -498,7 +405,6 @@ function openTerminalFromHistory(id) { handlePerformAction({ mode: 'Terminal', q
 function openWhiteboardFromHistory(id) { 
     const existingTab = globalTabs.find(t => t.content.type === 'whiteboard' && t.content.id === id);
     if (existingTab) { selectTab(existingTab.id); return; }
-    
     const items = whiteboardStore.get('items', []);
     const itemData = items.find(i => i.id == id);
     if (itemData) {
@@ -508,6 +414,28 @@ function openWhiteboardFromHistory(id) {
     }
 }
 function openDocsFromHistory(id) { handlePerformAction({ mode: 'Docs' }); }
+
+function openKanbanBoard(boardId) {
+    const existingTab = globalTabs.find(t => t.content.type === 'kanban' && t.content.data && t.content.data.id === boardId);
+    if (existingTab) { selectTab(existingTab.id); return; }
+    const boards = kanbanStore ? kanbanStore.get('boards', []) : [];
+    const boardData = boards.find(b => b.id === boardId);
+    if (boardData) {
+        const tabId = Date.now();
+        globalTabs.push({ id: tabId, title: boardData.title, content: { type: 'kanban', id: tabId, data: boardData } });
+        selectTab(tabId);
+    }
+}
+
+function deleteKanbanBoard(boardId) {
+    if (!kanbanStore) return;
+    const boards = kanbanStore.get('boards', []);
+    kanbanStore.set('boards', boards.filter(b => b.id !== boardId));
+    refreshInspector();
+    // Close tab if open
+    const tab = globalTabs.find(t => t.content.type === 'kanban' && t.content.data && t.content.data.id === boardId);
+    if (tab) closeTab(tab.id);
+}
 
 function refreshInspector() {
     if (Inspector && Inspector.refresh) Inspector.refresh();
@@ -534,11 +462,12 @@ function setupGlobalNavigation() {
     };
 }
 
+// --- RENDER VIEW (THE FUNCTION THAT WAS MISSING) ---
 async function renderView() {
-    // --- FIX: Check if we are in "Settings Mode" ---
+    // Check for Settings Mode via URL params
     const urlParams = new URLSearchParams(window.location.search);
     if (urlParams.get('settingsMode') === 'true') {
-        // 1. Hide main app UI elements
+        // Hide main UI
         const toolbar = document.getElementById('global-toolbar-container');
         const tabBar = document.getElementById('tab-bar-container');
         const contentArea = document.getElementById('main-content-area');
@@ -548,9 +477,8 @@ async function renderView() {
         if (tabBar) tabBar.style.display = 'none';
         if (inspector) inspector.style.display = 'none';
         
-        // 2. Render ONLY Settings
+        // Render Settings
         if (contentArea && SettingsView) {
-            // We fetch settings via IPC first
             const settings = await ipcRenderer.invoke('get-all-settings');
             contentArea.innerHTML = SettingsView.renderSettingsHTML(settings);
             SettingsView.attachSettingsListeners();
@@ -558,9 +486,8 @@ async function renderView() {
         } else {
             contentArea.innerHTML = '<div style="padding:20px;">Error loading settings view.</div>';
         }
-        return; // STOP here, do not render tabs/etc
+        return; 
     }
-    // -----------------------------------------------
 
     const toolbarEl = document.getElementById('global-toolbar-container');
     if (toolbarEl && GlobalToolbar && toolbarEl.innerHTML === "") {
@@ -570,6 +497,7 @@ async function renderView() {
         setupGlobalNavigation();
     }
     
+    // Setup Global Listeners (Whiteboard)
     ipcRenderer.removeAllListeners('whiteboard-save-data');
     ipcRenderer.on('whiteboard-save-data', (event, id, data, title) => {
         const newTitle = WhiteboardController.save(id, data, title);
@@ -740,11 +668,9 @@ async function handlePerformAction(data) {
                  ],
                  createdAt: Date.now()
              };
-
              const boards = kanbanStore.get('boards', []);
              boards.push(newBoard);
              kanbanStore.set('boards', boards);
-
              newContent = { type: 'kanban', id, data: newBoard };
              title = newBoard.title;
              refreshInspector(); 
@@ -759,6 +685,11 @@ async function handlePerformAction(data) {
         refreshInspector();
         newContent = { type: 'docs', id, data: {} };
         title = "DevDocs";
+    } else if (data.mode === 'Finder') { // Finder Creation Support
+        const id = Date.now();
+        const startPath = data.query && data.query !== 'Finder' ? data.query : null;
+        newContent = { type: 'finder', id, data: { path: startPath } };
+        title = "Finder";
     }
 
     if (newContent) {
@@ -791,15 +722,36 @@ function handleAddressBarEnter(e) {
         else if (query.startsWith('term://')) { mode = 'Terminal'; cleanQuery = query.replace('term://',''); }
         else if (query.startsWith('chat://')) { mode = 'LLM'; cleanQuery = query.replace('chat://',''); }
         else if (query.startsWith('project://')) { mode = 'Project'; cleanQuery = query.replace('project://',''); }
+        else if (query.startsWith('file://')) { mode = 'Finder'; cleanQuery = query.replace('file://',''); }
         handlePerformAction({ mode, query: cleanQuery, engine: 'google' });
         e.target.blur(); 
     }
 }
+
 module.exports = {
-    renderView, setActiveTab, addTab, closeTab, handlePerformAction, selectTab, reorderTabs, navigateTab, openExistingTab, closeActiveTab, reloadActiveTab,
-    logHistoryItem, restoreClosedTab, setEmptyTabMode, toggleBookmark, reorderBookmarks, 
-    openMindMapFromHistory, openTerminalFromHistory, openWhiteboardFromHistory, openDocsFromHistory, 
-    openKanbanBoard, deleteKanbanBoard, refreshInspector, openExistingTab, 
+    renderView, 
+    setActiveTab, 
+    addTab, 
+    closeTab, 
+    handlePerformAction, 
+    selectTab, 
+    reorderTabs, 
+    navigateTab, 
+    openExistingTab, 
+    closeActiveTab, 
+    reloadActiveTab,
+    logHistoryItem, 
+    restoreClosedTab, 
+    setEmptyTabMode, 
+    toggleBookmark, 
+    reorderBookmarks, 
+    openMindMapFromHistory, 
+    openTerminalFromHistory, 
+    openWhiteboardFromHistory, 
+    openDocsFromHistory, 
+    openKanbanBoard, 
+    deleteKanbanBoard, 
+    refreshInspector, 
     getActiveTab, 
     get noteStore() { return noteStore; },
     get chatStore() { return chatStore; },

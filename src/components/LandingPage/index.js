@@ -27,9 +27,11 @@ function renderLandingPageHTML() {
                 </div>
                 <a href="#" class="settings-link" id="settings-trigger">Settings</a>
             </div>
+            
             <div class="page-indicators">
                 <span class="indicator active" id="dot-landing"></span>
                 <span class="indicator" id="dot-dashboard"></span>
+                <span class="indicator" id="dot-finder"></span>
             </div>
         </div>
     `;
@@ -55,6 +57,7 @@ function getPlaceholder() {
         case InputMode.WHITEBOARD: return "Press Enter to open Whiteboard...";
         case InputMode.KANBAN: return "Press Enter to open Tasks...";
         case InputMode.DOCS: return "Press Enter to open DevDocs...";
+        case InputMode.FINDER: return "Enter path (optional) or press Enter..."; // Added Finder Placeholder
         default: return "Type here...";
     }
 }
@@ -65,7 +68,10 @@ function attachLandingPageListeners() {
     const modeSelect = document.getElementById('mode-select');
     const btn = document.getElementById('action-button');
     const settingsLink = document.getElementById('settings-trigger');
-    const dashDot = document.getElementById('dot-dashboard');
+    
+    // Navigation Dots
+    const dotDash = document.getElementById('dot-dashboard');
+    const dotFinder = document.getElementById('dot-finder'); // New
 
     const updateUI = () => {
         if (!input) return;
@@ -73,8 +79,8 @@ function attachLandingPageListeners() {
         input.style.height = input.scrollHeight + 'px';
         
         if (btn) {
-            // Allow empty submission for tool-launching modes
-            const isLaunchMode = [InputMode.PROJECT, InputMode.TERMINAL, InputMode.WHITEBOARD, InputMode.KANBAN, InputMode.DOCS].includes(currentState.selectedMode);
+            // Updated to include FINDER in launch modes
+            const isLaunchMode = [InputMode.PROJECT, InputMode.TERMINAL, InputMode.WHITEBOARD, InputMode.KANBAN, InputMode.DOCS, InputMode.FINDER].includes(currentState.selectedMode);
             btn.disabled = !(input.value.trim().length > 0 || isLaunchMode);
         }
     };
@@ -102,23 +108,15 @@ function attachLandingPageListeners() {
 
     if (input) {
         input.addEventListener('input', () => { currentState.inputText = input.value; updateUI(); });
-        
-        // Handle Enter vs Shift+Enter
         input.addEventListener('keydown', (e) => { 
             if (e.key === 'Enter') {
                 if (!e.shiftKey) {
-                    e.preventDefault(); // Send on Enter
+                    e.preventDefault(); 
                     triggerAction();
                 }
-                // Shift+Enter = New Line (Default)
             }
         });
-        
-        // FIX: Ensure Auto-Focus happens reliably when tab is visible
-        requestAnimationFrame(() => {
-            input.focus();
-        });
-        
+        requestAnimationFrame(() => { input.focus(); });
         updateUI();
     }
 
@@ -153,11 +151,15 @@ function attachLandingPageListeners() {
         });
     }
 
-    if (dashDot) {
-        dashDot.addEventListener('click', () => {
-             if(window.showDashboardPage) window.showDashboardPage();
-        });
-    }
+    // Navigation Handlers
+    if (dotDash) dotDash.addEventListener('click', () => {
+         if(window.showDashboardPage) window.showDashboardPage();
+    });
+    
+    // NEW: Finder Handler
+    if (dotFinder) dotFinder.addEventListener('click', () => {
+         if(window.showFinderPage) window.showFinderPage();
+    });
 
     return () => {};
 }

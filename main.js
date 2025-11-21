@@ -14,7 +14,6 @@ Store.initRenderer();
 
 const settingsStore = new Store({ 
     name: 'userSettings',
-    // CHANGED: Default hotkey set to Control+Space
     defaults: { hotkey: 'Control+Space', isDockVisible: false, isFloating: true, openrouterApiKey: null }
 });
 
@@ -54,10 +53,8 @@ function createWindow() {
 
 function createSettingsWindow() {
     if (settingsWindow && !settingsWindow.isDestroyed()) { settingsWindow.focus(); return; }
-    // Standard window frame for settings
     settingsWindow = new BrowserWindow({ width: 800, height: 600, title: 'Peak Settings', frame: true, resizable: false, show: false, webPreferences: { nodeIntegration: true, contextIsolation: false, webviewTag: true } });
     settingsWindow.setAlwaysOnTop(true, 'floating');
-    // This passes ?settingsMode=true to the renderer
     settingsWindow.loadFile('index.html', { query: { settingsMode: 'true' } });
     settingsWindow.on('ready-to-show', () => settingsWindow.show());
     settingsWindow.on('closed', () => settingsWindow = null);
@@ -120,12 +117,83 @@ function toggleWindow() {
 
 function registerHotKey() {
     globalShortcut.unregisterAll(); 
-    // CHANGED: Fallback hotkey set to Control+Space
     const currentHotkey = settingsStore.get('hotkey', 'Control+Space');
     globalShortcut.register(currentHotkey, () => toggleWindow());
 }
 
 function setupIpcHandlers() {
+    // --- FINDER HANDLERS ---
+    
+    ipcMain.handle('app:get-home-path', () => os.homedir());
+
+    ipcMain.handle('app:open-path', async (event, targetPath) => {
+        return shell.openPath(targetPath);
+    });
+
+    ipcMain.handle('finder:read-dir', async (event, dirPath) => {
+        try {
+            const dirents = await fs.promises.readdir(dirPath, { withFileTypes: true });
+            const files = await Promise.all(dirents.map(async (dirent) => {
+                if (['.git', '.DS_Store', 'node_modules'].includes(dirent.name)) return null;
+                const fullPath = path.join(dirPath, dirent.name);
+                try {
+                    const stats = await fs.promises.stat(fullPath);
+                    return {
+                        name: dirent.name,
+                        isDirectory: dirent.isDirectory(),
+                        path: fullPath,
+                        size: stats.size,
+                        mtime: stats.mtime,
+                        birthtime: stats.birthtime
+                    };
+                } catch (e) { return null; }
+            }));
+            
+            return files.filter(f => f).sort((a, b) => {
+                if (a.isDirectory === b.isDirectory) return a.name.localeCompare(b.name);
+                return a.isDirectory ? -1 : 1;
+            });
+        } catch (e) { return { error: e.message }; }
+    });
+
+    // -- NEW FINDER OPERATIONS --
+    ipcMain.handle('finder:rename', async (e, oldPath, newPath) => {
+        try { await fs.promises.rename(oldPath, newPath); return { success: true }; } 
+        catch (err) { return { error: err.message }; }
+    });
+
+    ipcMain.handle('finder:delete', async (e, targetPath) => {
+        try { await shell.trashItem(targetPath); return { success: true }; } 
+        catch (err) { return { error: err.message }; }
+    });
+
+    ipcMain.handle('finder:create-folder', async (e, folderPath) => {
+        try { await fs.promises.mkdir(folderPath); return { success: true }; } 
+        catch (err) { return { error: err.message }; }
+    });
+
+    ipcMain.on('show-finder-context-menu', (event, fileData) => {
+        const template = [];
+        if (fileData) {
+            template.push(
+                { label: 'Open', click: () => event.sender.send('finder:ctx-open', fileData.path) },
+                { type: 'separator' },
+                { label: 'Rename', click: () => event.sender.send('finder:ctx-rename', fileData.path) },
+                { label: 'Move to Trash', click: () => event.sender.send('finder:ctx-delete', fileData.path) },
+                { type: 'separator' },
+                { label: 'Copy Path', click: () => { clipboard.writeText(fileData.path); } }
+            );
+        } else {
+            template.push(
+                { label: 'New Folder', click: () => event.sender.send('finder:ctx-new-folder') },
+                { label: 'Get Info', click: () => {} } 
+            );
+        }
+        const menu = Menu.buildFromTemplate(template);
+        menu.popup({ window: BrowserWindow.fromWebContents(event.sender) });
+    });
+    // -----------------------------
+
     ipcMain.on('project:watch', (event, projectPath) => {
         if (activeProjectWatcher) {
             try { activeProjectWatcher.close(); } catch(e) {}
@@ -144,12 +212,7 @@ function setupIpcHandlers() {
     });
 
     ipcMain.handle('project:delete-path', async (event, itemPath) => {
-        try {
-            await shell.trashItem(itemPath); 
-            return { success: true };
-        } catch (e) {
-            return { error: e.message };
-        }
+        try { await shell.trashItem(itemPath); return { success: true }; } catch (e) { return { error: e.message }; }
     });
 
     ipcMain.on('show-project-context-menu', (event, { targetPath, isDirectory }) => {
