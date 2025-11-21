@@ -98,8 +98,10 @@
         "--disable-gpu-sandbox"
       ],
       "desktop": {
-        "Name": "Peak Multiplatform",
-        "Exec": "/opt/Peak Multiplatform/peak-multiplatform"
+        "entry": {
+          "Name": "Peak Multiplatform",
+          "Exec": "/opt/Peak Multiplatform/peak-multiplatform"
+        }
       },
       "depends": [
         "libappindicator3-1",
