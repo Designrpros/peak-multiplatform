@@ -3,7 +3,7 @@ name: Build/Release
 on:
   push:
     tags:
-      - 'v*' # Triggers when you push a tag like v1.0.0
+      - 'v*' # Trigger on git tags like v1.0.0
 
 jobs:
   build:
@@ -11,7 +11,7 @@ jobs:
 
     strategy:
       matrix:
-        # This runs the build on 3 separate computers in the cloud at once
+        # Build on all three platforms simultaneously
         os: [macos-latest, ubuntu-latest, windows-latest]
 
     steps:
@@ -24,24 +24,25 @@ jobs:
           node-version: 20
           cache: 'npm'
 
-      # Linux needs specific tools for .rpm and .deb files
+      # --- UPDATED: Install System Libraries for Canvas/Node-Pty ---
       - name: Install Linux Dependencies
         if: matrix.os == 'ubuntu-latest'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libarchive-tools rpm
+          sudo apt-get install -y build-essential libarchive-tools rpm
+          # Graphics libraries required for node-canvas
+          sudo apt-get install -y libcairo2-dev libpango1.0-dev libjpeg-dev libgif-dev librsvg2-dev
 
       - name: Install Dependencies
         run: npm ci
 
-      # This runs "npm run dist" on the specific OS
-      # It will automatically detect the OS and build the correct files
+      # Run the build (automatically uses the correct script for the OS)
       - name: Build
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npm run dist
 
-      # Uploads the finished files (.exe, .dmg, .deb, etc) to your GitHub Releases page
+      # Upload artifacts to GitHub Releases
       - name: Release
         uses: softprops/action-gh-release@v1
         if: startsWith(github.ref, 'refs/tags/')
