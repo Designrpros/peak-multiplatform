@@ -104,21 +104,6 @@
           "Exec": "'/opt/Peak Multiplatform/peak-multiplatform'"
         }
       }
-    },
-    "deb": {
-      "depends": [
-        "libappindicator3-1",
-        "libasound2",
-        "libdbus-glib-1-2",
-        "libgconf-2-4",
-        "libgtk-3-0",
-        "libnotify4",
-        "libnss3",
-        "libsecret-1-0",
-        "libxkbcommon0",
-        "libappindicator1",
-        "libappindicator3-1"
-      ]
     }
   }
 }
