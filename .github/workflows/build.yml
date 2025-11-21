@@ -41,34 +41,32 @@ jobs:
           sudo apt-get install -y build-essential libarchive-tools rpm
           sudo apt-get install -y libcairo2-dev libpango1.0-dev libjpeg-dev libgif-dev librsvg2-dev
 
-      # FIX: Removed '--omit=optional' so dmg-license installs for macOS
       - name: Install Dependencies
         run: npm install --ignore-scripts
 
-      # 2. Force remove canvas (Safe method for all platforms)
       - name: Remove Canvas
         shell: bash
         run: rm -rf node_modules/canvas || true
 
-      # 3. Rebuild native modules (Essential for node-pty)
       - name: Rebuild Native Modules
         run: npx electron-builder install-app-deps
 
-      # 4. Build for the specific platform
+      # Added '-- -c.publish=never' to prevent electron-builder from trying to upload itself
       - name: Build
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: ${{ matrix.npm_script }}
+        run: ${{ matrix.npm_script }} -- -c.publish=never
 
-      # 5. Release the artifacts
+      # DEBUG STEP: This will show us exactly what files were created in the logs
+      - name: List Dist Contents (Debug)
+        shell: bash
+        run: ls -R dist || echo "Dist folder missing"
+
       - name: Release
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')
         with:
+          # This forces the action to fail if files are missing (so you get a Red X instead of a fake Green)
+          fail_on_unmatched_files: true 
           files: |
-            dist/*.exe
-            dist/*.dmg
-            dist/*.zip
-            dist/*.deb
-            dist/*.rpm
-            dist/*.AppImage
+            dist/*
