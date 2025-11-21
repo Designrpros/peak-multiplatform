@@ -34,9 +34,18 @@ jobs:
           sudo apt-get install -y build-essential libarchive-tools rpm
           sudo apt-get install -y libcairo2-dev libpango1.0-dev libjpeg-dev libgif-dev librsvg2-dev
 
-      # --- CHANGED: Added --omit=optional to skip 'canvas' ---
+      # 1. Install without running scripts (prevents immediate crash)
       - name: Install Dependencies
-        run: npm ci --omit=optional
+        run: npm ci --omit=optional --ignore-scripts
+
+      # 2. Force delete the canvas folder so the rebuilder ignores it
+      - name: Remove Canvas (Windows Fix)
+        shell: bash
+        run: rm -rf node_modules/canvas
+
+      # 3. Manually rebuild the remaining native modules (like node-pty)
+      - name: Rebuild Native Modules
+        run: npx electron-builder install-app-deps
 
       - name: Build
         env:
