@@ -9,13 +9,16 @@ const { pathToFileURL } = require('url');
 const mime = require('mime-types'); 
 dotenv.config();
 
-// --- CRITICAL LINUX FIXES (MUST BE BEFORE app.whenReady()) ---
+// --- CRITICAL LINUX FLAGS (Native Wayland Support) ---
 if (process.platform === 'linux') {
-    // Fix for rendering/stacking bug (working only above VSCode)
-    app.commandLine.appendSwitch('disable-gpu'); 
-    app.commandLine.appendSwitch('disable-software-compositing');
-    // Fix for missing Tray Icon on GNOME/Unity (forces AppIndicator protocol)
-    app.commandLine.appendSwitch('enable-features', 'AppIndicatorSupport');
+    // 1. FILE SYSTEM FIX: Grant access to read local files
+    app.commandLine.appendSwitch('no-sandbox');
+
+    // 2. RENDERING FIX: Run natively on Wayland (Fixes VSCode dependency)
+    app.commandLine.appendSwitch('ozone-platform-hint', 'auto');
+    
+    // 3. WAYLAND INTEGRATION: Fixes shortcuts, tray, and window decorations
+    app.commandLine.appendSwitch('enable-features', 'WaylandWindowDecorations,GlobalShortcutsPortal,AppIndicatorSupport');
 }
 // -------------------------------------------------------------
 
@@ -48,9 +51,20 @@ function hideWindow() {
 function createWindow() {
     const isFloating = settingsStore.get('isFloating', true);
     mainWindow = new BrowserWindow({
-        width: WINDOW_WIDTH, height: WINDOW_HEIGHT, show: false, frame: false, skipTaskbar: true, fullscreenable: false, type: 'panel',
-        alwaysOnTop: isFloating, collectionBehavior: ['canJoinAllSpaces'], level: isFloating ? 'floating' : 'normal', 
-        allowsBackForwardNavigationGestures: true, resizable: true, 
+        width: WINDOW_WIDTH, 
+        height: WINDOW_HEIGHT, 
+        show: false, 
+        frame: false, 
+        skipTaskbar: true, 
+        fullscreenable: false,
+        center: true, // FIX: Start in center of screen on first launch
+        transparent: true, 
+        backgroundColor: '#00000000', 
+        alwaysOnTop: isFloating, 
+        collectionBehavior: ['canJoinAllSpaces'], 
+        level: isFloating ? 'floating' : 'normal', 
+        allowsBackForwardNavigationGestures: true, 
+        resizable: true, 
         webPreferences: { nodeIntegration: true, contextIsolation: false, webviewTag: true, scrollBounce: true }
     });
     mainWindow.loadFile('index.html');
@@ -71,9 +85,12 @@ function createSettingsWindow() {
 }
 
 function createTray() {
-    const iconPath = path.join(__dirname, 'assets', 'Peak-icon.png'); 
+    const iconFileName = (process.platform === 'linux' || process.platform === 'win32') ? 'Peak-icon1.png' : 'Peak-icon.png';
+    const iconPath = path.join(__dirname, 'assets', iconFileName); 
+    
     let icon = nativeImage.createFromPath(iconPath).resize({ width: 25, height: 16 });
     if (process.platform === 'darwin') icon.setTemplateImage(true);
+    
     tray = new Tray(icon);
     tray.setToolTip('Peak Browser');
     const contextMenu = Menu.buildFromTemplate([
@@ -83,63 +100,48 @@ function createTray() {
         { label: 'Quit Peak', click: () => app.quit() }
     ]);
     tray.setContextMenu(contextMenu);
-    tray.on('click', (event, bounds) => {
-        if (!mainWindow || mainWindow.isDestroyed()) createWindow(); 
-        ignoreBlur = true;
-        const { x, y } = getWindowPosition(bounds);
-        if (process.platform === 'darwin') mainWindow.setVisibleOnAllWorkspaces(true);
-        app.focus({ steal: true }); 
-        mainWindow.setPosition(x, y);
-        mainWindow.show();
-        mainWindow.focus(); 
-        setTimeout(() => { ignoreBlur = false; }, 250); 
-    });
+    
+    // FIX: Simply toggle window on click, respecting current position
+    tray.on('click', () => toggleWindow());
 }
 
-function getTargetDisplay(pointOrBounds) {
-    if (pointOrBounds) return screen.getDisplayMatching(pointOrBounds);
-    return screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
-}
-
-function getWindowPosition(pointOrBounds) {
-    if (!mainWindow) return { x: 0, y: 0 };
-    const [w, h] = mainWindow.getSize();
-    const currentDisplay = getTargetDisplay(pointOrBounds);
-    const displayWorkArea = currentDisplay.workArea;
-    let idealX = pointOrBounds ? Math.round(pointOrBounds.x + (pointOrBounds.width / 2) - (w / 2)) : Math.round(displayWorkArea.x + (displayWorkArea.width / 2) - (w / 2));
-    let idealY = pointOrBounds ? Math.round(pointOrBounds.y + pointOrBounds.height + 4) : Math.round(displayWorkArea.y + (displayWorkArea.height / 2) - (h / 2));
-    const finalX = Math.round(Math.min(displayWorkArea.x + displayWorkArea.width - w, Math.max(displayWorkArea.x, idealX)));
-    const finalY = Math.round(Math.min(displayWorkArea.y + displayWorkArea.height - h, Math.max(displayWorkArea.y, idealY)));
-    return { x: finalX, y: finalY };
-}
-
+// FIX: Simplified toggleWindow to respect user placement
 function toggleWindow() {
     if (!mainWindow) return;
-    if (mainWindow.isVisible() && mainWindow.isFocused()) { hideWindow(); } else {
+
+    if (mainWindow.isVisible() && mainWindow.isFocused()) { 
+        hideWindow(); 
+    } else {
+        // Small guard to prevent immediate blur if the OS steals focus for a split second
         ignoreBlur = true; 
+        
         if (process.platform === 'darwin') mainWindow.setVisibleOnAllWorkspaces(true);
-        app.focus({ steal: true });
+        
         mainWindow.show();
         mainWindow.focus(); 
-        setTimeout(() => { ignoreBlur = false; }, 250); 
+        app.focus({ steal: true });
+        
+        setTimeout(() => { ignoreBlur = false; }, 150); 
     }
 }
 
 function registerHotKey() {
     globalShortcut.unregisterAll(); 
     const currentHotkey = settingsStore.get('hotkey', 'Control+Space');
-    globalShortcut.register(currentHotkey, () => toggleWindow());
+    
+    const success = globalShortcut.register(currentHotkey, () => toggleWindow());
+    
+    if (!success) {
+        console.log(`[Hotkey Warning] 'globalShortcut.register' returned false. On Wayland, ensure you have allowed the shortcut in the OS popup.`);
+    } else {
+        console.log(`[Hotkey Success] Registered hotkey: ${currentHotkey}`);
+    }
 }
 
 function setupIpcHandlers() {
-    // --- FINDER HANDLERS ---
-    
     ipcMain.handle('app:get-home-path', () => os.homedir());
-
-    ipcMain.handle('app:open-path', async (event, targetPath) => {
-        return shell.openPath(targetPath);
-    });
-
+    ipcMain.handle('app:open-path', async (event, targetPath) => shell.openPath(targetPath));
+    
     ipcMain.handle('finder:read-dir', async (event, dirPath) => {
         try {
             const dirents = await fs.promises.readdir(dirPath, { withFileTypes: true });
@@ -158,7 +160,6 @@ function setupIpcHandlers() {
                     };
                 } catch (e) { return null; }
             }));
-            
             return files.filter(f => f).sort((a, b) => {
                 if (a.isDirectory === b.isDirectory) return a.name.localeCompare(b.name);
                 return a.isDirectory ? -1 : 1;
@@ -166,7 +167,6 @@ function setupIpcHandlers() {
         } catch (e) { return { error: e.message }; }
     });
 
-    // -- NEW FINDER OPERATIONS --
     ipcMain.handle('finder:rename', async (e, oldPath, newPath) => {
         try { await fs.promises.rename(oldPath, newPath); return { success: true }; } 
         catch (err) { return { error: err.message }; }
@@ -202,7 +202,6 @@ function setupIpcHandlers() {
         const menu = Menu.buildFromTemplate(template);
         menu.popup({ window: BrowserWindow.fromWebContents(event.sender) });
     });
-    // -----------------------------
 
     ipcMain.on('project:watch', (event, projectPath) => {
         if (activeProjectWatcher) {
