@@ -37,39 +37,30 @@ jobs:
       - name: Install Linux Build Dependencies
         if: matrix.os == 'ubuntu-latest'
         run: |
-          # Essential build tools for node-pty and general linux packaging
           sudo apt-get update
           sudo apt-get install -y build-essential libarchive-tools rpm
 
-      # --- FIX 1: Corrected Dependency Install ---
-      # We rely on your existing package.json config to skip optional dependencies (like canvas).
+      # --- FIX: Prevent 'canvas' installation ---
+      # We use --omit=optional. Since 'fabric' lists 'canvas' as optional,
+      # this flag ensures it is NOT installed, respecting your "No Canvas" rule
+      # and fixing the Python/GYP build error.
       - name: Install Dependencies
-        run: npm install --ignore-scripts
+        run: npm install --ignore-scripts --omit=optional
 
-      # --- FIX 2: Implement Wayland/X11 Flags via Environment ---
-      # These environment variables ensure electron-builder includes the correct switches
-      # for the final DEB/AppImage executable on Ubuntu.
       - name: Build
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # These flags are read by electron-builder and embedded into the final executable args
-          # We use the X11 fallback because native Wayland shortcut portal support is tricky.
-          # We must pass the correct environment variables for the final executable.
-          # However, since we determined the issue was Wayland, we should rely on the main.js file
-          # and ensure the build completes successfully.
         run: ${{ matrix.npm_script }}
 
-      # 3. Rebuild native modules (Essential for node-pty)
+      # Rebuild native modules (Essential for node-pty, but skips canvas because it's not there)
       - name: Rebuild Native Modules
         run: npx electron-builder install-app-deps
 
-      # 4. Final Build for the specific platform
       - name: Final Build
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: ${{ matrix.npm_script }}
 
-      # 5. Release the artifacts
       - name: Release
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')
