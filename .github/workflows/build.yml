@@ -34,33 +34,36 @@ jobs:
           node-version: 20
           cache: 'npm'
 
-      - name: Install Linux Build Dependencies
+      - name: Install Linux Dependencies
         if: matrix.os == 'ubuntu-latest'
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential libarchive-tools rpm
+          # These libraries help ensure Electron builds correctly on Linux
+          sudo apt-get install -y libcairo2-dev libpango1.0-dev libjpeg-dev libgif-dev librsvg2-dev
 
-      # --- FIX: Prevent 'canvas' installation ---
-      # We use --omit=optional. Since 'fabric' lists 'canvas' as optional,
-      # this flag ensures it is NOT installed, respecting your "No Canvas" rule
-      # and fixing the Python/GYP build error.
+      # 1. Install ALL dependencies (including optional ones like dmg-license)
+      # We use --ignore-scripts so 'canvas' doesn't try to compile and fail immediately.
       - name: Install Dependencies
-        run: npm install --ignore-scripts --omit=optional
+        run: npm install --ignore-scripts
 
+      # 2. FORCEFULLY remove canvas
+      # This ensures the folder is gone before the build starts, strictly enforcing your rule.
+      - name: Remove Canvas
+        shell: bash
+        run: rm -rf node_modules/canvas || true
+
+      # 3. Rebuild native modules (Essential for node-pty, but skips canvas since it's gone)
+      - name: Rebuild Native Modules
+        run: npx electron-builder install-app-deps
+
+      # 4. Build for the specific platform
       - name: Build
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: ${{ matrix.npm_script }}
 
-      # Rebuild native modules (Essential for node-pty, but skips canvas because it's not there)
-      - name: Rebuild Native Modules
-        run: npx electron-builder install-app-deps
-
-      - name: Final Build
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: ${{ matrix.npm_script }}
-
+      # 5. Release the artifacts
       - name: Release
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')
