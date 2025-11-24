@@ -17,9 +17,6 @@ function renderGlobalToolbar() {
                     <i data-lucide="plus" class="toolbar-button"></i>
                 </a>
                 
-                <a onclick="window.openInspector('terminal')" title="Terminal History" class="toolbar-button-wrapper">
-                    <i data-lucide="terminal" class="toolbar-button"></i>
-                </a>
                 <a onclick="window.openInspector('notes')" title="Note History" class="toolbar-button-wrapper">
                     <i data-lucide="notebook" class="toolbar-button"></i>
                 </a>
@@ -35,10 +32,7 @@ function renderGlobalToolbar() {
                 <a onclick="window.openInspector('whiteboard')" title="Whiteboard History" class="toolbar-button-wrapper">
                     <i data-lucide="pen-tool" class="toolbar-button"></i>
                 </a>
-                <a onclick="window.openInspector('docs')" title="Docs History" class="toolbar-button-wrapper">
-                    <i data-lucide="book-open" class="toolbar-button"></i>
-                </a>
-
+                
                 <a onclick="window.openInspector('log')" title="Web History" class="toolbar-button-wrapper">
                     <i data-lucide="history" class="toolbar-button"></i>
                 </a>
