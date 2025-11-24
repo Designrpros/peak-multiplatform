@@ -1,7 +1,7 @@
 {
   "name": "peak-multiplatform",
   "productName": "Peak Multiplatform",
-  "version": "0.0.11",
+  "version": "0.0.12",
   "description": "Peak Multiplatform Browser",
   "main": "main.js",
   "author": "Vegar Berentsen <designr.pros@gmail.com>",
