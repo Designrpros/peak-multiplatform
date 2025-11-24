@@ -25,6 +25,7 @@
     "@codemirror/lang-markdown": "^6.2.0",
     "@codemirror/lang-python": "latest",
     "@codemirror/lang-xml": "latest",
+    "@codemirror/lint": "latest",
     "@codemirror/state": "latest",
     "@codemirror/theme-one-dark": "^6.1.2",
     "@codemirror/view": "latest",

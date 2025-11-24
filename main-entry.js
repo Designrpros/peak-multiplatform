@@ -1,6 +1,6 @@
 // main-entry.js
 const { ipcRenderer, shell } = require('electron');
-const tabManager = require('./src/tab-manager'); 
+const tabManager = require('./src/tab-manager.js'); 
 const { AvailableModels } = require('./src/utils/enums.js');
 
 window.ipcRenderer = ipcRenderer;
@@ -94,5 +94,3 @@ document.addEventListener('DOMContentLoaded', () => {
     if (window.lucide) window.lucide.createIcons();
     ipcRenderer.send('renderer-ready');
 });
-
-ipcRenderer.on('dropped-whiteboard-file', (event, filePath, x, y) => {});

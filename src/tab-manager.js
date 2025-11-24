@@ -22,7 +22,7 @@ const Kanban = load('./components/Kanban/index.js');
 const Whiteboard = load('./components/Whiteboard/index.js');
 const Docs = load('./components/Docs/index.js');
 const SettingsView = load('./components/SettingsView/index.js');
-const Finder = load('./components/Finder/index.js'); // The new Finder component
+const Finder = load('./components/Finder/index.js'); 
 
 const ChatController = load('./controllers/ChatController.js');
 const WhiteboardController = load('./controllers/WhiteboardController.js'); 
@@ -77,7 +77,7 @@ function getTabIcon(content) {
         case 'whiteboard': return 'pen-tool';
         case 'kanban': return 'check-square';
         case 'docs': return 'book-open';
-        case 'finder': return 'hard-drive'; // Icon for Finder
+        case 'finder': return 'hard-drive'; 
         default: return 'plus'; 
     }
 }
@@ -99,14 +99,24 @@ function renderTabBarOnly() {
     if (addrBar && activeTab) {
         const { type, data } = activeTab.content;
         
-        // Reset nav buttons by default
+        // Update Navigation Buttons State
         const backBtn = document.getElementById('global-nav-back');
         const fwdBtn = document.getElementById('global-nav-forward');
-        if(backBtn) backBtn.disabled = true;
-        if(fwdBtn) fwdBtn.disabled = true;
+        
+        if (backBtn && fwdBtn) {
+            // Reset first
+            backBtn.disabled = true;
+            fwdBtn.disabled = true;
+            
+            if (type === 'web') {
+                if (WebView && WebView.updateWebViewUI) WebView.updateWebViewUI(activeTab.id);
+            } else if (type === 'project') {
+                // Project navigation state is handled by the ProjectView's internal logic updating these buttons
+            }
+        }
 
         if (type === 'web') {
-             if (WebView && WebView.updateWebViewUI) WebView.updateWebViewUI(activeTab.id);
+             // UI updated via WebView helper above
         } else {
              if (type === 'project') addrBar.value = `project://${data.title}`;
              else if (type === 'mindmap') addrBar.value = `mindmap://${data.title}`;
@@ -184,7 +194,8 @@ async function renderContentOnly() {
     const { type, id, data, viewMode } = activeTab.content;
     
     // View types that react to changes or need full redraws
-    const isReactiveView = ['note', 'llmChat', 'project', 'empty', 'mindmap', 'kanban', 'whiteboard', 'finder'].includes(type);
+    // NOTE: Removed 'project' from here to allow persistence
+    const isReactiveView = ['note', 'llmChat', 'empty', 'mindmap', 'kanban', 'whiteboard', 'finder'].includes(type);
 
     if (!container) {
         container = document.createElement('div');
@@ -196,14 +207,30 @@ async function renderContentOnly() {
         container.style.flexDirection = 'column';
         contentArea.appendChild(container);
     } else {
+        // CONTAINER EXISTS (Persistence Logic)
         container.style.display = 'flex';
+        
+        // Special Handling for Persisted Views
+        if (type === 'project') {
+            // Notify the Project View that it is visible again (to resize terminal, etc.)
+            window.dispatchEvent(new CustomEvent('project-tab-shown', { detail: { id: activeTab.id } }));
+            return; // Skip re-render
+        }
+        
         if (type === 'terminal') {
             window.dispatchEvent(new CustomEvent('terminal-tab-shown', { detail: { id: activeTab.id } }));
-            return;
+            return; // Skip re-render
         }
+        
+        if (type === 'web') {
+            // WebViews persist by default, just update UI
+            if (WebView && WebView.updateWebViewUI) WebView.updateWebViewUI(activeTab.id);
+            return; 
+        }
+
         if (!isReactiveView) return;
         
-        // Cleanup previous listeners if re-rendering
+        // Cleanup previous listeners if re-rendering reactive views
         if (tabCleanups.has(activeTab.id)) {
             try { tabCleanups.get(activeTab.id)(); } catch(e) {}
             tabCleanups.delete(activeTab.id);
@@ -220,11 +247,9 @@ async function renderContentOnly() {
                 container.innerHTML = Dashboard.renderDashboardHTML(recentActivity, bookmarks);
                 cleanup = Dashboard.attachDashboardListeners();
             } else if (viewMode === 'finder' && Finder) { 
-                // NEW: Finder Mode
                 container.innerHTML = Finder.renderFinderHTML();
                 cleanup = Finder.attachFinderListeners(data, container);
             } else {
-                // Default Landing Page
                 container.innerHTML = LandingPage.renderLandingPageHTML(activeTab.id);
                 cleanup = LandingPage.attachLandingPageListeners(activeTab.id);
             }
@@ -250,6 +275,7 @@ async function renderContentOnly() {
             } else container.innerHTML = `<div class="error">Chat session not found.</div>`;
         } 
         else if (type === 'project' && ProjectView) {
+            // Initial Render for Project
             ProjectView.renderProjectViewHTML(data, container); 
             cleanup = await ProjectView.attachProjectViewListeners(data, container);
         } 
@@ -267,8 +293,6 @@ async function renderContentOnly() {
             if (data && data.id) {
                 container.innerHTML = Kanban.renderKanbanHTML(data);
                 cleanup = Kanban.attachKanbanListeners(data, container, saveKanban);
-            } else {
-                // Logic for selector would go here
             }
         } 
         else if (type === 'whiteboard' && Whiteboard) {
@@ -280,12 +304,10 @@ async function renderContentOnly() {
             cleanup = Whiteboard.attachWhiteboardListeners(boardId, initialData);
         } 
         else if (type === 'docs' && Docs) {
-            // Fallback or specific docs page
             container.innerHTML = Docs.renderDocsHTML();
             cleanup = Docs.attachDocsListeners();
         }
         else if (type === 'finder' && Finder) {
-            // Tab-based Finder (distinct from landing page finder)
             container.innerHTML = Finder.renderFinderHTML();
             cleanup = Finder.attachFinderListeners(data, container);
         }
@@ -446,23 +468,53 @@ function getActiveTab() {
 }
 
 function setupGlobalNavigation() {
-    const getActiveWebview = () => {
-        const container = document.getElementById(`tab-content-${selectedTabId}`);
-        return container ? container.querySelector('webview') : null;
-    };
     const btnBack = document.getElementById('global-nav-back');
     const btnFwd = document.getElementById('global-nav-forward');
     const btnReload = document.getElementById('global-nav-reload');
 
-    if (btnBack) btnBack.onclick = () => { const wv = getActiveWebview(); if(wv && wv.canGoBack()) wv.goBack(); };
-    if (btnFwd) btnFwd.onclick = () => { const wv = getActiveWebview(); if(wv && wv.canGoForward()) wv.goForward(); };
-    if (btnReload) btnReload.onclick = () => { 
-        const wv = getActiveWebview(); 
+    const handleBack = () => {
+        const activeTab = globalTabs.find(t => t.id === selectedTabId);
+        if (!activeTab) return;
+
+        if (activeTab.content.type === 'project') {
+            const container = document.getElementById(`tab-content-${activeTab.id}`);
+            if (container && container.goBack) container.goBack();
+        } else {
+            // Default WebView Logic
+            const container = document.getElementById(`tab-content-${activeTab.id}`);
+            const wv = container ? container.querySelector('webview') : null;
+            if (wv && wv.canGoBack()) wv.goBack();
+        }
+    };
+
+    const handleForward = () => {
+        const activeTab = globalTabs.find(t => t.id === selectedTabId);
+        if (!activeTab) return;
+
+        if (activeTab.content.type === 'project') {
+            const container = document.getElementById(`tab-content-${activeTab.id}`);
+            if (container && container.goForward) container.goForward();
+        } else {
+            const container = document.getElementById(`tab-content-${activeTab.id}`);
+            const wv = container ? container.querySelector('webview') : null;
+            if (wv && wv.canGoForward()) wv.goForward();
+        }
+    };
+
+    const handleReload = () => {
+        const activeTab = globalTabs.find(t => t.id === selectedTabId);
+        if (!activeTab) return;
+        const container = document.getElementById(`tab-content-${activeTab.id}`);
+        const wv = container ? container.querySelector('webview') : null;
         if(wv) wv.reload(); else reloadActiveTab();
     };
+
+    if (btnBack) btnBack.onclick = handleBack;
+    if (btnFwd) btnFwd.onclick = handleForward;
+    if (btnReload) btnReload.onclick = handleReload;
 }
 
-// --- RENDER VIEW (THE FUNCTION THAT WAS MISSING) ---
+// --- RENDER VIEW ---
 async function renderView() {
     // Check for Settings Mode via URL params
     const urlParams = new URLSearchParams(window.location.search);

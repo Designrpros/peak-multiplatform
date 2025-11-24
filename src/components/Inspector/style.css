@@ -2,21 +2,28 @@
 
 /* --- BASE LAYOUT --- */
 #inspector-container {
-    width: 320px;
+    width: 0; /* Default to closed */
     flex-shrink: 0;
     background-color: var(--window-background-color);
-    border-left: 1px solid var(--border-color);
+    border-left: none; /* No border when closed */
     display: flex;
     flex-direction: column;
     overflow: hidden;
+    transition: width 0.3s cubic-bezier(0.25, 0.8, 0.25, 1); /* Smooth animation */
 }
 
-/* --- COMPACT HEADER --- */
+/* --- VISIBLE STATE --- */
+#inspector-container.visible {
+    width: 320px;
+    border-left: 1px solid var(--border-color);
+}
+
+/* --- COMPACT HEADER (Updated to 36px) --- */
 .inspector-header {
     display: flex;
     align-items: center;
-    height: 50px;
-    padding: 0 16px;
+    height: 36px; /* Reduced from 50px */
+    padding: 0 12px; /* Reduced padding */
     border-bottom: 1px solid var(--border-color);
     flex-shrink: 0;
     z-index: 10;
@@ -28,63 +35,81 @@
     position: relative;
     display: flex;
     align-items: center;
+    height: 24px; /* Explicit height for alignment */
 }
 
 .search-icon {
     position: absolute;
-    left: 8px;
+    left: 4px;
     color: var(--peak-secondary);
     pointer-events: none;
     display: flex;
     align-items: center;
     justify-content: center;
     height: 100%;
+    width: 20px;
 }
-.search-icon svg { width: 14px; height: 14px; }
+
+.search-icon svg { 
+    width: 13px; 
+    height: 13px; 
+    stroke-width: 2px;
+}
 
 .inspector-search-input {
     width: 100%;
+    height: 100%;
     box-sizing: border-box;
-    padding: 6px 6px 6px 32px; /* Left padding for icon */
-    font-size: 13px;
+    padding: 0 0 0 26px; /* Adjusted for new icon position */
+    font-size: 12px;
     border: none;
     background-color: transparent;
     color: var(--peak-primary);
     outline: none;
     font-weight: 500;
+    line-height: 24px;
 }
 
 .inspector-search-input::placeholder {
     color: var(--peak-secondary);
     font-weight: 400;
-    opacity: 0.8;
+    opacity: 0.7;
 }
 
 .header-actions {
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: 2px; /* Tighter gap */
     flex-shrink: 0;
 }
 
+/* --- UPDATED ICON BUTTONS (Small & Compact) --- */
 .icon-btn {
     background: transparent;
     border: none;
     cursor: pointer;
-    padding: 6px;
-    border-radius: 6px;
+    padding: 4px; /* Compact padding */
+    border-radius: 4px;
     display: flex;
     align-items: center;
     justify-content: center;
     color: var(--peak-secondary);
     transition: background-color 0.1s, color 0.1s;
+    width: 22px;  /* Fixed small width */
+    height: 22px; /* Fixed small height */
 }
 
 .icon-btn:hover {
     background-color: rgba(128,128,128,0.1);
     color: var(--peak-primary);
 }
-.icon-btn svg { width: 16px; height: 16px; }
+
+/* Force small icon size */
+.icon-btn svg { 
+    width: 14px !important; 
+    height: 14px !important; 
+    stroke-width: 2px;
+}
 
 /* --- CONTENT LIST --- */
 .inspector-content {
@@ -94,13 +119,13 @@
 }
 
 .inspector-list-item {
-    padding: 10px 16px;
+    padding: 6px 12px; /* Tighter list items */
     cursor: pointer;
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 10px;
     transition: background-color 0.1s;
-    margin: 2px 0;
+    margin: 1px 0;
 }
 
 .inspector-list-item:hover {
@@ -113,17 +138,17 @@
 }
 
 .inspector-item-title {
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 500;
     color: var(--peak-primary);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    margin-bottom: 2px;
+    margin-bottom: 1px;
 }
 
 .inspector-item-subtitle {
-    font-size: 11px;
+    font-size: 10px;
     color: var(--peak-secondary);
     white-space: nowrap;
     overflow: hidden;
@@ -133,12 +158,12 @@
 .empty-inspector-state {
     text-align: center;
     color: var(--peak-secondary);
-    font-size: 13px;
+    font-size: 12px;
     padding: 40px 20px;
     opacity: 0.7;
 }
 
-/* AI Assist Styles */
+/* AI Assist Styles (Legacy) */
 .chat-input-bar { padding: 12px 16px; background-color: var(--window-background-color); border-top: 1px solid var(--border-color); display: flex; flex-direction: column; gap: 8px; }
 .chat-input-bar textarea { width: 100%; min-height: 36px; resize: none; border: 1px solid var(--border-color); border-radius: 8px; padding: 8px; background-color: var(--control-background-color); color: var(--peak-primary); font-family: -apple-system, BlinkMacSystemFont, sans-serif; font-size: 13px; outline: none; }
 .chat-input-controls { display: flex; justify-content: space-between; align-items: center; }
@@ -148,7 +173,7 @@
 .user-message .message-content { background-color: var(--peak-accent); color: white; border-radius: 12px; padding: 8px 12px; }
 .message-list { display: flex; flex-direction: column; gap: 16px; padding: 20px; }
 
-/* This file is dedicated to styling the Whiteboard properties panel */
+/* --- WHITEBOARD PROPERTIES PANE --- */
 
 .whiteboard-properties-pane {
     padding: 0; 
@@ -158,7 +183,6 @@
     overflow-y: auto;
 }
 
-/* This container ensures internal padding and scrollability for content */
 .inspector-content-inner.object-view {
     padding: 0; 
     flex-grow: 1;
@@ -166,11 +190,10 @@
     padding-bottom: 16px; 
 }
 
-
 /* --- 1. SECTION HEADERS --- */
 
 .inspector-section {
-    padding: 12px 16px; 
+    padding: 10px 12px; /* Compact padding */
     border-bottom: 1px solid var(--border-color);
     transition: background-color 0.1s;
 }
@@ -179,42 +202,40 @@
     border-bottom: none;
 }
 
-.inspector-sub-title {
-    font-size: 11px; /* Lightweight font size */
-    font-weight: 700;
-    color: var(--peak-secondary); /* Subdued color for header */
+.inspector-sub-title, .inspector-section-header {
+    font-size: 10px; 
+    font-weight: 600;
+    color: var(--peak-secondary); 
     text-transform: uppercase;
     letter-spacing: 0.8px;
-    margin: 0;
-    margin-bottom: 8px; /* Tighter spacing */
+    margin: 0 0 6px 0;
 }
 
 .inspector-tabs-header {
     display: grid;
-    /* Divide the header space into 3 equal columns for tabs */
     grid-template-columns: repeat(3, 1fr); 
     border-bottom: 1px solid var(--border-color);
     flex-shrink: 0;
     z-index: 10;
+    height: 32px; /* Fixed, compact height */
 }
 
 .inspector-tabs-header .tab-btn {
-    /* Reset icon-btn style for tab behavior */
     background: transparent;
     border: none;
-    padding: 12px 0; /* Vertical padding */
+    padding: 0; /* Remove vertical padding, use flex center */
     cursor: pointer;
-    font-size: 13px;
+    font-size: 11px;
     font-weight: 500;
     color: var(--peak-secondary);
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 6px;
+    gap: 4px;
     transition: color 0.1s;
+    height: 100%;
     
     border-bottom: 2px solid transparent;
-    margin-bottom: -1px; /* Overlap border-bottom */
 }
 
 .inspector-tabs-header .tab-btn:hover {
@@ -228,12 +249,11 @@
     background-color: transparent;
 }
 
-/* New Content Wrapper for Active/Tabbed Views */
-/* This container is where the actual scrollable content sits */
+/* Content Wrappers */
 .inspector-content-wrapper-tabbed,
 .inspector-content-wrapper-active {
     flex-grow: 1;
-    overflow-y: hidden; /* Only the inner panels should scroll */
+    overflow-y: hidden;
     display: flex;
     flex-direction: column;
 }
@@ -241,13 +261,12 @@
 .inspector-content-inner.asset-panel,
 .inspector-content-inner.layer-panel,
 .inspector-content-inner.export-panel {
-    /* These are the individual tab panels, they must scroll internally */
     flex-grow: 1;
     overflow-y: auto;
-    padding: 16px 0; /* Add top/bottom padding for content */
+    padding: 12px 0;
 }
 
-/* Layer List Specific Styles */
+/* Layer List */
 .layer-list-tree {
     list-style: none;
     padding: 0;
@@ -255,12 +274,13 @@
 }
 
 li.layer-item {
-    padding: 8px 16px;
+    padding: 4px 12px; /* Compact layer items */
     cursor: pointer;
     display: flex;
     align-items: center;
     gap: 8px;
     transition: background-color 0.1s;
+    min-height: 24px;
 }
 
 li.layer-item:hover {
@@ -281,100 +301,93 @@ li.layer-item .layer-action-btn {
     margin-left: auto;
 }
 
-
-/* --- 2. PROPERTY ROWS (Key-Value Pairs) --- */
+/* --- 2. PROPERTY ROWS --- */
 
 .property-row {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 12px;
-    margin-bottom: 6px;
-    min-height: 28px;
+    gap: 8px;
+    margin-bottom: 4px;
+    min-height: 24px;
 }
 
 .property-row.wide {
-    /* Used for Textarea/Color pickers that take up most of the width */
     align-items: flex-start;
 }
 
-.property-row label {
-    font-size: 12px;
+.property-row label, .figma-label {
+    font-size: 11px;
     font-weight: 500;
     flex-shrink: 0;
     color: var(--peak-primary);
-    min-width: 60px;
-    line-height: 28px;
+    min-width: 50px;
+    line-height: 24px;
 }
 
-/* Display (Read-Only) Values */
 .property-row.display {
     padding: 0; 
-    margin-bottom: 6px;
-    height: 24px;
+    margin-bottom: 4px;
+    height: 20px;
 }
 
 .property-row span {
-    font-size: 13px;
+    font-size: 11px;
     color: var(--peak-secondary);
 }
 
-/* --- 3. INPUT STYLING (Minimalist/Liquid) --- */
+/* --- 3. INPUT STYLING (Compact) --- */
 
-.property-input {
+.property-input, .figma-input {
     flex-grow: 1;
-    padding: 4px 8px; 
+    padding: 3px 6px; 
     border: 1px solid var(--border-color);
-    border-radius: 6px;
+    border-radius: 4px;
     background-color: var(--control-background-color);
     color: var(--peak-primary);
-    font-size: 13px;
+    font-size: 11px;
     outline: none;
-    height: 28px; 
-    max-width: 100%; /* Default to 100% width, specific controls override */
+    height: 24px; 
+    max-width: 100%;
     transition: border-color 0.2s, box-shadow 0.2s;
-    text-align: right; /* Numbers align right for pro feel */
+    text-align: right;
 }
 
-/* For full-width controls like Color or Text input that shouldn't be constrained */
 .property-row.wide .property-input {
     max-width: none;
     text-align: left;
 }
 
-/* Color Picker & Textarea Overrides */
 .property-input.color-input {
-    width: 32px;
-    height: 28px;
+    width: 28px;
+    height: 24px;
     padding: 0;
-    border-radius: 6px;
+    border-radius: 4px;
     box-shadow: none;
     background-color: var(--control-background-color);
-    flex-grow: 0; /* Important: Don't let it stretch */
+    flex-grow: 0;
 }
 
 .property-input.textarea {
-    max-width: none; /* Allow full width */
+    max-width: none;
     height: auto;
-    min-height: 80px;
+    min-height: 60px;
     line-height: 1.4;
     resize: vertical;
     text-align: left;
-    padding: 8px;
+    padding: 6px;
 }
 
-.property-input:focus {
-    /* Subtle accent box-shadow glow */
+.property-input:focus, .figma-input:focus {
     border-color: transparent;
     box-shadow: 0 0 0 2px rgba(0, 122, 255, 0.1), inset 0 0 0 1px var(--peak-accent); 
     background-color: var(--window-background-color); 
 }
 
-/* --- 4. TRANSFORM GRID (Figma Style) --- */
-/* Reworked to be a single, compact row of 6 inputs for X, Y, W, H, R, S */
+/* --- 4. TRANSFORM GRID --- */
 .transform-grid {
     display: grid;
-    grid-template-columns: repeat(6, 1fr); /* 6 equal columns for compact control */
+    grid-template-columns: repeat(6, 1fr); 
     gap: 4px; 
     margin-bottom: 0;
 }
@@ -385,7 +398,7 @@ li.layer-item .layer-action-btn {
     gap: 0px; 
     border: 1px solid var(--border-color);
     border-radius: 4px; 
-    padding: 4px;
+    padding: 2px 4px;
     background-color: var(--control-background-color);
     overflow: hidden;
 }
@@ -398,36 +411,35 @@ li.layer-item .layer-action-btn {
     margin-bottom: 2px;
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: 2px;
 }
 
 .transform-input {
     padding: 0;
     border: none;
     background: transparent;
-    font-size: 13px;
-    height: 16px; 
+    font-size: 11px;
+    height: 14px; 
     color: var(--peak-primary);
     text-align: left;
     max-width: 100%; 
 }
 
-/* --- 5. LAYERING CONTROLS (NEW & COMPACT) --- */
-/* This section now also uses a grid to align with the transform fields */
+/* --- 5. LAYERING CONTROLS --- */
 .layering-section {
     padding-top: 0;
-    margin-top: -8px; /* Pulls it up closer to the transform controls */
-    padding-bottom: 10px;
+    margin-top: -4px;
+    padding-bottom: 8px;
 }
 
 .layering-controls {
     display: grid;
-    grid-template-columns: repeat(4, 1fr); /* 4 compact buttons */
+    grid-template-columns: repeat(4, 1fr);
     gap: 4px;
 }
 
 .layering-btn {
-    padding: 6px; /* Reduced padding for compact look */
+    padding: 4px;
     border-radius: 4px;
     background-color: var(--control-background-color);
     border: 1px solid var(--border-color);
@@ -438,28 +450,27 @@ li.layer-item .layer-action-btn {
 .layering-btn:hover {
     background-color: var(--peak-accent);
     color: white;
-    transform: none; /* No translation on hover */
+    transform: none;
     border-color: var(--peak-accent);
 }
 
 .layering-btn i {
-    width: 16px;
-    height: 16px;
-    color: inherit; /* Inherit color from button state */
+    width: 14px;
+    height: 14px;
+    color: inherit;
 }
 
 /* --- 6. ASSET GALLERY --- */
-/* (Styles are mostly preserved from existing, already good CSS) */
 .asset-gallery-grid {
     display: grid;
     grid-template-columns: repeat(4, 1fr); 
-    gap: 8px;
+    gap: 6px;
     padding: 0 0 4px 0; 
 }
 
 .asset-gallery-item {
-    padding: 8px 5px; 
-    border-radius: 6px;
+    padding: 6px 4px; 
+    border-radius: 4px;
     border: 1px solid var(--border-color); 
     background-color: var(--control-background-color);
     display: flex;
@@ -477,43 +488,31 @@ li.layer-item .layer-action-btn {
     box-shadow: 0 2px 4px rgba(0, 122, 255, 0.2);
 }
 
-.asset-gallery-item i {
-    color: var(--peak-primary);
-}
-
-.asset-gallery-item:hover i {
-    color: white !important; 
-}
-
 .asset-gallery-item .asset-name {
-    font-size: 10px;
+    font-size: 9px;
     color: var(--peak-secondary);
-    margin-top: 4px;
+    margin-top: 2px;
 }
 
-.asset-gallery-item:hover .asset-name {
-    color: rgba(255, 255, 255, 0.8);
-}
-
+.asset-gallery-item:hover .asset-name { color: rgba(255, 255, 255, 0.8); }
 
 /* --- 7. EXPORT BUTTONS --- */
-
 .export-option-btn {
     width: 100%;
-    padding: 8px 16px; 
+    padding: 6px 12px; 
     border: 1px solid var(--border-color);
-    border-radius: 6px;
+    border-radius: 4px;
     background-color: var(--control-background-color);
     color: var(--peak-primary);
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 500;
     cursor: pointer;
     transition: all 0.1s;
-    margin-bottom: 6px; 
+    margin-bottom: 4px; 
     display: flex; 
     align-items: center;
     justify-content: center;
-    gap: 8px;
+    gap: 6px;
 }
 
 .export-option-btn:hover {
@@ -529,7 +528,7 @@ li.layer-item .layer-action-btn {
      border-color: #ff3b30;
 }
 
-/* --- FIGMA STYLE INSPECTOR ADDITIONS --- */
+/* --- FIGMA STYLE INSPECTOR (Compact) --- */
 
 /* Tabs */
 .figma-tabs {
@@ -537,15 +536,19 @@ li.layer-item .layer-action-btn {
     border-bottom: 1px solid var(--border-color);
     background: var(--window-background-color);
     padding: 0 8px;
+    height: 32px;
 }
 
 .figma-tab {
-    padding: 10px 16px;
-    font-size: 13px;
+    padding: 0 12px;
+    font-size: 11px;
     font-weight: 500;
     color: var(--peak-secondary);
     cursor: pointer;
     border-bottom: 2px solid transparent;
+    display: flex;
+    align-items: center;
+    height: 100%;
 }
 
 .figma-tab:hover { color: var(--peak-primary); }
@@ -556,34 +559,23 @@ li.layer-item .layer-action-btn {
 
 /* Content Container */
 .figma-inspector-content, .figma-assets-panel {
-    padding: 16px;
+    padding: 12px;
     overflow-y: auto;
     height: 100%;
-}
-
-/* Section Headers */
-.inspector-section-header {
-    font-size: 11px;
-    font-weight: 700;
-    color: var(--peak-secondary);
-    text-transform: uppercase;
-    margin-bottom: 8px;
-    letter-spacing: 0.5px;
-    margin-top: 8px;
 }
 
 /* Divider */
 .inspector-divider {
     height: 1px;
     background: var(--border-color);
-    margin: 12px -16px; /* Bleed to edges */
+    margin: 8px -12px; /* Bleed to edges */
 }
 
 /* Grid Layouts */
 .inspector-row {
     display: flex;
-    gap: 8px;
-    margin-bottom: 8px;
+    gap: 6px;
+    margin-bottom: 6px;
     align-items: center;
 }
 .inspector-row.grid-2 {
@@ -593,17 +585,17 @@ li.layer-item .layer-action-btn {
 
 .inspector-row.alignment-row {
     justify-content: space-between;
-    padding: 0 4px;
+    padding: 0 2px;
 }
 
-/* Inputs (Figma Style) */
+/* Inputs (Figma Style - Compact) */
 .figma-input-wrapper {
     display: flex;
     align-items: center;
     background: transparent; 
     border-radius: 2px;
     position: relative;
-    flex: 1; /* Ensure it takes space in grid */
+    flex: 1; 
     min-width: 0;
 }
 
@@ -611,30 +603,27 @@ li.layer-item .layer-action-btn {
     border-color: var(--border-color);
 }
 
-/* Small wrapper for % input in color row */
-.figma-input-wrapper.small {
-    flex: 0 0 60px;
-}
+.figma-input-wrapper.small { flex: 0 0 50px; }
 
 .figma-label {
     position: absolute;
-    left: 8px;
-    font-size: 12px;
+    left: 6px;
+    font-size: 10px;
     color: var(--peak-secondary);
     pointer-events: none;
     z-index: 1;
     display: flex;
     align-items: center;
 }
-.figma-label svg { width: 12px; height: 12px; }
+.figma-label svg { width: 10px; height: 10px; }
 
 .figma-input {
     width: 100%;
     background: transparent;
     border: 1px solid transparent;
     border-radius: 4px;
-    padding: 6px 4px 6px 28px; /* Space for label */
-    font-size: 12px;
+    padding: 4px 4px 4px 24px; /* Compact label space */
+    font-size: 11px;
     color: var(--peak-primary);
     outline: none;
     transition: border-color 0.1s;
@@ -646,25 +635,20 @@ li.layer-item .layer-action-btn {
 }
 
 .figma-input.figma-hex-text {
-    padding-left: 8px; /* No icon for hex usually */
+    padding-left: 6px; 
 }
 
 /* Selects */
-.figma-select-wrapper {
-    flex: 1;
-    position: relative;
-}
-.figma-select-wrapper.full {
-    width: 100%;
-}
+.figma-select-wrapper { flex: 1; position: relative; }
+.figma-select-wrapper.full { width: 100%; }
 .figma-select {
     width: 100%;
     appearance: none;
     background: transparent;
     border: 1px solid transparent;
     border-radius: 4px;
-    padding: 6px 8px;
-    font-size: 12px;
+    padding: 4px 6px;
+    font-size: 11px;
     color: var(--peak-primary);
     outline: none;
     cursor: pointer;
@@ -672,49 +656,43 @@ li.layer-item .layer-action-btn {
 .figma-select:hover { border-color: var(--border-color); }
 .figma-select:focus { border-color: var(--peak-accent); background: var(--control-background-color); }
 
-
 /* Color Row */
 .figma-property-row {
     display: flex;
     align-items: center;
-    gap: 8px;
-    margin-bottom: 8px;
+    gap: 6px;
+    margin-bottom: 6px;
 }
 
 .figma-color-swatch-wrapper {
-    width: 24px;
-    height: 24px;
+    width: 20px;
+    height: 20px;
     position: relative;
     border: 1px solid var(--border-color);
-    border-radius: 4px;
+    border-radius: 3px;
     overflow: hidden;
     flex-shrink: 0;
 }
 
-.figma-color-preview {
-    width: 100%; height: 100%;
-}
-.figma-color-input {
-    position: absolute; top: 0; left: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer;
-}
+.figma-color-preview { width: 100%; height: 100%; }
+.figma-color-input { position: absolute; top: 0; left: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
 
-/* Multi-select */
 .multi-select-label {
-    font-size: 12px;
+    font-size: 11px;
     color: var(--peak-secondary);
     text-align: center;
-    padding: 20px 0;
+    padding: 16px 0;
 }
 
-/* Assets Panel Overrides */
+/* Assets Panel */
 .asset-grid {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
-    gap: 8px;
+    gap: 6px;
 }
 
 .asset-item {
-    height: 80px;
+    height: 64px;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -725,73 +703,55 @@ li.layer-item .layer-action-btn {
     position: relative;
 }
 .asset-item:hover { transform: scale(1.02); z-index: 1; }
-
-.asset-item.sticky { justify-content: flex-start; padding-top: 12px; }
-.asset-label { font-size: 11px; color: var(--peak-secondary); margin-top: 4px; text-align: center; }
+.asset-item.sticky { justify-content: flex-start; padding-top: 8px; }
+.asset-label { font-size: 10px; color: var(--peak-secondary); margin-top: 4px; text-align: center; }
 
 .empty-state-figma {
-    padding: 40px 20px;
+    padding: 30px 16px;
     text-align: center;
     color: var(--peak-secondary);
-    font-size: 13px;
+    font-size: 12px;
 }
 
-/* Buttons */
 .export-btn {
     width: 100%;
-    padding: 8px;
+    padding: 6px;
     border: 1px solid var(--border-color);
     background: var(--window-background-color);
     color: var(--peak-primary);
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 500;
-    border-radius: 6px;
+    border-radius: 4px;
     cursor: pointer;
 }
 .export-btn:hover { border-color: var(--peak-secondary); }
 
-/* Override existing .icon-btn for the specific sizing in Figma panels if needed */
-/* Note: Original class still works for general UI, new specific usage handles alignment buttons */
-
 /* --- SHORTCUTS PANEL --- */
-
-/* CRITICAL FIX: Ensure proper row display for shortcuts */
 .shortcut-row {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 6px 0;
-    font-size: 12px;
+    padding: 4px 0;
+    font-size: 11px;
     color: var(--peak-primary);
-    width: 100%; /* Ensure it fills container */
+    width: 100%;
 }
 
-.shortcut-name {
-    font-weight: 400;
-}
+.shortcut-name { font-weight: 400; }
 
-.shortcut-keys {
-    display: flex;
-    gap: 4px;
-}
+.shortcut-keys { display: flex; gap: 4px; }
 
 .kbd-key {
     background-color: var(--control-background-color);
     border: 1px solid var(--border-color);
-    border-radius: 4px;
-    padding: 2px 6px;
-    font-size: 11px;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    border-radius: 3px;
+    padding: 1px 5px;
+    font-size: 10px;
+    font-family: -apple-system, BlinkMacSystemFont, sans-serif;
     color: var(--peak-secondary);
-    min-width: 20px;
+    min-width: 16px;
     text-align: center;
     box-shadow: 0 1px 0 rgba(0,0,0,0.05);
-}
-
-/* Enhance active tab style for better visibility */
-.figma-tab.active {
-    color: var(--peak-primary);
-    border-bottom: 2px solid var(--peak-accent); 
 }
 
 .layer-item {
@@ -801,101 +761,60 @@ li.layer-item .layer-action-btn {
     align-items: center;
     transition: background-color 0.1s;
     position: relative;
-    min-height: 28px;
+    min-height: 24px;
     color: var(--peak-primary);
 }
 
-.layer-item:hover {
-    background-color: var(--control-background-color);
-}
+.layer-item:hover { background-color: var(--control-background-color); }
+.layer-item.selected { background-color: rgba(0, 122, 255, 0.1); color: var(--peak-accent); font-weight: 500; }
 
-.layer-item.selected {
-    background-color: rgba(0, 122, 255, 0.1); 
-    color: var(--peak-accent);
-    font-weight: 500;
-}
+.layer-actions { margin-left: auto; display: flex; gap: 2px; opacity: 0; transition: opacity 0.1s; }
+.layer-item:hover .layer-actions { opacity: 1; }
 
-.layer-actions {
-    margin-left: auto;
-    display: flex;
-    gap: 2px;
-    opacity: 0; 
-    transition: opacity 0.1s;
-}
+.layer-action-btn { width: 18px; height: 18px; padding: 0; color: var(--peak-secondary); }
+.layer-action-btn:hover { color: var(--peak-primary); background: rgba(0,0,0,0.05); }
 
-.layer-item:hover .layer-actions {
-    opacity: 1; 
-}
-
-.layer-action-btn {
-    width: 20px; 
-    height: 20px;
-    padding: 0;
-    color: var(--peak-secondary);
-}
-
-.layer-action-btn:hover {
-    color: var(--peak-primary);
-    background: rgba(0,0,0,0.05);
-}
-
-/* Title Editing */
-.inspector-item-title {
-    outline: none;
-    padding: 2px 4px;
-    border-radius: 2px;
-    cursor: text;
-}
-
-.inspector-item-title:focus {
-    background: var(--window-background-color);
-    box-shadow: 0 0 0 2px var(--peak-accent);
-}
-
+.inspector-item-title { outline: none; padding: 1px 4px; border-radius: 2px; cursor: text; }
+.inspector-item-title:focus { background: var(--window-background-color); box-shadow: 0 0 0 2px var(--peak-accent); }
 
 /* --- TERMINAL OPS STYLES --- */
-
-/* Re-using inspector-section/sub-title from Whiteboard CSS for consistency */
 .guide-list {
     display: flex;
     flex-direction: column;
-    gap: 8px;
-    padding: 0 16px 16px 16px;
+    gap: 6px;
+    padding: 0 12px 12px 12px;
 }
 
 .cmd-row {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    font-size: 12px;
+    font-size: 11px;
 }
 
 .cmd-row code {
     font-family: monospace;
     background: rgba(128,128,128,0.1);
-    padding: 2px 6px;
-    border-radius: 4px;
+    padding: 2px 4px;
+    border-radius: 3px;
     color: var(--peak-accent);
-    font-size: 11px;
+    font-size: 10px;
 }
 
-.cmd-row span {
-    color: var(--peak-secondary);
-}
+.cmd-row span { color: var(--peak-secondary); }
 
-/* Snippets Grid */
 .snippet-grid {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
-    gap: 8px;
-    padding: 0 16px 16px 16px;
+    gap: 6px;
+    padding: 0 12px 12px 12px;
 }
 
 .snippet-btn {
-    padding: 8px;
+    padding: 6px 8px;
     background: var(--control-background-color);
     border: 1px solid var(--border-color);
-    border-radius: 6px;
+    border-radius: 4px;
     font-size: 11px;
     color: var(--peak-primary);
     cursor: pointer;
@@ -912,21 +831,20 @@ li.layer-item .layer-action-btn {
     background: var(--window-background-color);
 }
 
-/* AI Chat in Inspector */
 .term-chat-history {
     flex: 1;
     overflow-y: auto;
-    padding: 16px;
+    padding: 12px;
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 10px;
     background: var(--text-background-color);
 }
 
 .term-chat-msg {
-    font-size: 13px;
-    padding: 10px;
-    border-radius: 8px;
+    font-size: 12px;
+    padding: 8px 10px;
+    border-radius: 6px;
     max-width: 90%;
     line-height: 1.4;
 }
@@ -944,18 +862,18 @@ li.layer-item .layer-action-btn {
 }
 
 .term-chat-input-box {
-    padding: 12px;
+    padding: 8px 12px;
     border-top: 1px solid var(--border-color);
     background: var(--window-background-color);
-    display: flex; flex-direction: column; gap: 8px;
+    display: flex; flex-direction: column; gap: 6px;
 }
 
 .term-analyze-btn {
     width: 100%;
     background: rgba(128,128,128,0.1);
     border: none;
-    padding: 6px;
-    border-radius: 6px;
+    padding: 4px;
+    border-radius: 4px;
     color: var(--peak-primary);
     font-size: 11px;
     cursor: pointer;
@@ -965,18 +883,10 @@ li.layer-item .layer-action-btn {
     gap: 6px;
     font-weight: 500;
     transition: background-color 0.1s;
+    height: 24px;
 }
 
-.term-analyze-btn:hover {
-    background: rgba(128,128,128,0.15);
-}
+.term-analyze-btn:hover { background: rgba(128,128,128,0.15); }
 
-/* Panel Toggling */
-.term-panel {
-    display: none;
-    height: 100%;
-    flex-direction: column;
-}
-.term-panel.active {
-    display: block; /* or flex for ai panel, overridden in JS */
-}
+.term-panel { display: none; height: 100%; flex-direction: column; }
+.term-panel.active { display: block; }

@@ -1,31 +1,44 @@
-/* src/styles.css */
+/* style.css */
 
-/* --- 1. GLOBAL RESET (CRITICAL FIX) --- */
-/* This ensures padding doesn't add extra width to the sidebar */
-* {
-    box-sizing: border-box;
-}
+/* --- 1. GLOBAL RESET & VARIABLES --- */
+* { box-sizing: border-box; }
 
-/* --- 2. VARIABLES & THEME --- */
 :root {
     --peak-primary: #333333;
     --peak-secondary: #888888;
-    --peak-accent: #007AFF;
+    --peak-accent: #6688AA;
+    
     --text-background-color: #ffffff;
     --control-background-color: #f5f5f7;
     --border-color: #e1e1e1;
-    --window-bg: #ffffff;
+    --window-background-color: #ffffff;
+
+    /* Syntax Highlighting */
+    --syntax-keyword: #AF00DB;
+    --syntax-string: #a31515;
+    --syntax-variable: #001080;
+    --syntax-comment: #008000;
+    --syntax-func: #795E26;
+    --syntax-number: #098658;
 }
 
 @media (prefers-color-scheme: dark) {
     :root {
         --peak-primary: #f5f5f7;
         --peak-secondary: #888888;
-        --peak-accent: #0A84FF;
+        --peak-accent: #7899BB;
+        
         --text-background-color: #1e1e1e;
         --control-background-color: #2c2c2e;
         --border-color: #3a3a3c;
-        --window-bg: #1e1e1e;
+        --window-background-color: #1e1e1e;
+
+        --syntax-keyword: #C586C0;
+        --syntax-string: #CE9178;
+        --syntax-variable: #9CDCFE;
+        --syntax-comment: #6A9955;
+        --syntax-func: #DCDCAA;
+        --syntax-number: #B5CEA8;
     }
 }
 
@@ -34,7 +47,7 @@ body, html {
     height: 100vh; width: 100vw;
     overflow: hidden;
     font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-    background-color: var(--window-bg);
+    background-color: var(--window-background-color); /* Fixes Transparency */
     color: var(--peak-primary);
 }
 
@@ -42,7 +55,6 @@ body, html {
     display: flex; flex-direction: column; height: 100vh; width: 100vw; overflow: hidden;
 }
 
-/* --- 3. MAIN LAYOUT WRAPPER (Split View Logic) --- */
 #content-wrapper {
     flex: 1;
     display: flex;
@@ -59,140 +71,64 @@ body, html {
     flex-direction: column;
     height: 100%;
     position: relative;
-    background-color: var(--window-bg);
+    background-color: var(--window-background-color);
     transition: flex 0.3s cubic-bezier(0.25, 0.8, 0.25, 1); 
 }
 
-/* --- 4. INSPECTOR (FLAT DESIGN / PUSH LAYOUT) --- */
-/* STRICT VERSION: Forces 0 width completely when closed */
+/* --- 2. INSPECTOR SIDEBAR LOGIC --- */
 #inspector-container {
     position: relative;
-    
-    /* Closed State */
-    width: 0 !important;
-    flex-basis: 0 !important;  /* Critical for Flexbox */
-    min-width: 0 !important;
-    padding: 0 !important;
-    border: none !important;
-    margin: 0 !important;
-    
-    background-color: var(--window-bg);
+    width: 0;
+    min-width: 0;
+    overflow: hidden;
+    border-left: none;
+    transition: width 0.3s ease;
+    background-color: var(--window-background-color);
     display: flex;
     flex-direction: column;
-    overflow: hidden; 
-    
-    /* Animate both Width and Flex-Basis */
-    transition: width 0.3s cubic-bezier(0.25, 0.8, 0.25, 1), flex-basis 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
-    z-index: 100;
 }
 
-/* Open State */
 #inspector-container.visible {
-    width: 350px !important;
-    flex-basis: 350px !important;
-    border-left: 1px solid var(--border-color) !important;
+    width: 320px; 
+    border-left: 1px solid var(--border-color);
 }
 
-/* Prevent content from squishing during animation */
-.inspector-header, .inspector-content, .inspector-search-container {
-    min-width: 350px;
-    width: 350px;
+/* --- 3. PROJECT VIEW SIDEBAR LOGIC --- */
+.project-sidebar {
+    transition: width 0.2s ease-in-out;
+}
+.project-view-container.sidebar-collapsed .project-sidebar {
+    width: 0 !important; min-width: 0 !important;
+    padding: 0 !important; border-right: none !important; opacity: 0;
 }
 
-.inspector-header {
-    height: 48px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0 16px;
-    border-bottom: 1px solid var(--border-color);
-    font-weight: 600;
-    background-color: var(--control-background-color);
-    flex-shrink: 0;
+/* --- 4. COMPONENT STYLES --- */
+.webview-container, .tab-content {
+    width: 100%; flex-grow: 1; display: flex; flex-direction: column; overflow: hidden;
 }
-
-.inspector-content {
-    flex: 1;
-    overflow-y: auto;
-}
-
-.inspector-list-item {
-    padding: 12px 16px;
-    border-bottom: 1px solid var(--border-color);
-    cursor: pointer;
-    margin: 2px 0;
-}
-
-.inspector-list-item:hover { background-color: var(--control-background-color); }
-.inspector-item-title { font-weight: 500; font-size: 13px; }
-.inspector-item-subtitle { color: var(--peak-secondary); font-size: 11px; margin-top: 2px; }
-.inspector-search-container { padding: 8px; border-bottom: 1px solid var(--border-color); flex-shrink: 0; }
-.inspector-search-input { width: 100%; padding: 6px; border-radius: 4px; border: 1px solid var(--border-color); background: var(--control-background-color); color: var(--peak-primary); outline: none;}
-
-/* --- 5. COMPONENTS & UTILITIES --- */
-
-/* --- FIX for Whiteboard Canvas Size --- */
-.whiteboard-container canvas {
-    /* Ensures the HTML canvas element respects its container size, which CanvasEngine.js then uses */
-    width: 100% !important;
-    height: 100% !important;
-    display: block; 
-}
-/* ------------------------------------- */
-
-.webview-container {
-    flex: 1; display: flex; flex-direction: column; height: 100%; width: 100%; overflow: hidden;
-}
-webview {
-    flex: 1; height: 100%; width: 100%; display: flex;
-}
-
-.titlebar {
-    height: 40px; display: flex; align-items: center; padding: 0 16px;
-    background-color: var(--control-background-color);
-    border-bottom: 1px solid var(--border-color);
-    -webkit-app-region: drag;
-    flex-shrink: 0;
-}
-
-.tabs-container {
-    display: flex; gap: 8px; flex: 1; overflow-x: auto; -webkit-app-region: no-drag;
-}
-
-.tab {
-    padding: 4px 12px;
-    border-radius: 6px;
-    font-size: 12px;
-    color: var(--peak-secondary);
-    cursor: pointer;
-    display: flex; align-items: center; gap: 8px;
-    background: transparent; transition: 0.1s;
-}
-.tab:hover { background: rgba(0,0,0,0.05); }
-.tab.active {
-    background: var(--text-background-color); color: var(--peak-primary); box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-}
-.tab-close { opacity: 0; padding: 2px; border-radius: 4px; }
-.tab:hover .tab-close { opacity: 1; }
-.tab-close:hover { background: rgba(0,0,0,0.1); }
-
-.new-tab-btn {
-    width: 24px; height: 24px; display: flex; align-items: center; justify-content: center;
-    border-radius: 6px; cursor: pointer; color: var(--peak-secondary);
-}
-.new-tab-btn:hover { background: rgba(0,0,0,0.05); color: var(--peak-primary); }
-
-.icon-btn {
-    background: transparent; border: none; cursor: pointer; padding: 4px;
-    border-radius: 4px; display: flex; align-items: center; justify-content: center; color: var(--peak-secondary);
-}
-.icon-btn:hover { background-color: rgba(0,0,0,0.05); color: var(--peak-primary); }
-.icon-btn i, .icon-btn svg { width: 16px; height: 16px; }
-
+webview { width: 100%; flex-grow: 1; border: none; }
 .error { padding: 20px; color: red; text-align: center; }
 
-/* Project View Sidebar Toggle Helper */
-.sidebar-collapsed .project-sidebar {
-    width: 0px !important; min-width: 0px !important;
-    padding: 0px !important; border-right: none !important; opacity: 0;
+/* Markdown & Syntax */
+.hljs { display: block; overflow-x: auto; color: var(--peak-primary); background: transparent; }
+.hljs-comment { color: var(--syntax-comment); font-style: italic; }
+.hljs-keyword { color: var(--syntax-keyword); }
+.hljs-string { color: var(--syntax-string); }
+
+.markdown-content p { margin: 0 0 8px 0; line-height: 1.5; }
+.markdown-content code { font-family: "SF Mono", monospace; background: rgba(128,128,128,0.15); padding: 2px 4px; border-radius: 4px; color: var(--peak-accent); }
+.markdown-content pre { margin: 8px 0; border-radius: 8px; overflow: hidden; }
+
+.chat-code-block {
+    background-color: var(--control-background-color);
+    border: 1px solid var(--border-color);
+    border-radius: 8px; overflow: hidden; margin: 8px 0; font-size: 13px;
 }
+.code-header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 6px 12px; background: rgba(0,0,0,0.03); border-bottom: 1px solid var(--border-color);
+}
+.copy-btn {
+    background: none; border: none; cursor: pointer; padding: 4px; color: var(--peak-secondary);
+}
+.copy-btn:hover { color: var(--peak-primary); }

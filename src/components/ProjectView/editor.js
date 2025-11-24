@@ -1,202 +1,218 @@
 // src/components/ProjectView/editor.js
-// --- CodeMirror Editor Logic ---
 
-// Helper function to safely extract a named export or check the default export
-function SafeCjsImport(moduleName, exportName) {
-    const module = require(moduleName);
-    if (module && module[exportName]) return module[exportName];
-    if (module && module.default && module.default[exportName]) return module.default[exportName];
-    if (exportName === 'basicSetup' && module) return module;
-    return undefined; 
-}
-
-// Helper function to safely extract a function export (like javascript)
-function SafeCjsFuncImport(moduleName, funcName) {
-    const module = require(moduleName);
-    if (module && module[funcName]) return module[funcName];
-    if (module && module.default && module.default[funcName]) return module.default[funcName];
-    return () => []; 
-}
-
-// Core modules (These must load cleanly)
-const EditorState = SafeCjsImport('@codemirror/state', 'EditorState');
-const EditorView = SafeCjsImport('@codemirror/view', 'EditorView');
-const basicSetup = SafeCjsImport('codemirror', 'basicSetup'); 
-const search = SafeCjsImport('@codemirror/search', 'search'); 
-
-// Language Modules 
-const lang_js_func = SafeCjsFuncImport('@codemirror/lang-javascript', 'javascript');
-const lang_json_func = SafeCjsFuncImport('@codemirror/lang-json', 'json');
-const lang_html_func = SafeCjsFuncImport('@codemirror/lang-html', 'html');
-const lang_css_func = SafeCjsFuncImport('@codemirror/lang-css', 'css'); 
-const lang_markdown_func = SafeCjsFuncImport('@codemirror/lang-markdown', 'markdown');
-
-// --- NEW/MAXIMIZED LANGUAGE IMPORTS ---
-const lang_python_func = SafeCjsFuncImport('@codemirror/lang-python', 'python'); 
-const lang_xml_func = SafeCjsFuncImport('@codemirror/lang-xml', 'xml');
-const lang_java_func = SafeCjsFuncImport('@codemirror/lang-java', 'java'); 
-// --- END NEW IMPORTS ---
-
-
-// --- Local State ---
-let editorView = null; 
-let saveTimeout = null; 
-// --- END Local State ---
-
-
-// --- NEW THEME LOADER FUNCTION (FIXED) ---
-function loadVSCodeTheme(isDarkMode) {
-    let vscodeDark;
-    let vscodeLight;
-    
+// Helper to safely get module exports
+function getModule(name) {
     try {
-        // Dynamic loading inside a function to isolate the scope and failures
-        const VSCodeThemeModule = require('@uiw/codemirror-theme-vscode');
-        
-        // Use robust access pattern for the theme extensions
-        vscodeDark = VSCodeThemeModule.vscodeDark || (VSCodeThemeModule.default && VSCodeThemeModule.default.vscodeDark);
-        vscodeLight = VSCodeThemeModule.vscodeLight || (VSCodeThemeModule.default && VSCodeThemeModule.default.vscodeLight);
-
+        const m = require(name);
+        return m && m.default ? m.default : m;
     } catch (e) {
-        console.warn("Could not load VSCode theme package. Falling back to base style.");
-        // If theme loading fails, we proceed with undefined extensions
-        vscodeDark = undefined;
-        vscodeLight = undefined;
+        console.warn(`[Editor] Failed to load module: ${name}`, e);
+        return {};
     }
-
-    // Determine which theme to return, prioritizing dark mode, then light mode, then base theme.
-    const themeExtension = isDarkMode && vscodeDark 
-        ? vscodeDark 
-        : vscodeLight 
-        ? vscodeLight 
-        : EditorView.baseTheme({}); // Fallback to CodeMirror's internal base theme
-        
-    return themeExtension;
 }
-// --- END NEW THEME LOADER FUNCTION ---
 
+// --- IMPORT MODULES SAFELY ---
+const State = getModule('@codemirror/state');
+const View = getModule('@codemirror/view');
+const Commands = getModule('@codemirror/commands');
+const Language = getModule('@codemirror/language');
+const Autocomplete = getModule('@codemirror/autocomplete');
+const Search = getModule('@codemirror/search');
+const Lint = getModule('@codemirror/lint');
 
-// --- CODE MIRROR HELPERS ---
+// Language Packages
+const LangJs = getModule('@codemirror/lang-javascript');
+const LangJson = getModule('@codemirror/lang-json');
+const LangHtml = getModule('@codemirror/lang-html');
+const LangCss = getModule('@codemirror/lang-css');
+const LangMd = getModule('@codemirror/lang-markdown');
+const LangPy = getModule('@codemirror/lang-python');
+const LangXml = getModule('@codemirror/lang-xml');
+const LangJava = getModule('@codemirror/lang-java');
+
+let editorView = null;
+let saveTimeout = null;
+let debounceDiagnostics = null;
+
+// --- THEME ---
+function loadVSCodeTheme(isDarkMode) {
+    try {
+        const themePkg = getModule('@uiw/codemirror-theme-vscode');
+        if (isDarkMode && themePkg.vscodeDark) return themePkg.vscodeDark;
+        if (!isDarkMode && themePkg.vscodeLight) return themePkg.vscodeLight;
+    } catch (e) {}
+    return View.EditorView ? View.EditorView.baseTheme({}) : [];
+}
 
 function getLanguageExtension(filePath) {
+    if (!filePath) return [];
     const ext = filePath.split('.').pop().toLowerCase();
-    
-    switch (ext) {
-        // --- JavaScript / TypeScript ---
-        case 'js':
-        case 'jsx':
-        case 'mjs':
-        case 'ts':
-        case 'tsx':
-            return lang_js_func({ 
-                jsx: ext.includes('jsx') || ext.includes('tsx'), 
-                typescript: ext.includes('ts') || ext.includes('tsx') 
-            });
-            
-        // --- Structured Data ---
-        case 'json':
-        case 'jsonc':
-            return lang_json_func();
-            
-        // --- Markup / CSS ---
-        case 'html':
-        case 'htm':
-            return lang_html_func();
-        case 'css':
-        case 'less':
-        case 'sass':
-            return lang_css_func();
-        case 'md':
-        case 'markdown':
-            return lang_markdown_func();
-            
-        // --- Expanded Language Support ---
-        case 'py':
-        case 'python':
-            return lang_python_func();
-        case 'xml':
-        case 'svg':
-            return lang_xml_func();
-        case 'java':
-            return lang_java_func();
-            
-        // --- Plain Text / Writing Mode (No Highlighting) ---
-        case 'txt': 
-        case 'log':
-        case '':    
-            return []; 
-            
-        default:
-            // Fallback to JavaScript as requested
-            return lang_js_func(); 
+    try {
+        switch (ext) {
+            case 'js': case 'jsx': case 'mjs': case 'ts': case 'tsx':
+                return LangJs.javascript ? LangJs.javascript({ jsx: true, typescript: true }) : [];
+            case 'json': case 'jsonc': 
+                return LangJson.json ? LangJson.json() : [];
+            case 'html': case 'htm': 
+                return LangHtml.html ? LangHtml.html() : [];
+            case 'css': case 'less': case 'sass': 
+                return LangCss.css ? LangCss.css() : [];
+            case 'md': case 'markdown': 
+                return LangMd.markdown ? LangMd.markdown() : [];
+            case 'py': case 'python': 
+                return LangPy.python ? LangPy.python() : [];
+            case 'xml': case 'svg': 
+                return LangXml.xml ? LangXml.xml() : [];
+            case 'java': 
+                return LangJava.java ? LangJava.java() : [];
+            default: 
+                return []; 
+        }
+    } catch (e) {
+        return [];
     }
+}
+
+function getBaseExtensions() {
+    const exts = [];
+    if (View.lineNumbers) exts.push(View.lineNumbers());
+    if (View.highlightActiveLineGutter) exts.push(View.highlightActiveLineGutter());
+    if (View.highlightSpecialChars) exts.push(View.highlightSpecialChars());
+    if (Commands.history) exts.push(Commands.history());
+    if (Language.foldGutter) exts.push(Language.foldGutter());
+    if (View.drawSelection) exts.push(View.drawSelection());
+    if (View.dropCursor) exts.push(View.dropCursor());
+    if (Language.indentOnInput) exts.push(Language.indentOnInput());
+    
+    if (Language.syntaxHighlighting && Language.defaultHighlightStyle) {
+        exts.push(Language.syntaxHighlighting(Language.defaultHighlightStyle, {fallback: true}));
+    }
+        
+    if (Language.bracketMatching) exts.push(Language.bracketMatching());
+    if (Autocomplete.closeBrackets) exts.push(Autocomplete.closeBrackets());
+    if (Autocomplete.autocompletion) exts.push(Autocomplete.autocompletion());
+    if (View.rectangularSelection) exts.push(View.rectangularSelection());
+    if (View.crosshairCursor) exts.push(View.crosshairCursor());
+    if (View.highlightActiveLine) exts.push(View.highlightActiveLine());
+    if (Search.highlightSelectionMatches) exts.push(Search.highlightSelectionMatches());
+    
+    const keys = [
+        ...(Commands.defaultKeymap || []),
+        ...(Search.searchKeymap || []),
+        ...(Commands.historyKeymap || []),
+        ...(Lint.lintKeymap || [])
+    ];
+    
+    if (View.keymap) exts.push(View.keymap.of(keys));
+
+    return exts;
 }
 
 function setupCodeMirror(container, content, filePath) {
-    if (typeof EditorState === 'undefined' || typeof EditorView === 'undefined' || typeof basicSetup === 'undefined') {
-        console.error("CRITICAL ERROR: CodeMirror core components failed to load.");
-        container.innerHTML = `<div class="project-editor-placeholder error">CRITICAL ERROR: Editor components failed to load.</div>`;
+    if (!State.EditorState || !View.EditorView) {
+        container.innerHTML = `<div class="project-editor-placeholder error">CRITICAL ERROR: CodeMirror core components failed to load.</div>`;
         return null;
     }
-    
+
     if (editorView) {
-        if (editorView.dom.parentNode) {
-            editorView.destroy();
-        }
+        try { editorView.destroy(); } catch(e) {}
         editorView = null;
     }
-    
-    // --- NEW: Debounce function for saving ---
-    const saveContent = (content) => {
+
+    const saveContent = (val) => {
         if (saveTimeout) clearTimeout(saveTimeout);
         saveTimeout = setTimeout(async () => {
-            console.log(`[Editor]: Auto-saving file: ${filePath}`);
-            await window.ipcRenderer.invoke('project:write-file', filePath, content);
-        }, 500); // Debounce save by 500ms
+            await window.ipcRenderer.invoke('project:write-file', filePath, val);
+        }, 500);
     };
-    // --- END NEW ---
-    
+
     const isDarkMode = window.matchMedia('(prefers-color-scheme: dark)').matches;
-    const themeExtension = loadVSCodeTheme(isDarkMode); 
-    
-    const startState = EditorState.create({ 
-        doc: content,
-        extensions: [
-            basicSetup, 
-            getLanguageExtension(filePath),
-            themeExtension, // Apply the selected VSCode theme
-            search(), // Add the search functionality
-            EditorView.updateListener.of((update) => {
-                if (update.docChanged) {
-                    saveContent(update.state.doc.toString());
+
+    // --- DIAGNOSTICS LISTENER (UPDATED) ---
+    const diagnosticsListener = View.EditorView.updateListener.of((update) => {
+        if (debounceDiagnostics) clearTimeout(debounceDiagnostics);
+        
+        debounceDiagnostics = setTimeout(() => {
+            if (!editorView) return;
+            try {
+                const diagnostics = [];
+                if (Lint.forEachDiagnostic) {
+                    const doc = editorView.state.doc;
+                    Lint.forEachDiagnostic(editorView.state, (d) => {
+                        // NEW: Calculate Line and Column
+                        const lineInfo = doc.lineAt(d.from);
+                        const line = lineInfo.number;
+                        const col = d.from - lineInfo.from;
+
+                        diagnostics.push({
+                            from: d.from,
+                            to: d.to,
+                            line: line,
+                            col: col,
+                            severity: d.severity,
+                            message: d.message,
+                            source: d.source // Capture source if available (e.g., 'jshint')
+                        });
+                    });
                 }
-            })
-        ]
+                
+                window.dispatchEvent(new CustomEvent('peak-editor-diagnostics', { 
+                    detail: { diagnostics, filePath } 
+                }));
+            } catch(e) { console.error("Diagnostics error:", e); }
+        }, 600);
+
+        if (update.docChanged) {
+            saveContent(update.state.doc.toString());
+        }
     });
 
-    editorView = new EditorView({
+    const extensions = [
+        ...getBaseExtensions(),
+        getLanguageExtension(filePath),
+        loadVSCodeTheme(isDarkMode),
+        Search.search ? Search.search() : [],
+        diagnosticsListener
+    ];
+
+    if (Lint.lintGutter) extensions.push(Lint.lintGutter());
+    if (Lint.lint) extensions.push(Lint.lint());
+
+    if ((filePath.endsWith('.json') || filePath.endsWith('.jsonc')) && LangJson.jsonParseLinter && Lint.linter) {
+        extensions.push(Lint.linter(LangJson.jsonParseLinter()));
+    }
+
+    const startState = State.EditorState.create({
+        doc: content,
+        extensions: extensions
+    });
+
+    editorView = new View.EditorView({
         state: startState,
         parent: container
     });
-    
-    console.log('[ProjectView]: CodeMirror Editor initialized successfully and mounted.');
-    
+
+    container.jumpToLine = (pos) => {
+        if (!editorView) return;
+        const safePos = Math.min(Math.max(0, pos), editorView.state.doc.length);
+        editorView.dispatch({
+            selection: { anchor: safePos, head: safePos },
+            scrollIntoView: true
+        });
+        editorView.focus();
+    };
+
     return editorView;
 }
 
 function disposeEditor(view) {
     if (view) {
-        // IMPORTANT: Clear any pending save operation when closing the tab
-        if (saveTimeout) {
-            clearTimeout(saveTimeout);
-            saveTimeout = null;
-        }
+        if (saveTimeout) clearTimeout(saveTimeout);
+        if (debounceDiagnostics) clearTimeout(debounceDiagnostics);
         view.destroy();
         editorView = null;
+        window.dispatchEvent(new CustomEvent('peak-editor-diagnostics', { detail: { diagnostics: [], filePath: null } }));
     }
 }
 
-module.exports = {
-    setupCodeMirror,
-    disposeEditor,
-};
+module.exports = { setupCodeMirror, disposeEditor };

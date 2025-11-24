@@ -83,20 +83,21 @@
     outline: none;
     transition: border-color 0.1s;
     text-align: center;
-    background-color: rgba(0,0,0,0.03);
+    /* FIX: Transparent background as requested */
+    background-color: transparent;
     color: var(--peak-primary);
 }
 
 @media (prefers-color-scheme: dark) {
     .address-bar {
-        background-color: rgba(255,255,255,0.08);
+        background-color: transparent;
     }
 }
 
 
 .address-bar:focus {
     border-color: var(--peak-accent);
-    background-color: var(--control-background-color);
+    background-color: transparent;
 }
 
 .global-toolbar-controls {
