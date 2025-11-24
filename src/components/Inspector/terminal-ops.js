@@ -12,7 +12,7 @@ const TERM_OPS_SESSION_ID = -888;
 let termStreamingMessageRef = null;
 let termLocalListener = null;
 
-// In-memory storage for user snippets (resets on app reload)
+// In-memory storage for user snippets
 let userSnippets = []; 
 
 const DEFAULT_SNIPPETS = [
@@ -67,23 +67,6 @@ function getTerminalOpsHTML() {
                     <div class="cmd-row"><code>du -sh [dir]</code> <span>Folder size</span></div>
                     <div class="cmd-row"><code>whoami</code> <span>Current user</span></div>
                 </div>
-
-                <div class="inspector-section"><h4 class="inspector-sub-title">Network</h4></div>
-                <div class="guide-list">
-                    <div class="cmd-row"><code>ping [host]</code> <span>Check host</span></div>
-                    <div class="cmd-row"><code>curl -I [url]</code> <span>Check headers</span></div>
-                    <div class="cmd-row"><code>ifconfig</code> <span>Interfaces</span></div>
-                    <div class="cmd-row"><code>lsof -i :[port]</code> <span>Check port</span></div>
-                    <div class="cmd-row"><code>ssh [user]@[host]</code> <span>SSH connect</span></div>
-                </div>
-
-                <div class="inspector-section"><h4 class="inspector-sub-title">Permissions</h4></div>
-                <div class="guide-list">
-                    <div class="cmd-row"><code>chmod +x [file]</code> <span>Make executable</span></div>
-                    <div class="cmd-row"><code>chmod 777 [file]</code> <span>Full rights</span></div>
-                    <div class="cmd-row"><code>chown [user] [file]</code> <span>Change owner</span></div>
-                    <div class="cmd-row"><code>sudo [cmd]</code> <span>Run as superuser</span></div>
-                </div>
             </div>
 
             <div id="panel-snippets" class="term-panel" style="display:none; flex-direction: column; height: 100%;">
@@ -98,27 +81,26 @@ function getTerminalOpsHTML() {
 
             <div id="panel-ai" class="term-panel" style="display:none; flex-direction:column; height:100%; overflow: hidden;">
                 
-                <div class="term-chat-history" id="term-inspector-history" style="flex: 1; min-height: 0; overflow-y: auto; padding: 16px 16px 20px 16px; display: flex; flex-direction: column; gap: 16px;">
+                <div class="term-chat-history" id="term-inspector-history" style="flex: 1; min-height: 0; overflow-y: auto; padding: 16px;">
                     <div class="term-chat-msg ai markdown-content" style="padding: 0; background: transparent; overflow-wrap: anywhere;">
-                        Ready to assist with terminal commands.
+                        Ready to assist. I can analyze terminal output or suggest commands.
                     </div>
                     <div id="streaming-message-container-term"></div>
                 </div>
                 
-                <div class="chat-input-container" style="flex-shrink: 0; padding: 12px 0; background: var(--window-background-color); border-top: 1px solid var(--border-color); width: 100%;">
-                    <div class="chat-input-box" style="width: 100%; margin: 0; border-left: none; border-right: none; border-bottom: none; border-top: none; border-radius: 0; padding: 0; background: var(--window-background-color); box-shadow: none;">
+                <div class="inspector-input-container">
+                    <div class="inspector-input-box">
+                        <textarea class="chat-textarea" id="term-inspector-input" placeholder="Ask AI about terminal..." rows="1"></textarea>
                         
-                        <textarea class="chat-textarea" id="term-inspector-input" placeholder="Ask AI about terminal..." rows="1" style="background: transparent; border: 1px solid var(--border-color); border-radius: 8px; width: calc(100% - 24px); margin: 0 12px; padding: 10px 12px; outline: none; resize: none; font-size: 13px; color: var(--peak-primary); font-family: inherit; line-height: 1.4; max-height: 100px; box-sizing: border-box;"></textarea>
-                        
-                        <div class="chat-controls" style="display: flex; justify-content: space-between; padding: 8px 12px 0 12px; align-items: center;">
+                        <div class="chat-controls">
                             <div class="left-controls">
-                                 <button class="chat-icon-btn" id="btn-inspector-analyze" title="Read Terminal Screen" style="background: transparent; border: none; cursor: pointer; color: var(--peak-secondary); padding: 4px; border-radius: 4px;">
-                                    <i data-lucide="scan-search" style="width: 16px; height: 16px;"></i>
+                                 <button class="chat-icon-btn" id="btn-inspector-analyze" title="Read Terminal Screen">
+                                    <i data-lucide="scan-search"></i>
                                  </button>
                             </div>
                             <div class="right-controls">
-                                 <button id="term-inspector-send" class="chat-submit-btn" disabled style="background: var(--peak-accent); border: none; border-radius: 6px; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; color: white; cursor: pointer; transition: opacity 0.2s; padding: 0;">
-                                    <i data-lucide="arrow-up" style="width: 14px; height: 14px; stroke-width: 2.5;"></i>
+                                 <button id="term-inspector-send" class="chat-submit-btn" disabled>
+                                    <i data-lucide="arrow-up"></i>
                                  </button>
                             </div>
                         </div>
@@ -130,7 +112,6 @@ function getTerminalOpsHTML() {
 }
 
 function attachTerminalOpsListeners(container) {
-    // ... (Tab Logic & Snippets Logic unchanged) ...
     const tabs = container.querySelectorAll('.tab-btn');
     const panels = container.querySelectorAll('.term-panel');
     
@@ -147,14 +128,27 @@ function attachTerminalOpsListeners(container) {
         });
     });
 
+    // Helper to get the active terminal ID
     const getActiveTerminalId = () => {
         if (!window.tabManager || !window.tabManager.getActiveTab) return null;
         const tab = window.tabManager.getActiveTab();
+        
         if (tab.content.type === 'terminal') return tab.id;
-        if (tab.content.type === 'project') return window.projectTerminalMap ? window.projectTerminalMap[tab.id] : null;
+        
+        if (tab.content.type === 'project') {
+            const tabId = tab.id;
+            const projectData = window.projectTerminalsData ? window.projectTerminalsData[tabId] : null;
+            if (projectData && projectData.terminals && projectData.terminals.length > 0) {
+                const activeIndex = projectData.activeIndex;
+                if (activeIndex >= 0 && activeIndex < projectData.terminals.length) {
+                    return projectData.terminals[activeIndex].id;
+                }
+            }
+        }
         return null;
     };
 
+    // --- SNIPPETS ---
     const renderSnippets = () => {
         const listContainer = container.querySelector('#snippets-list-container');
         if (!listContainer) return;
@@ -196,21 +190,15 @@ function attachTerminalOpsListeners(container) {
         if(window.lucide) window.lucide.createIcons();
     };
 
+    // ... (Snippet input logic same as before) ...
     const addSnippetInput = container.querySelector('#new-snippet-cmd');
     const addSnippetBtn = container.querySelector('#btn-add-snippet');
-
     const addSnippet = () => {
         const cmd = addSnippetInput.value.trim();
-        if (cmd) {
-            userSnippets.unshift({ cmd, label: cmd });
-            addSnippetInput.value = '';
-            renderSnippets();
-        }
+        if (cmd) { userSnippets.unshift({ cmd, label: cmd }); addSnippetInput.value = ''; renderSnippets(); }
     };
-
     if (addSnippetBtn) addSnippetBtn.addEventListener('click', addSnippet);
     if (addSnippetInput) addSnippetInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') addSnippet(); });
-
     renderSnippets();
 
     // --- AI Logic ---
@@ -220,41 +208,47 @@ function attachTerminalOpsListeners(container) {
     const analyzeBtn = container.querySelector('#btn-inspector-analyze');
     const streamingContainer = container.querySelector('#streaming-message-container-term');
 
-    // Auto-resize logic
+    // Apply Logic for Terminal
+    container.addEventListener('click', (e) => {
+        const btn = e.target.closest('.apply-btn');
+        if (btn) {
+            e.stopPropagation();
+            const codeBlock = btn.closest('.chat-code-block');
+            if (codeBlock) {
+                const cmd = codeBlock.querySelector('code').textContent.trim();
+                const tabId = getActiveTerminalId();
+                
+                if (tabId) {
+                    // Visual Feedback
+                    const originalHTML = btn.innerHTML;
+                    btn.innerHTML = '<i data-lucide="check"></i> Sent';
+                    btn.style.color = '#10B981';
+                    if(window.lucide) window.lucide.createIcons();
+                    setTimeout(() => { btn.innerHTML = originalHTML; btn.style.color = ''; if(window.lucide) window.lucide.createIcons(); }, 1500);
+
+                    // Send Command
+                    window.ipcRenderer.send('terminal-write', tabId, cmd + '\r');
+                } else {
+                    alert("No active terminal found to send command.");
+                }
+            }
+        }
+    });
+
     inputEl.addEventListener('input', () => {
         inputEl.style.height = 'auto';
         inputEl.style.height = Math.min(inputEl.scrollHeight, 100) + 'px';
         sendBtn.disabled = inputEl.value.trim().length === 0;
-        sendBtn.style.opacity = sendBtn.disabled ? '0.3' : '1';
     });
 
     const appendMsg = (text, role) => {
         const div = document.createElement('div');
         const isUser = role === 'user';
-        
         div.className = `term-chat-msg ${isUser ? 'user' : 'ai'} markdown-content`;
-        
-        // FIX: Consistent styling with ai-assist.js
-        div.style.cssText = `
-            padding: ${isUser ? '10px 14px' : '0'};
-            border-radius: ${isUser ? '10px' : '0'};
-            font-size: 13px;
-            line-height: 1.5;
-            max-width: ${isUser ? '85%' : '100%'};
-            width: ${isUser ? 'fit-content' : '100%'}; 
-            overflow-wrap: anywhere; 
-            white-space: normal;
-            box-sizing: border-box;
-            ${isUser 
-                ? 'background: var(--peak-accent); color: white; align-self: flex-end; margin-bottom: 12px;' 
-                : 'background: transparent; color: var(--peak-primary); align-self: flex-start; margin-bottom: 12px;'}
-        `;
-        
+        div.style.cssText = `padding: ${isUser ? '8px 12px' : '0'}; border-radius: ${isUser ? '10px' : '0'}; font-size: 13px; line-height: 1.5; max-width: ${isUser ? '85%' : '100%'}; width: ${isUser ? 'fit-content' : '100%'}; overflow-wrap: anywhere; white-space: normal; ${isUser ? 'background: var(--peak-accent); color: white; align-self: flex-end; margin-bottom: 12px;' : 'background: transparent; color: var(--peak-primary); align-self: flex-start; margin-bottom: 12px;'}`;
         div.innerHTML = isUser ? text.replace(/\n/g, '<br>') : renderMarkdown(text);
-        
         historyEl.insertBefore(div, streamingContainer);
         historyEl.scrollTop = historyEl.scrollHeight;
-        
         if(window.lucide) window.lucide.createIcons();
     };
 
@@ -262,26 +256,19 @@ function attachTerminalOpsListeners(container) {
         if (id !== TERM_OPS_SESSION_ID || !termStreamingMessageRef) return;
         if (data.type === 'data') {
             termStreamingMessageRef.content += data.content;
-            
             let bubble = streamingContainer.querySelector('.term-chat-msg');
             if (!bubble) {
                 bubble = document.createElement('div');
                 bubble.className = 'term-chat-msg ai markdown-content';
-                bubble.style.cssText = 'padding: 0; font-size: 13px; line-height: 1.6; width: 100%; overflow-wrap: anywhere; white-space: normal; background: transparent; color: var(--peak-primary); align-self: flex-start; margin-bottom: 12px;';
+                bubble.style.cssText = 'padding: 0; font-size: 13px; line-height: 1.6; width: 100%; overflow-wrap: anywhere; background: transparent; color: var(--peak-primary); align-self: flex-start; margin-bottom: 12px;';
                 streamingContainer.appendChild(bubble);
             }
-            
             bubble.innerHTML = renderMarkdown(termStreamingMessageRef.content);
             historyEl.scrollTop = historyEl.scrollHeight;
-            
         } else if (data.type === 'end' || data.type === 'error') {
             const content = termStreamingMessageRef.content;
-            if (content) {
-                streamingContainer.innerHTML = ''; 
-                appendMsg(content, 'ai');
-            }
+            if (content) { streamingContainer.innerHTML = ''; appendMsg(content, 'ai'); }
             if (data.type === 'error') appendMsg(`Error: ${data.message}`, 'ai');
-            
             termStreamingMessageRef = null;
             inputEl.disabled = false;
             inputEl.focus();
@@ -292,40 +279,18 @@ function attachTerminalOpsListeners(container) {
 
     const startAIQuery = (promptText) => {
         if (termStreamingMessageRef) return;
-        inputEl.value = '';
-        inputEl.style.height = 'auto';
-        inputEl.disabled = true;
-        sendBtn.disabled = true;
-        sendBtn.style.opacity = '0.3';
-        
+        inputEl.value = ''; inputEl.style.height = 'auto'; inputEl.disabled = true; sendBtn.disabled = true;
         termStreamingMessageRef = { role: 'assistant', content: '' };
-        
-        // FIX: Use inner flex container for spinner, keep outer block
-        streamingContainer.innerHTML = `
-            <div class="term-chat-msg ai" style="padding: 0; font-size: 13px; background: transparent; color: var(--peak-secondary); align-self: flex-start;">
-                <div style="display:flex; align-items:center; gap:6px;">
-                    <i data-lucide="loader-2" class="spin" style="width:14px; height:14px; animation: spin 1s linear infinite;"></i> Thinking...
-                </div>
-            </div>
-            <style>@keyframes spin { 100% { transform: rotate(360deg); } }</style>
-        `;
-        
+        streamingContainer.innerHTML = `<div class="term-chat-msg ai" style="padding:0; font-size:13px; color:var(--peak-secondary);"><i data-lucide="loader-2" class="spin"></i> Thinking...</div>`;
         if(window.lucide) window.lucide.createIcons();
-        historyEl.scrollTop = historyEl.scrollHeight;
-
-        const systemPrompt = "You are an expert software engineer and terminal wizard. Provide concise, accurate CLI commands and explanations. Use markdown code blocks.";
+        
+        const systemPrompt = "You are a terminal expert. Output commands in Markdown blocks (```bash ... ```) so the user can click 'Apply' to run them.";
         const messages = [{ role: 'system', content: systemPrompt }, { role: 'user', content: promptText }];
         const model = 'google/gemini-2.0-flash-001'; 
         window.ipcRenderer.send('llm-stream-request', TERM_OPS_SESSION_ID, model, messages);
     };
 
-    const handleSend = () => {
-        const text = inputEl.value.trim();
-        if (!text) return;
-        appendMsg(text, 'user');
-        startAIQuery(text);
-    };
-
+    const handleSend = () => { const text = inputEl.value.trim(); if (!text) return; appendMsg(text, 'user'); startAIQuery(text); };
     sendBtn.addEventListener('click', handleSend);
     inputEl.addEventListener('keydown', (e) => { if(e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } });
 
@@ -341,15 +306,14 @@ function attachTerminalOpsListeners(container) {
                 const line = buffer.getLine(i);
                 if (line) screenContent += line.translateToString(true) + "\n";
             }
-            appendMsg("Analyzing recent terminal output...", 'user');
-            startAIQuery(`The user is asking for help with their terminal. Here is the recent screen output:\n\`\`\`\n${screenContent}\n\`\`\`\n\nAnalyze the output, identify any errors or status, and suggest the next logical step or command.`);
+            appendMsg("Reading terminal...", 'user');
+            startAIQuery(`Analyze this terminal output and suggest the next command:\n\`\`\`\n${screenContent}\n\`\`\``);
         } else {
-            appendMsg("Error: No active terminal found to analyze.", 'ai');
+            appendMsg("Error: No active terminal.", 'ai');
         }
     });
 
     if(window.lucide) window.lucide.createIcons();
-
     return () => { window.ipcRenderer.removeListener('llm-stream-data', termLocalListener); };
 }
 

@@ -7,7 +7,8 @@ let aiAssist = null;
 let terminalOps = null;
 
 try {
-    aiAssist = require('./ai-assist.js');
+    // FIX: Point to new folder structure
+    aiAssist = require('../AIAssistant/index.js');
 } catch (e) {
     console.error("[Inspector] Failed to load AI Assist module:", e);
 }

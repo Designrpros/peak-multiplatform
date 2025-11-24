@@ -1,111 +1,19 @@
-// src/components/Inspector/ai-assist.js
-const { AvailableModels } = require('../../utils/enums.js');
+// src/components/AIAssistant/AIAssistantLogic.js
+const { ipcRenderer } = require('electron');
 const path = require('path');
-const { ipcRenderer } = require('electron'); 
 const { renderMarkdown } = require('../../utils/markdown.js');
 
 const AI_ASSIST_SESSION_ID = -999; 
 let assistStreamingMessageRef = null;
 let assistLocalListener = null;
 
-function getDocsUrl(filePath) {
-    if (!filePath) return 'https://devdocs.io';
-    const ext = path.extname(filePath).toLowerCase();
-    const map = {
-        '.js': 'javascript', '.jsx': 'javascript', '.ts': 'typescript', '.tsx': 'typescript',
-        '.html': 'html', '.css': 'css', '.scss': 'sass', '.py': 'python',
-        '.java': 'java', '.rb': 'ruby', '.php': 'php', '.go': 'go',
-        '.rs': 'rust', '.c': 'c', '.cpp': 'cpp', '.json': 'json', '.md': 'markdown',
-        '.sh': 'bash', '.yaml': 'yaml', '.yml': 'yaml'
-    };
-    return map[ext] ? `https://devdocs.io/${map[ext]}/` : 'https://devdocs.io';
-}
-
-function getAIAssistHTML(currentFileContent, currentFilePath, currentFileContentError) {
-    const isError = !!currentFileContentError;
-    const isContentEmpty = !currentFileContent || currentFileContent.length === 0;
-    const isFileContextUsable = !!currentFilePath && !isError && !isContentEmpty;
-    const fileName = currentFilePath ? path.basename(currentFilePath) : 'None';
-    const docsUrl = getDocsUrl(currentFilePath);
-    
-    let initialText = '';
-    if (isError) initialText = `Error reading file: ${currentFileContentError}`;
-    else if (isFileContextUsable) initialText = `Hi! I'm ready to help with **${fileName}**.\n\nAsk me to explain, refactor, or debug this file.`;
-    else initialText = `Select a non-empty file in the Project View to enable context-aware assistance.`;
-
-    return `
-        <div class="inspector-tabs-header">
-            <button class="tab-btn active" data-target="ai">AI Assist</button>
-            <button class="tab-btn" data-target="docs">Docs</button>
-            <button class="tab-btn" data-target="live">Live</button>
-        </div>
-
-        <div id="ai-assist-content" class="inspector-content-inner" style="height: calc(100% - 40px); overflow: hidden; display: flex; flex-direction: column; padding: 0;">
-            
-            <div id="panel-ai" class="term-panel active" style="display:flex; flex-direction:column; height:100%; overflow: hidden;">
-                
-                <div class="term-chat-history" id="ai-assist-scroller" style="flex: 1; min-height: 0; overflow-y: auto; padding: 16px 16px 20px 16px; display: flex; flex-direction: column; gap: 16px;">
-                    <div class="term-chat-msg ai markdown-content" style="padding: 0; background: transparent; overflow-wrap: anywhere;">
-                        ${renderMarkdown(initialText)}
-                    </div>
-                    <div id="ai-assist-chat-thread"></div>
-                    <div id="streaming-message-container-assist"></div>
-                </div>
-                
-                ${renderAssistInputBar(isFileContextUsable)}
-            </div>
-
-            <div id="panel-docs" class="term-panel" style="display:none; height:100%; flex-direction: column;">
-                <webview id="inspector-docs-view" src="${docsUrl}" style="flex: 1; width: 100%; height: 100%; border: none;" webpreferences="contextIsolation=true"></webview>
-            </div>
-
-            <div id="panel-live" class="term-panel" style="display:none; height:100%; flex-direction: column;">
-                <div style="padding: 8px 12px; background: var(--window-background-color); border-bottom: 1px solid var(--border-color); display: flex; gap: 8px;">
-                    <input type="text" id="live-url-input" value="http://localhost:3000" style="flex: 1; background: var(--control-background-color); border: 1px solid var(--border-color); border-radius: 6px; padding: 4px 8px; font-size: 12px; color: var(--peak-primary); outline: none;">
-                    <button id="btn-live-refresh" class="icon-btn" style="padding: 4px;"><i data-lucide="rotate-cw" style="width: 14px; height: 14px;"></i></button>
-                    <button id="btn-live-popout" class="icon-btn" style="padding: 4px;" title="Open in Tab"><i data-lucide="external-link" style="width: 14px; height: 14px;"></i></button>
-                </div>
-                <webview id="inspector-live-view" src="http://localhost:3000" style="flex: 1; width: 100%; height: 100%; border: none; background: white;" webpreferences="contextIsolation=true, nodeIntegration=false"></webview>
-            </div>
-        </div>
-    `;
-}
-
-function renderAssistInputBar(isFileContextUsable) {
-    const defaultModel = AvailableModels.find(m => m.id === 'openrouter/auto') || AvailableModels[0];
-    const isDisabled = !isFileContextUsable;
-    
-    return `
-        <div class="chat-input-container" style="flex-shrink: 0; padding: 12px 0; background: var(--window-background-color); border-top: 1px solid var(--border-color); width: 100%;">
-            <div class="chat-input-box" style="width: 100%; margin: 0; border-left: none; border-right: none; border-bottom: none; border-top: none; border-radius: 0; padding: 0; background: var(--window-background-color); box-shadow: none;">
-                
-                <textarea class="chat-textarea" id="ai-assist-input-textarea" 
-                    placeholder="${isDisabled ? 'Select a file...' : 'Ask about this file...'}" 
-                    rows="1" 
-                    ${isDisabled ? 'disabled' : ''}
-                    style="background: transparent; border: 1px solid var(--border-color); border-radius: 8px; width: calc(100% - 24px); margin: 0 12px; padding: 10px 12px; outline: none; resize: none; font-size: 13px; color: var(--peak-primary); font-family: inherit; line-height: 1.4; max-height: 100px; box-sizing: border-box;"></textarea>
-                
-                <div class="chat-controls" style="display: flex; justify-content: space-between; padding: 8px 12px 0 12px; align-items: center;">
-                    <div class="left-controls" style="flex: 1;">
-                         <div class="model-selector-wrapper" style="position:relative; width: 100%;">
-                            <select id="ai-assist-model-select" class="model-select" ${isDisabled ? 'disabled' : ''} style="background: transparent; border: none; font-size: 11px; color: var(--peak-secondary); cursor: pointer; outline: none; width: 100%; text-overflow: ellipsis;">
-                                ${AvailableModels.map(model => `<option value="${model.id}" ${model.id === defaultModel.id ? 'selected' : ''}>${model.name}</option>`).join('')}
-                            </select>
-                         </div>
-                    </div>
-                    <div class="right-controls">
-                         <button id="ai-assist-submit-button" class="chat-submit-btn" disabled style="background: var(--peak-accent); border: none; border-radius: 6px; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; color: white; cursor: pointer; transition: opacity 0.2s; padding: 0;">
-                            <i data-lucide="arrow-up" style="width: 14px; height: 14px; stroke-width: 2.5;"></i>
-                         </button>
-                         <button id="ai-assist-stop-button" class="chat-submit-btn" style="display: none; background: #ff3b30; border: none; border-radius: 6px; width: 24px; height: 24px; align-items: center; justify-content: center; color: white; cursor: pointer; padding: 0;">
-                            <i data-lucide="square" style="width: 12px; height: 12px; fill: white;"></i>
-                         </button>
-                    </div>
-                </div>
-            </div>
-        </div>
-    `;
-}
+// CRITICAL: Force AI to use code blocks so the "Apply" button renders
+const SYSTEM_PROMPT = `
+You are an expert coding assistant inside a developer tool called Peak.
+When asked to write, refactor, or fix code, YOU MUST OUTPUT THE CONTENT INSIDE MARKDOWN CODE BLOCKS (e.g., \`\`\`javascript ... \`\`\`).
+Do not output plain text for file content. This is required for the 'Apply to Editor' feature to work.
+If providing a full file replacement, provide the full code.
+`;
 
 function handleAssistStreamData(event, id, data) {
     if (id !== AI_ASSIST_SESSION_ID || !assistStreamingMessageRef) return;
@@ -131,10 +39,24 @@ function stopAssistStream(errorMessage = null) {
     let finalContent = assistStreamingMessageRef.content;
     if (errorMessage) finalContent = `**Error:** ${errorMessage}\n\n${finalContent || ''}`;
     
+    // Helper to escape HTML for the raw content storage
+    const escapeRaw = (str) => str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+
     if (assistContentArea && chatThread) {
         const finalMessageHtml = `
             <div class="term-chat-msg ai markdown-content" style="padding: 0; font-size: 13px; line-height: 1.6; width: 100%; overflow-wrap: anywhere; white-space: normal; background: transparent; color: var(--peak-primary); align-self: flex-start; margin-bottom: 12px;">
                 ${renderMarkdown(finalContent)}
+                
+                <div class="raw-content" style="display:none;">${escapeRaw(finalContent)}</div>
+
+                <div class="message-actions">
+                    <button class="msg-action-btn copy-msg-btn" title="Copy Entire Message">
+                        <i data-lucide="copy"></i> Copy
+                    </button>
+                    <button class="msg-action-btn insert-msg-btn" title="Insert Entire Message">
+                        <i data-lucide="arrow-left-from-line"></i> Insert
+                    </button>
+                </div>
             </div>
         `;
         if (finalContent.trim() !== '') chatThread.innerHTML += finalMessageHtml;
@@ -263,7 +185,11 @@ function attachAIAssistListeners(currentFileContent, currentFilePath) {
         }
         
         if(assistScroller) assistScroller.scrollTop = assistScroller.scrollHeight;
-        const messages = [{ role: 'user', content: fullPrompt }];
+        
+        const messages = [
+            { role: 'system', content: SYSTEM_PROMPT },
+            { role: 'user', content: fullPrompt }
+        ];
         window.ipcRenderer.send('llm-stream-request', AI_ASSIST_SESSION_ID, model, messages);
     };
 
@@ -281,4 +207,4 @@ function attachAIAssistListeners(currentFileContent, currentFilePath) {
     };
 }
 
-module.exports = { getAIAssistHTML, attachAIAssistListeners };
+module.exports = { attachAIAssistListeners };

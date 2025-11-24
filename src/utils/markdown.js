@@ -10,7 +10,7 @@ hljs.configure({
 // Configure Marked
 const renderer = new marked.Renderer();
 
-// Custom Code Block Rendering
+// Custom Code Block Rendering with "Apply" button
 renderer.code = (code, language) => {
     const validLang = !!(language && hljs.getLanguage(language));
     const highlighted = validLang 
@@ -21,9 +21,14 @@ renderer.code = (code, language) => {
         <div class="chat-code-block">
             <div class="code-header">
                 <span class="lang-badge">${language || 'text'}</span>
-                <button class="copy-btn" title="Copy Code" onclick="navigator.clipboard.writeText(this.closest('.chat-code-block').querySelector('code').innerText)">
-                    <i data-lucide="copy"></i>
-                </button>
+                <div style="display:flex; gap:4px;">
+                    <button class="apply-btn" title="Insert at Cursor">
+                        <i data-lucide="arrow-left-from-line"></i> Apply
+                    </button>
+                    <button class="copy-btn" title="Copy Code" onclick="navigator.clipboard.writeText(this.closest('.chat-code-block').querySelector('code').innerText)">
+                        <i data-lucide="copy"></i>
+                    </button>
+                </div>
             </div>
             <pre><code class="hljs ${language}">${highlighted}</code></pre>
         </div>`;

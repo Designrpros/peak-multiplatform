@@ -7,8 +7,6 @@
 :root {
     --peak-primary: #333333;
     --peak-secondary: #888888;
-    
-    /* Slate Blue Accent */
     --peak-accent: #6688AA;
     
     --text-background-color: #ffffff;
@@ -16,33 +14,32 @@
     --border-color: #e1e1e1;
     --window-background-color: #ffffff;
 
-    /* --- VS CODE LIGHT THEME --- */
-    --syntax-keyword: #AF00DB;   /* Purple */
-    --syntax-string: #a31515;    /* Red */
-    --syntax-variable: #001080;  /* Dark Blue */
-    --syntax-comment: #008000;   /* Green */
-    --syntax-func: #795E26;      /* Brown/Gold */
-    --syntax-number: #098658;    /* Dark Green */
+    /* Syntax Highlighting */
+    --syntax-keyword: #AF00DB;
+    --syntax-string: #a31515;
+    --syntax-variable: #001080;
+    --syntax-comment: #008000;
+    --syntax-func: #795E26;
+    --syntax-number: #098658;
 }
 
 @media (prefers-color-scheme: dark) {
     :root {
         --peak-primary: #f5f5f7;
         --peak-secondary: #888888;
-        --peak-accent: #7899BB; 
+        --peak-accent: #7899BB;
         
         --text-background-color: #1e1e1e;
         --control-background-color: #2c2c2e;
         --border-color: #3a3a3c;
         --window-background-color: #1e1e1e;
 
-        /* --- VS CODE DARK+ THEME --- */
-        --syntax-keyword: #C586C0;   /* Pink/Purple */
-        --syntax-string: #CE9178;    /* Orange */
-        --syntax-variable: #9CDCFE;  /* Light Blue */
-        --syntax-comment: #6A9955;   /* Green */
-        --syntax-func: #DCDCAA;      /* Light Yellow */
-        --syntax-number: #B5CEA8;    /* Light Green */
+        --syntax-keyword: #C586C0;
+        --syntax-string: #CE9178;
+        --syntax-variable: #9CDCFE;
+        --syntax-comment: #6A9955;
+        --syntax-func: #DCDCAA;
+        --syntax-number: #B5CEA8;
     }
 }
 
@@ -96,15 +93,16 @@ body, html {
     border-left: 1px solid var(--border-color);
 }
 
-/* --- GLOBAL SYNTAX HIGHLIGHTING (highlight.js classes) --- */
+/* --- GLOBAL SYNTAX HIGHLIGHTING --- */
+/* Ensure HLJS doesn't add its own background */
 .hljs {
     display: block;
     overflow-x: auto;
     color: var(--peak-primary);
-    background: transparent;
+    background: transparent !important; 
+    padding: 0 !important;
 }
 
-/* ... (Keep existing hljs classes) ... */
 .hljs-comment, .hljs-quote { color: var(--syntax-comment); font-style: italic; }
 .hljs-keyword, .hljs-selector-tag, .hljs-literal, .hljs-name, .hljs-type { color: var(--syntax-keyword); font-weight: normal; }
 .hljs-attribute, .hljs-meta, .hljs-variable, .hljs-template-variable { color: var(--syntax-variable); }
@@ -114,7 +112,11 @@ body, html {
 .hljs-attr { color: var(--peak-primary); }
 .hljs-built_in, .hljs-class .hljs-title { color: var(--syntax-variable); }
 
-/* --- MARKDOWN STYLES (Global) --- */
+/* --- MARKDOWN STYLES --- */
+.markdown-content {
+    width: 100%;
+}
+
 .markdown-content p {
     margin: 0 0 8px 0;
     line-height: 1.5;
@@ -122,6 +124,8 @@ body, html {
 .markdown-content p:last-child {
     margin-bottom: 0;
 }
+
+/* Inline Code (Small pills) */
 .markdown-content code {
     font-family: "SF Mono", monospace;
     background: rgba(128,128,128,0.15);
@@ -130,87 +134,71 @@ body, html {
     font-size: 0.9em;
     color: var(--peak-accent);
 }
-.markdown-content pre {
-    margin: 8px 0;
-    border-radius: 8px;
-    overflow: hidden;
-}
-.markdown-content pre code {
-    background: transparent;
-    padding: 0;
-    color: inherit;
-    font-size: inherit;
-}
-.markdown-content ul, .markdown-content ol {
-    margin: 8px 0;
-    padding-left: 20px;
-}
-.markdown-content li {
-    margin-bottom: 4px;
-}
-.markdown-content blockquote {
-    border-left: 3px solid var(--peak-accent);
-    margin: 8px 0;
-    padding-left: 12px;
-    color: var(--peak-secondary);
-    font-style: italic;
-}
-.markdown-content h1, .markdown-content h2, .markdown-content h3, .markdown-content h4 {
-    margin: 12px 0 6px 0;
-    font-weight: 600;
-    line-height: 1.3;
-}
-.markdown-content h1 { font-size: 1.4em; }
-.markdown-content h2 { font-size: 1.2em; }
-.markdown-content h3 { font-size: 1.1em; }
-.markdown-content a {
-    color: var(--peak-accent);
-    text-decoration: none;
-}
-.markdown-content a:hover {
-    text-decoration: underline;
-}
 
-/* Code Block Container Styles */
+/* --- BLOCK CODE FIX --- */
+/* Use high specificity to strip the inline code styles from block code */
+
+/* 1. The Wrapper (Provides the background & border) */
 .chat-code-block {
     background-color: var(--control-background-color);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
-    overflow: hidden;
-    margin: 8px 0;
-    font-family: "SF Mono", monospace;
-    font-size: 13px;
+    border-radius: 8px; 
+    overflow: hidden; 
+    margin: 12px 0; 
+    font-size: 12px;
+    width: 100%;
+    box-sizing: border-box;
 }
+
+/* 2. The Pre Tag (Structure) */
+.markdown-content pre {
+    margin: 0 !important;
+    padding: 0 !important;
+    background: transparent !important;
+    border-radius: 0 !important;
+    border: none !important;
+}
+
+/* 3. The Code Tag (Text content) - NUCLEAR OVERRIDE */
+.markdown-content pre code,
+.chat-code-block pre code,
+.chat-code-block code {
+    background-color: transparent !important; /* Removes the inner gray box */
+    padding: 12px !important;
+    color: inherit !important;
+    font-family: "SF Mono", monospace;
+    font-size: inherit;
+    border: none !important;
+    border-radius: 0 !important; /* Removes the rounded corners */
+    white-space: pre;
+    display: block;
+    box-shadow: none !important;
+}
+
 .code-header {
-    display: flex;
-    justify-content: space-between;
+    display: flex; 
+    justify-content: space-between; 
     align-items: center;
-    padding: 6px 12px;
-    background: rgba(0,0,0,0.03);
+    padding: 6px 12px; 
+    background: rgba(0,0,0,0.03); 
     border-bottom: 1px solid var(--border-color);
 }
+
 .lang-badge {
-    font-size: 11px;
+    font-family: "SF Mono", monospace;
+    font-size: 10px;
     color: var(--peak-secondary);
     text-transform: uppercase;
 }
+
 .copy-btn {
-    background: none;
-    border: none;
-    cursor: pointer;
-    padding: 4px;
+    background: none; 
+    border: none; 
+    cursor: pointer; 
+    padding: 4px; 
     color: var(--peak-secondary);
-    border-radius: 4px;
     display: flex;
     align-items: center;
+    justify-content: center;
 }
-.copy-btn:hover {
-    background: rgba(0,0,0,0.05);
-    color: var(--peak-primary);
-}
-.copy-btn svg { width: 14px; height: 14px; }
-.chat-code-block pre {
-    margin: 0;
-    padding: 12px;
-    overflow-x: auto;
-}
+.copy-btn:hover { color: var(--peak-primary); }

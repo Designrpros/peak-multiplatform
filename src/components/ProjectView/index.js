@@ -59,6 +59,7 @@ function renderProjectViewHTML(projectData, container) {
                     <div class="terminal-tabs-row">
                         <button class="panel-tab-btn active" data-target="terminal">Terminal</button>
                         <button class="panel-tab-btn" data-target="problems">Problems <span id="problems-badge"></span></button>
+                        <button class="panel-tab-btn" data-target="plugins">Plugins</button>
                     </div>
                     <div class="panel-content-wrapper">
                         <div id="view-terminal" class="panel-view active">
@@ -71,6 +72,11 @@ function renderProjectViewHTML(projectData, container) {
                         <div id="view-problems" class="panel-view">
                             <div class="problems-view" tabindex="0"><div class="empty-problems">No problems detected.</div></div>
                         </div>
+                        <div id="view-plugins" class="panel-view">
+                            <div class="plugins-view-container" style="padding: 20px; color: var(--peak-primary);">
+                                <h3 style="font-size: 13px; margin-top: 0;">Plugins (Coming Soon)</h3>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -80,14 +86,11 @@ function renderProjectViewHTML(projectData, container) {
 
 async function attachProjectViewListeners(projectData, container) {
     if (window.ipcRenderer) window.ipcRenderer.send('did-finish-content-swap');
-    
-    // EXTRACT TAB ID FOR EVENT SCOPING
     const tabId = container.id.replace('tab-content-', '');
     
     if (!window.projectTerminalsData[tabId]) window.projectTerminalsData[tabId] = { terminals: [], activeIndex: -1 };
     const terminalState = window.projectTerminalsData[tabId];
 
-    // DOM Elements
     const sidebar = container.querySelector('.project-sidebar');
     const sidebarHeader = container.querySelector('.project-sidebar-header'); 
     const fileTreeContainer = container.querySelector('.file-tree-container');
@@ -96,7 +99,6 @@ async function attachProjectViewListeners(projectData, container) {
     const filterInput = container.querySelector('.sidebar-filter-input');
     const viewContainer = container.querySelector('.project-view-container');
     
-    // Panel Elements
     const terminalPanel = container.querySelector('.terminal-panel');
     const terminalContentArea = container.querySelector('.terminal-content-area');
     const termListContainer = container.querySelector('.term-list-container');
@@ -113,19 +115,26 @@ async function attachProjectViewListeners(projectData, container) {
     let activeFilePath = null; 
     window.currentFilePath = null;
 
-    // --- REFRESH FUNCTION ---
+    // --- CODE INSERTION LISTENER ---
+    const onInsertCode = (e) => {
+        if (editorView && e.detail) {
+            // Insert at cursor position (or replace selection)
+            const transaction = editorView.state.replaceSelection(e.detail);
+            editorView.dispatch(transaction);
+            editorView.focus();
+        }
+    };
+    window.addEventListener('peak-insert-code', onInsertCode);
+    // ------------------------------
+
     const refreshSidebar = async () => {
         await renderSidebarHTML(fileTreeContainer, projectData, filterInput ? filterInput.value : '');
     };
 
-    // --- FILTERING LOGIC (INSTANT) ---
     if (filterInput) {
-        filterInput.addEventListener('input', () => {
-            refreshSidebar();
-        });
+        filterInput.addEventListener('input', () => refreshSidebar());
     }
 
-    // --- GLOBAL CONTEXT ---
     const updateGlobalContext = () => {
         window.getProjectFileContext = () => ({
             currentFilePath: activeFilePath,
@@ -144,45 +153,12 @@ async function attachProjectViewListeners(projectData, container) {
     window.addEventListener('project-tab-shown', onProjectShown);
     updateGlobalContext(); 
 
-    // --- CONTEXT MENU HANDLERS (SCOPED) ---
-    const onCtxReveal = (e, data) => {
-        if (data.instanceId !== tabId) return;
-        window.ipcRenderer.invoke('project:reveal-in-finder', data.targetPath);
-    };
-
-    const onCtxDelete = async (e, data) => { 
-        if (data.instanceId !== tabId) return;
-        
-        if(confirm(`Delete ${path.basename(data.targetPath)}?`)) { 
-            // OPTIMISTIC UI UPDATE: Remove instantly
-            const safeId = 'tree-' + data.targetPath.replace(/[^a-zA-Z0-9]/g, '_');
-            const el = fileTreeContainer.querySelector(`#${safeId}`);
-            if (el) el.remove();
-
-            const res = await window.ipcRenderer.invoke('project:delete-path', data.targetPath); 
-            if(res.success) refreshSidebar(); 
-        } 
-    };
-
-    const onCtxNewFile = (e, data) => {
-        if (data.instanceId !== tabId) return;
-        createNewFileSystemItem(false, data.targetPath || projectData.path, refreshSidebar, fileTreeContainer);
-    };
-
-    const onCtxNewFolder = (e, data) => {
-        if (data.instanceId !== tabId) return;
-        createNewFileSystemItem(true, data.targetPath || projectData.path, refreshSidebar, fileTreeContainer);
-    };
-
-    const onCtxRename = (e, data) => { 
-        if (data.instanceId !== tabId) return;
-        const safeId = 'tree-' + data.targetPath.replace(/[^a-zA-Z0-9]/g, '_'); 
-        const li = fileTreeContainer.querySelector(`#${safeId}`); 
-        if (li) { 
-            const span = li.querySelector('.item-name'); 
-            if (span) renameFileSystemItem(data.targetPath, span, refreshSidebar); 
-        } 
-    };
+    // Context Menu Handlers
+    const onCtxReveal = (e, data) => { if (data.instanceId !== tabId) return; window.ipcRenderer.invoke('project:reveal-in-finder', data.targetPath); };
+    const onCtxDelete = async (e, data) => { if (data.instanceId !== tabId) return; if(confirm(`Delete ${path.basename(data.targetPath)}?`)) { const safeId = 'tree-' + data.targetPath.replace(/[^a-zA-Z0-9]/g, '_'); const el = fileTreeContainer.querySelector(`#${safeId}`); if (el) el.remove(); const res = await window.ipcRenderer.invoke('project:delete-path', data.targetPath); if(res.success) refreshSidebar(); } };
+    const onCtxNewFile = (e, data) => { if (data.instanceId !== tabId) return; createNewFileSystemItem(false, data.targetPath || projectData.path, refreshSidebar, fileTreeContainer); };
+    const onCtxNewFolder = (e, data) => { if (data.instanceId !== tabId) return; createNewFileSystemItem(true, data.targetPath || projectData.path, refreshSidebar, fileTreeContainer); };
+    const onCtxRename = (e, data) => { if (data.instanceId !== tabId) return; const safeId = 'tree-' + data.targetPath.replace(/[^a-zA-Z0-9]/g, '_'); const li = fileTreeContainer.querySelector(`#${safeId}`); if (li) { const span = li.querySelector('.item-name'); if (span) renameFileSystemItem(data.targetPath, span, refreshSidebar); } };
 
     window.ipcRenderer.on('project:ctx-reveal', onCtxReveal);
     window.ipcRenderer.on('project:ctx-delete', onCtxDelete);
@@ -190,7 +166,6 @@ async function attachProjectViewListeners(projectData, container) {
     window.ipcRenderer.on('project:ctx-new-folder', onCtxNewFolder);
     window.ipcRenderer.on('project:ctx-rename', onCtxRename);
 
-    // --- ATTACH CONTEXT MENU UI TRIGGER (WITH SCOPE ID) ---
     if (sidebar) {
         sidebar.addEventListener('contextmenu', (e) => {
             e.preventDefault(); e.stopPropagation();
@@ -200,15 +175,9 @@ async function attachProjectViewListeners(projectData, container) {
                     fileTreeContainer.querySelectorAll('.tree-item.selected').forEach(el => el.classList.remove('selected'));
                     item.classList.add('selected');
                 }
-                window.ipcRenderer.send('show-project-context-menu', { 
-                    targetPath: item.dataset.path,
-                    instanceId: tabId // Pass the unique tab ID
-                });
+                window.ipcRenderer.send('show-project-context-menu', { targetPath: item.dataset.path, instanceId: tabId });
             } else {
-                window.ipcRenderer.send('show-project-context-menu', { 
-                    targetPath: projectData.path,
-                    instanceId: tabId
-                });
+                window.ipcRenderer.send('show-project-context-menu', { targetPath: projectData.path, instanceId: tabId });
             }
         });
     }
@@ -225,14 +194,14 @@ async function attachProjectViewListeners(projectData, container) {
         });
     }
 
-    // --- PROBLEMS VIEW ---
+    // Problems View
     const renderProblemsView = () => { if (!problemsView) return; problemsView.innerHTML = ''; let totalCount = 0; if (allDiagnostics.size === 0) { problemsView.innerHTML = `<div class="empty-problems">No problems detected.</div>`; if (problemsBadge) problemsBadge.textContent = ''; return; } const sortedFiles = Array.from(allDiagnostics.keys()).sort(); sortedFiles.forEach(filePath => { const diags = allDiagnostics.get(filePath); if (!diags || diags.length === 0) return; totalCount += diags.length; const fileGroup = document.createElement('div'); fileGroup.className = 'problem-file-group'; const displayPath = path.relative(projectData.path, path.dirname(filePath)); const header = document.createElement('div'); header.className = 'problem-file-header'; header.innerHTML = `<div class="file-toggle"><i data-lucide="chevron-down"></i></div><div class="file-icon">${getFileIconHTML(path.basename(filePath))}</div><div class="file-info"><span class="file-name">${path.basename(filePath)}</span><span class="file-path">${displayPath ? displayPath : ''}</span></div><div class="file-badge">${diags.length}</div>`; header.onclick = () => { fileGroup.classList.toggle('collapsed'); const icon = header.querySelector('.file-toggle i'); icon.setAttribute('data-lucide', fileGroup.classList.contains('collapsed') ? 'chevron-right' : 'chevron-down'); if(window.lucide) window.lucide.createIcons(); }; const list = document.createElement('div'); list.className = 'problem-list'; diags.forEach(d => { const item = document.createElement('div'); item.className = 'problem-item'; if (selectedProblem && selectedProblem.diagnostic === d) item.classList.add('selected'); const severityIcon = d.severity === 'error' ? 'x-circle' : 'alert-triangle'; const severityClass = d.severity === 'error' ? 'error' : 'warning'; const lineText = (d.line !== undefined && d.col !== undefined) ? `[${d.line}, ${d.col}]` : `[Pos ${d.from}]`; item.innerHTML = `<div class="problem-gutter"></div><div class="problem-main"><i data-lucide="${severityIcon}" class="problem-icon ${severityClass}"></i><span class="problem-message" title="${d.message}">${d.message}</span><span class="problem-source">${d.source || ''}</span><span class="problem-pos">${lineText}</span></div>`; item.onclick = async (e) => { e.stopPropagation(); selectedProblem = { diagnostic: d, filePath: filePath }; problemsView.querySelectorAll('.problem-item').forEach(el => el.classList.remove('selected')); item.classList.add('selected'); problemsView.focus(); if (window.currentFilePath !== filePath) await loadFile(filePath); if (editorPane.jumpToLine) editorPane.jumpToLine(d.from); }; item.addEventListener('contextmenu', (e) => { e.preventDefault(); e.stopPropagation(); selectedProblem = { diagnostic: d, filePath: filePath }; const copyText = `${d.message} (${path.basename(filePath)} ${lineText})`; window.ipcRenderer.send('show-problem-context-menu', copyText); }); list.appendChild(item); }); fileGroup.appendChild(header); fileGroup.appendChild(list); problemsView.appendChild(fileGroup); }); if (problemsBadge) { problemsBadge.textContent = totalCount > 0 ? ` ${totalCount}` : ''; problemsBadge.style.color = totalCount > 0 ? 'var(--peak-accent)' : 'inherit'; } if(window.lucide) window.lucide.createIcons(); };
     const onDiagnostics = (e) => { const { filePath, diagnostics } = e.detail; if (!filePath) return; if (!diagnostics || diagnostics.length === 0) allDiagnostics.delete(filePath); else allDiagnostics.set(filePath, diagnostics); renderProblemsView(); };
     window.addEventListener('peak-editor-diagnostics', onDiagnostics);
     problemsView.addEventListener('keydown', (e) => { if ((e.metaKey || e.ctrlKey) && e.key === 'c' && selectedProblem) { const d = selectedProblem.diagnostic; const lineText = (d.line !== undefined) ? `[${d.line}:${d.col}]` : `[Pos ${d.from}]`; const text = `${d.message} (${path.basename(selectedProblem.filePath)} ${lineText})`; clipboard.writeText(text); e.preventDefault(); } });
     problemsView.addEventListener('click', (e) => { if (e.target === problemsView) { selectedProblem = null; problemsView.querySelectorAll('.problem-item').forEach(el => el.classList.remove('selected')); } });
 
-    // ... (Terminal & Sidebar Logic) ...
+    // Terminal Logic
     const renderTerminalList = () => { if (termListContainer) termListContainer.innerHTML = terminalState.terminals.map((t, i) => `<div class="term-list-item ${i === terminalState.activeIndex ? 'active' : ''}" data-idx="${i}"><span>${t.name || 'bash'}</span><div class="term-close-btn" data-id="${t.id}"><i data-lucide="x" style="width:10px; height:10px;"></i></div></div>`).join(''); if(window.lucide) window.lucide.createIcons(); };
     const showTerminal = (idx) => { Array.from(terminalContentArea.children).forEach(el=>el.style.display='none'); if(idx>=0 && idx<terminalState.terminals.length){ const t=terminalState.terminals[idx]; let el=document.getElementById(`term-instance-${t.id}`); if(!el){ el=document.createElement('div'); el.id=`term-instance-${t.id}`; el.style.cssText="width:100%;height:100%;"; terminalContentArea.appendChild(el); const vTab={id:t.id,content:{type:'terminal',data:{cwd:projectData.path,initialCommand:''}}}; TerminalView.renderTerminalHTML(vTab,el); terminalCleanups[t.id]=TerminalView.attachTerminalListeners(vTab,el); } el.style.display='block'; terminalState.activeIndex=idx; window.dispatchEvent(new CustomEvent('terminal-tab-shown',{detail:{id:t.id}})); } else { terminalState.activeIndex=-1; } renderTerminalList(); };
     const createTerm = () => { terminalState.terminals.push({id:'term-'+Date.now(), name:'Terminal'}); showTerminal(terminalState.terminals.length-1); };
@@ -242,7 +211,6 @@ async function attachProjectViewListeners(projectData, container) {
     const toggleTerminal = () => { const isVisible = terminalPanel.style.display !== 'none'; terminalPanel.style.display = isVisible ? 'none' : 'flex'; if(!isVisible && terminalState.terminals.length===0) createTerm(); };
     container.querySelector('.link-toggle-terminal')?.addEventListener('click', e=>{e.preventDefault(); toggleTerminal();});
 
-    // RESTORED BUTTON LISTENERS
     const btnToggle = container.querySelector('.link-toggle-sidebar');
     if (btnToggle) btnToggle.addEventListener('click', (e) => { e.preventDefault(); viewContainer.classList.toggle('sidebar-collapsed'); });
     const btnAi = container.querySelector('.link-ai-chat');
@@ -290,7 +258,7 @@ async function attachProjectViewListeners(projectData, container) {
         disposeEditor(editorView);
         Object.values(terminalCleanups).forEach(c=>c());
         window.removeEventListener('peak-editor-diagnostics', onDiagnostics);
-        // Cleanup specific listeners to prevent memory leaks and duplicate events
+        window.removeEventListener('peak-insert-code', onInsertCode); // Remove new listener
         window.ipcRenderer.removeListener('project:ctx-reveal', onCtxReveal);
         window.ipcRenderer.removeListener('project:ctx-delete', onCtxDelete);
         window.ipcRenderer.removeListener('project:ctx-new-file', onCtxNewFile);

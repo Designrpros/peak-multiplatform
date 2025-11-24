@@ -1,5 +1,5 @@
 // main-entry.js
-const { ipcRenderer, shell } = require('electron');
+const { ipcRenderer, shell, clipboard } = require('electron'); // Added clipboard import
 const tabManager = require('./src/tab-manager.js'); 
 const { AvailableModels } = require('./src/utils/enums.js');
 
@@ -16,7 +16,66 @@ window.saveBase64File = (filePath, content, encoding) => {
      return ipcRenderer.invoke('project:write-file', filePath, content, encoding);
 };
 
-// 1. KEYBOARD SHORTCUTS
+// --- 1. GLOBAL LISTENERS ---
+
+// AI "Apply Code Block" Listener
+document.addEventListener('click', (e) => {
+    const btn = e.target.closest('.apply-btn');
+    if (btn) {
+        e.stopPropagation();
+        const codeBlock = btn.closest('.chat-code-block');
+        if (codeBlock) {
+            const code = codeBlock.querySelector('code').textContent;
+            window.dispatchEvent(new CustomEvent('peak-insert-code', { detail: code }));
+            
+            const originalHTML = btn.innerHTML;
+            btn.innerHTML = '<i data-lucide="check"></i> Applied';
+            btn.style.color = '#10B981';
+            if(window.lucide) window.lucide.createIcons();
+            setTimeout(() => { btn.innerHTML = originalHTML; btn.style.color = ''; if(window.lucide) window.lucide.createIcons(); }, 1500);
+        }
+    }
+});
+
+// AI "Insert Entire Message" Listener
+document.addEventListener('click', (e) => {
+    const btn = e.target.closest('.insert-msg-btn');
+    if (btn) {
+        e.stopPropagation();
+        const msgContainer = btn.closest('.term-chat-msg');
+        const rawContent = msgContainer.querySelector('.raw-content');
+        if (rawContent) {
+            window.dispatchEvent(new CustomEvent('peak-insert-code', { detail: rawContent.textContent }));
+            
+            const originalHTML = btn.innerHTML;
+            btn.innerHTML = '<i data-lucide="check"></i> Inserted';
+            btn.style.color = '#10B981';
+            if(window.lucide) window.lucide.createIcons();
+            setTimeout(() => { btn.innerHTML = originalHTML; btn.style.color = ''; if(window.lucide) window.lucide.createIcons(); }, 1500);
+        }
+    }
+});
+
+// AI "Copy Entire Message" Listener
+document.addEventListener('click', (e) => {
+    const btn = e.target.closest('.copy-msg-btn');
+    if (btn) {
+        e.stopPropagation();
+        const msgContainer = btn.closest('.term-chat-msg');
+        const rawContent = msgContainer.querySelector('.raw-content');
+        if (rawContent) {
+            clipboard.writeText(rawContent.textContent);
+            
+            const originalHTML = btn.innerHTML;
+            btn.innerHTML = '<i data-lucide="check"></i> Copied';
+            btn.style.color = '#10B981';
+            if(window.lucide) window.lucide.createIcons();
+            setTimeout(() => { btn.innerHTML = originalHTML; btn.style.color = ''; if(window.lucide) window.lucide.createIcons(); }, 1500);
+        }
+    }
+});
+
+// 2. KEYBOARD SHORTCUTS
 document.addEventListener('keydown', (e) => {
     const isCmdOrCtrl = e.metaKey || e.ctrlKey;
     if (isCmdOrCtrl && e.key.toLowerCase() === 'n') { e.preventDefault(); tabManager.addTab('empty'); return; }
@@ -28,14 +87,14 @@ document.addEventListener('keydown', (e) => {
     }
 });
 
-// 2. TAB ACTIONS
+// 3. TAB ACTIONS
 window.reorderTabs = (from, to) => tabManager.reorderTabs(from, to);
 window.selectTab = (id) => tabManager.selectTab(id);
 window.addEmptyTab = () => tabManager.addTab('empty');
 window.setActiveTab = (id) => tabManager.setActiveTab(Number(id));
 window.closeTab = (id, event) => { if(event) event.stopPropagation(); tabManager.closeTab(Number(id)); };
 
-// 3. APP CREATION
+// 4. APP CREATION
 window.createNewProject = () => tabManager.handlePerformAction({ mode: 'Project', query: '' });
 window.createNewTerminalTab = () => tabManager.handlePerformAction({ mode: 'Terminal', query: '' });
 window.createNewNote = () => tabManager.handlePerformAction({ mode: 'Note', query: 'Untitled Note' });
@@ -44,7 +103,7 @@ window.createNewWhiteboard = () => tabManager.handlePerformAction({ mode: 'White
 window.createNewDocs = () => tabManager.handlePerformAction({ mode: 'Docs', query: '' });
 window.openBrowser = () => tabManager.handlePerformAction({ mode: 'Search', query: 'https://www.google.com', engine: 'google' });
 
-// 4. INSPECTOR & HISTORY BRIDGES
+// 5. INSPECTOR & HISTORY BRIDGES
 window.openInspector = (mode) => {
     const Inspector = require('./src/components/Inspector/index.js');
     if (Inspector.toggle) Inspector.toggle(mode); else Inspector.open(mode);
@@ -71,7 +130,7 @@ window.logHistoryItem = (url, title) => tabManager.logHistoryItem(url, title);
 window.restoreClosedTab = (id) => { window.closeInspector(); tabManager.restoreClosedTab(Number(id)); };
 window.showDashboardPage = () => tabManager.setEmptyTabMode('dashboard');
 window.showLandingPage = () => tabManager.setEmptyTabMode('landing');
-window.showFinderPage = () => tabManager.setEmptyTabMode('finder'); // <--- NEW: Finder
+window.showFinderPage = () => tabManager.setEmptyTabMode('finder');
 window.handleBookmarkClick = (url) => tabManager.handlePerformAction({ mode: 'Search', query: url, engine: 'google' });
 window.toggleBookmark = (url, title) => tabManager.toggleBookmark(url, title);
 window.reorderBookmarks = (from, to) => tabManager.reorderBookmarks(from, to);
@@ -87,7 +146,7 @@ window.removeNoteTag = (id, t) => tabManager.removeNoteTag(id, t);
 window.sendChatMessage = (id, c, m, f) => tabManager.sendChatMessage(id, c, m, f);
 window.stopChatStream = () => tabManager.stopChatStream();
 
-// 5. INITIALIZATION
+// 6. INITIALIZATION
 document.addEventListener('DOMContentLoaded', () => {
     console.log("[MainEntry] DOM Content Loaded");
     tabManager.renderView();
