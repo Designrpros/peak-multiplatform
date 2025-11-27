@@ -49,6 +49,18 @@ function createWindow() {
         allowsBackForwardNavigationGestures: true, resizable: true, 
         webPreferences: { nodeIntegration: true, contextIsolation: false, webviewTag: true, scrollBounce: true }
     });
+    
+    // --- NEW: Intercept Window Creation from WebViews ---
+    mainWindow.webContents.on('did-attach-webview', (event, webContents) => {
+        webContents.setWindowOpenHandler((details) => {
+            // Send the URL back to the renderer to open in a Peak tab
+            mainWindow.webContents.send('open-new-tab', details.url);
+            // Deny the native Electron window
+            return { action: 'deny' };
+        });
+    });
+    // ----------------------------------------------------
+
     mainWindow.loadFile('index.html');
     mainWindow.on('closed', () => { mainWindow = null; });
     mainWindow.on('blur', () => { if (ignoreBlur) return; if (mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible()) hideWindow(); });
@@ -173,7 +185,6 @@ function setupIpcHandlers() {
     ipcMain.handle('finder:create-folder', async (e, p) => { try { await fs.promises.mkdir(p); return { success: true }; } catch (err) { return { error: err.message }; } });
     ipcMain.on('show-finder-context-menu', (event, fileData) => { const template = fileData ? [ { label: 'Open', click: () => event.sender.send('finder:ctx-open', fileData.path) }, { type: 'separator' }, { label: 'Reveal in Finder', click: () => shell.showItemInFolder(fileData.path) }, { type: 'separator' }, { label: 'Rename', click: () => event.sender.send('finder:ctx-rename', fileData.path) }, { label: 'Move to Trash', click: () => event.sender.send('finder:ctx-delete', fileData.path) } ] : [{ label: 'New Folder', click: () => event.sender.send('finder:ctx-new-folder') }]; Menu.buildFromTemplate(template).popup({ window: BrowserWindow.fromWebContents(event.sender) }); });
     
-    // --- UPDATED PROJECT CONTEXT MENU (with instanceId) ---
     ipcMain.on('show-project-context-menu', (event, { targetPath, instanceId }) => { 
         const template = [ 
             { label: 'New File...', click: () => event.sender.send('project:ctx-new-file', { targetPath, instanceId }) }, 
@@ -201,6 +212,18 @@ function setupIpcHandlers() {
     ipcMain.on('show-whiteboard-context-menu', (e, d) => { Menu.buildFromTemplate([{label:'Delete',click:()=>e.sender.send('whiteboard-action',{action:'delete',...d})}]).popup({window:BrowserWindow.fromWebContents(e.sender)}); });
     ipcMain.on('show-kanban-context-menu', (e, d) => { Menu.buildFromTemplate([{label:'Delete Task',click:()=>e.sender.send('kanban-action',{action:'delete',...d})}]).popup({window:BrowserWindow.fromWebContents(e.sender)}); });
     ipcMain.on('show-problem-context-menu', (event, textToCopy) => { const template = [ { label: 'Copy', click: () => clipboard.writeText(textToCopy) } ]; Menu.buildFromTemplate(template).popup({ window: BrowserWindow.fromWebContents(event.sender) }); });
+    
+    ipcMain.on('show-terminal-context-menu', (event, { id, hasSelection }) => {
+        const template = [
+            { label: 'Copy', enabled: hasSelection, click: () => event.sender.send('terminal-context-action', { action: 'copy', id }) },
+            { label: 'Paste', click: () => event.sender.send('terminal-context-action', { action: 'paste', id }) },
+            { type: 'separator' },
+            { label: 'Clear', click: () => event.sender.send('terminal-context-action', { action: 'clear', id }) },
+            { type: 'separator' },
+            { label: 'Kill Terminal', click: () => event.sender.send('terminal-context-action', { action: 'kill', id }) }
+        ];
+        Menu.buildFromTemplate(template).popup({ window: BrowserWindow.fromWebContents(event.sender) });
+    });
     ipcMain.on('will-swap-content', () => { ignoreBlur = true; });
     ipcMain.on('did-finish-content-swap', () => { setTimeout(() => { ignoreBlur = false; }, 300); });
     ipcMain.on('open-settings-window', () => createSettingsWindow());

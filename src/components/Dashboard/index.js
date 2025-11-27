@@ -62,7 +62,7 @@ function renderDashboardHTML(activityItems = [], bookmarks = []) {
             <div class="page-indicators">
                 <span class="indicator" id="dot-landing"></span>
                 <span class="indicator active" id="dot-dashboard"></span>
-                <span class="indicator" id="dot-finder"></span>
+                <span class="indicator" id="dot-workspaces"></span>
             </div>
         </div>
     `;
@@ -109,10 +109,10 @@ function attachDashboardListeners() {
     }
 
     const dotLanding = document.getElementById('dot-landing');
-    const dotFinder = document.getElementById('dot-finder');
+    const dotWorkspaces = document.getElementById('dot-workspaces'); // Changed
 
     if (dotLanding) dotLanding.addEventListener('click', () => window.showLandingPage());
-    if (dotFinder) dotFinder.addEventListener('click', () => window.showFinderPage());
+    if (dotWorkspaces) dotWorkspaces.addEventListener('click', () => window.showWorkspacesPage());
     
     const grid = document.getElementById('bookmark-grid-container');
     if (grid) {

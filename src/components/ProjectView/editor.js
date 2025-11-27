@@ -33,6 +33,8 @@ const LangJava = getModule('@codemirror/lang-java');
 let editorView = null;
 let saveTimeout = null;
 let debounceDiagnostics = null;
+// NEW: Store the theme compartment so we can update it later
+let themeCompartment = null;
 
 // --- THEME ---
 function loadVSCodeTheme(isDarkMode) {
@@ -108,16 +110,22 @@ function getBaseExtensions() {
     return exts;
 }
 
+// NEW: Listener function to handle theme changes
+function onThemeChange(e) {
+    if (editorView && themeCompartment) {
+        editorView.dispatch({
+            effects: themeCompartment.reconfigure(loadVSCodeTheme(e.matches))
+        });
+    }
+}
+
 function setupCodeMirror(container, content, filePath) {
     if (!State.EditorState || !View.EditorView) {
         container.innerHTML = `<div class="project-editor-placeholder error">CRITICAL ERROR: CodeMirror core components failed to load.</div>`;
         return null;
     }
 
-    if (editorView) {
-        try { editorView.destroy(); } catch(e) {}
-        editorView = null;
-    }
+    disposeEditor(editorView); // Cleanup existing
 
     const saveContent = (val) => {
         if (saveTimeout) clearTimeout(saveTimeout);
@@ -126,9 +134,11 @@ function setupCodeMirror(container, content, filePath) {
         }, 500);
     };
 
+    // Setup Theme Compartment
+    themeCompartment = new State.Compartment();
     const isDarkMode = window.matchMedia('(prefers-color-scheme: dark)').matches;
 
-    // --- DIAGNOSTICS LISTENER (UPDATED) ---
+    // --- DIAGNOSTICS LISTENER ---
     const diagnosticsListener = View.EditorView.updateListener.of((update) => {
         if (debounceDiagnostics) clearTimeout(debounceDiagnostics);
         
@@ -139,23 +149,18 @@ function setupCodeMirror(container, content, filePath) {
                 if (Lint.forEachDiagnostic) {
                     const doc = editorView.state.doc;
                     Lint.forEachDiagnostic(editorView.state, (d) => {
-                        // NEW: Calculate Line and Column
                         const lineInfo = doc.lineAt(d.from);
-                        const line = lineInfo.number;
-                        const col = d.from - lineInfo.from;
-
                         diagnostics.push({
                             from: d.from,
                             to: d.to,
-                            line: line,
-                            col: col,
+                            line: lineInfo.number,
+                            col: d.from - lineInfo.from,
                             severity: d.severity,
                             message: d.message,
-                            source: d.source // Capture source if available (e.g., 'jshint')
+                            source: d.source
                         });
                     });
                 }
-                
                 window.dispatchEvent(new CustomEvent('peak-editor-diagnostics', { 
                     detail: { diagnostics, filePath } 
                 }));
@@ -170,7 +175,8 @@ function setupCodeMirror(container, content, filePath) {
     const extensions = [
         ...getBaseExtensions(),
         getLanguageExtension(filePath),
-        loadVSCodeTheme(isDarkMode),
+        // Use the compartment for the theme
+        themeCompartment.of(loadVSCodeTheme(isDarkMode)),
         Search.search ? Search.search() : [],
         diagnosticsListener
     ];
@@ -192,6 +198,9 @@ function setupCodeMirror(container, content, filePath) {
         parent: container
     });
 
+    // NEW: Attach Theme Listener
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', onThemeChange);
+
     container.jumpToLine = (pos) => {
         if (!editorView) return;
         const safePos = Math.min(Math.max(0, pos), editorView.state.doc.length);
@@ -206,13 +215,16 @@ function setupCodeMirror(container, content, filePath) {
 }
 
 function disposeEditor(view) {
+    // NEW: Remove Theme Listener
+    window.matchMedia('(prefers-color-scheme: dark)').removeEventListener('change', onThemeChange);
+    
     if (view) {
         if (saveTimeout) clearTimeout(saveTimeout);
         if (debounceDiagnostics) clearTimeout(debounceDiagnostics);
         view.destroy();
-        editorView = null;
-        window.dispatchEvent(new CustomEvent('peak-editor-diagnostics', { detail: { diagnostics: [], filePath: null } }));
     }
+    editorView = null;
+    window.dispatchEvent(new CustomEvent('peak-editor-diagnostics', { detail: { diagnostics: [], filePath: null } }));
 }
 
 module.exports = { setupCodeMirror, disposeEditor };

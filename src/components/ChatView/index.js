@@ -4,6 +4,7 @@ const { renderMarkdown } = require('../../utils/markdown.js');
 
 let currentFiles = []; 
 let activeInspectorState = null;
+let streamListener = null;
 
 function renderChatViewHTML(sessionData) {
     const messages = (sessionData && sessionData.messages) ? sessionData.messages : [];
@@ -37,7 +38,7 @@ function renderMessage(msg) {
     const content = msg.content || '';
     const reasoning = msg.reasoning || '';
     
-    if (!content && !reasoning) return '';
+    if (!content && !reasoning && msg.role !== 'assistant') return '';
 
     let attachmentsHTML = '';
     if (msg.attachedFiles && msg.attachedFiles.length > 0) {
@@ -51,9 +52,10 @@ function renderMessage(msg) {
     }
     
     let reasoningHTML = '';
-    if (msg.role === 'assistant' && reasoning) {
+    if (msg.role === 'assistant') {
+        const displayReasoning = reasoning ? 'block' : 'none';
         reasoningHTML = `
-            <div class="reasoning-block">
+            <div class="reasoning-block" style="display:${displayReasoning}" id="reasoning-${msg.id}">
                 <div class="reasoning-header" onclick="this.parentElement.classList.toggle('expanded')">
                     <i data-lucide="brain-circuit"></i> <span>Thinking Process</span> <i data-lucide="chevron-down" class="toggle-icon"></i>
                 </div>
@@ -62,26 +64,36 @@ function renderMessage(msg) {
         `;
     }
     
-    const displayContent = content || (msg.role === 'assistant' && !reasoning ? '<span class="thinking-dots">Thinking...</span>' : '');
-    const contentHTML = renderMarkdown(displayContent);
+    let contentHTML = renderMarkdown(content);
+    let readMoreHTML = '';
+
+    // --- FIX: Collapsible User Messages ---
+    if (msg.role === 'user') {
+        // Simple heuristic: if text length > 300 chars, collapse it
+        // Or check line breaks. Length is usually safer for quick check.
+        if (content.length > 300 || (content.match(/\n/g) || []).length > 6) {
+            contentHTML = `<div class="user-content-wrapper collapsed">${contentHTML}</div>`;
+            readMoreHTML = `<button class="read-more-btn">Read more <i data-lucide="chevron-down" style="width:12px;height:12px;"></i></button>`;
+        }
+    }
 
     const roleClass = msg.role === 'user' ? 'user' : 'assistant';
 
     return `
-        <div class="message-row ${roleClass}" id="msg-${msg.id}">
+        <div class="message-row ${roleClass}" id="msg-row-${msg.id}">
             ${msg.role === 'assistant' ? `<div class="avatar-gpt"><i data-lucide="sparkles"></i></div>` : ''}
             <div class="bubble-container">
                 ${attachmentsHTML}
                 ${reasoningHTML}
-                <div class="bubble markdown-content">
+                <div class="bubble markdown-content" id="msg-content-${msg.id}">
                     ${contentHTML}
+                    ${readMoreHTML}
                 </div>
             </div>
         </div>
     `;
 }
 
-// --- FIXED: Class names now match style.css ---
 function renderInputBar(session) {
     const models = window.AvailableModels || [{ id: 'openai/gpt-4o-mini', name: 'GPT-4o Mini', isPremium: false }];
     const currentModel = session.model || models[0].id;
@@ -148,6 +160,47 @@ function attachChatViewListeners(sessionData, container) {
     const scroller = root.querySelector('#chat-scroller');
     const viewContainer = root.querySelector('.chat-view-container');
 
+    // Stream Listener
+    if (streamListener) ipcRenderer.removeListener('llm-stream-data', streamListener);
+    
+    streamListener = (event, id, response) => {
+        if (id !== sessionId) return;
+        const lastRow = root.querySelector('.message-list .message-row:last-child');
+        if (!lastRow) return;
+
+        if (response.type === 'data') {
+            const content = response.content;
+            
+            if (content.includes('<think>') || content.includes('</think>')) {
+                const reasonBlock = lastRow.querySelector('.reasoning-block');
+                if (reasonBlock) {
+                    reasonBlock.style.display = 'block';
+                    const div = reasonBlock.querySelector('.reasoning-content');
+                    const session = window.tabManager.chatStore.get('sessions').find(s => s.id === sessionId);
+                    const msg = session.messages[session.messages.length - 1];
+                    if(msg && msg.reasoning) div.innerHTML = renderMarkdown(msg.reasoning);
+                }
+            } 
+            else {
+                const bubble = lastRow.querySelector('.bubble.markdown-content');
+                if (bubble) {
+                    const session = window.tabManager.chatStore.get('sessions').find(s => s.id === sessionId);
+                    const msg = session.messages[session.messages.length - 1];
+                    if(msg) {
+                        bubble.innerHTML = renderMarkdown(msg.content);
+                        if(window.lucide) window.lucide.createIcons();
+                    }
+                }
+            }
+
+            if (scroller) {
+                const isAtBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 150;
+                if (isAtBottom) scroller.scrollTop = scroller.scrollHeight;
+            }
+        }
+    };
+    ipcRenderer.on('llm-stream-data', streamListener);
+
     if(scroller) requestAnimationFrame(() => scroller.scrollTop = scroller.scrollHeight);
 
     const adjustHeight = () => {
@@ -165,7 +218,6 @@ function attachChatViewListeners(sessionData, container) {
         textarea.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submitAction(); }
         });
-        // Auto-focus
         setTimeout(() => textarea.focus(), 50);
     }
 
@@ -200,6 +252,30 @@ function attachChatViewListeners(sessionData, container) {
     
     if (submitBtn) submitBtn.addEventListener('click', submitAction);
 
+    // --- READ MORE TOGGLE (Delegated) ---
+    if (viewContainer) {
+        viewContainer.addEventListener('click', (e) => {
+            const btn = e.target.closest('.read-more-btn');
+            if (btn) {
+                e.stopPropagation();
+                const wrapper = btn.previousElementSibling;
+                if (wrapper && wrapper.classList.contains('user-content-wrapper')) {
+                    const isCollapsed = wrapper.classList.contains('collapsed');
+                    
+                    if (isCollapsed) {
+                        wrapper.classList.remove('collapsed');
+                        btn.innerHTML = `Show less <i data-lucide="chevron-up" style="width:12px;height:12px;"></i>`;
+                    } else {
+                        wrapper.classList.add('collapsed');
+                        btn.innerHTML = `Read more <i data-lucide="chevron-down" style="width:12px;height:12px;"></i>`;
+                    }
+                    if(window.lucide) window.lucide.createIcons();
+                }
+            }
+        });
+    }
+
+    // ... (Attachments, Clear, Copy, Inspector logic) ...
     const attachBtn = root.querySelector('#btn-attach');
     if (attachBtn) {
         attachBtn.addEventListener('click', async () => {
@@ -231,7 +307,6 @@ function attachChatViewListeners(sessionData, container) {
     if (confirmClear) {
         confirmClear.addEventListener('click', () => {
             if (window.tabManager && window.tabManager.chatStore) {
-                 // Clear messages for this session
                  const sessions = window.tabManager.chatStore.get('sessions', []);
                  const session = sessions.find(s => s.id === sessionId);
                  if (session) {
@@ -244,7 +319,6 @@ function attachChatViewListeners(sessionData, container) {
         });
     }
 
-    // Global copy handler for code blocks
     const onCopy = (e) => {
         const copyBtn = e.target.closest('.copy-btn');
         if (copyBtn) {
@@ -269,6 +343,7 @@ function attachChatViewListeners(sessionData, container) {
 
     return () => {
         if (viewContainer) viewContainer.removeEventListener('click', onCopy);
+        if (streamListener) ipcRenderer.removeListener('llm-stream-data', streamListener);
     };
 }
 

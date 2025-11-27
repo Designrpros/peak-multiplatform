@@ -94,7 +94,6 @@ body, html {
 }
 
 /* --- GLOBAL SYNTAX HIGHLIGHTING --- */
-/* Ensure HLJS doesn't add its own background */
 .hljs {
     display: block;
     overflow-x: auto;
@@ -115,90 +114,95 @@ body, html {
 /* --- MARKDOWN STYLES --- */
 .markdown-content {
     width: 100%;
+    font-size: 15px;
+    line-height: 1.6;
 }
 
 .markdown-content p {
-    margin: 0 0 8px 0;
-    line-height: 1.5;
+    margin: 0 0 10px 0;
 }
 .markdown-content p:last-child {
     margin-bottom: 0;
 }
 
-/* Inline Code (Small pills) */
+/* Inline Code */
 .markdown-content code {
     font-family: "SF Mono", monospace;
-    background: rgba(128,128,128,0.15);
-    padding: 2px 4px;
+    background: rgba(128,128,128,0.12);
+    padding: 2px 5px;
     border-radius: 4px;
     font-size: 0.9em;
     color: var(--peak-accent);
 }
 
-/* --- BLOCK CODE FIX --- */
-/* Use high specificity to strip the inline code styles from block code */
-
-/* 1. The Wrapper (Provides the background & border) */
+/* --- CODE BLOCKS (Solid & Professional) --- */
 .chat-code-block {
     background-color: var(--control-background-color);
     border: 1px solid var(--border-color);
     border-radius: 8px; 
-    overflow: hidden; 
-    margin: 12px 0; 
-    font-size: 12px;
+    overflow: hidden; /* Keeps the rounded corners */
+    margin: 16px 0; 
     width: 100%;
-    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
 }
 
-/* 2. The Pre Tag (Structure) */
-.markdown-content pre {
-    margin: 0 !important;
-    padding: 0 !important;
-    background: transparent !important;
-    border-radius: 0 !important;
-    border: none !important;
-}
-
-/* 3. The Code Tag (Text content) - NUCLEAR OVERRIDE */
-.markdown-content pre code,
-.chat-code-block pre code,
-.chat-code-block code {
-    background-color: transparent !important; /* Removes the inner gray box */
-    padding: 12px !important;
-    color: inherit !important;
-    font-family: "SF Mono", monospace;
-    font-size: inherit;
-    border: none !important;
-    border-radius: 0 !important; /* Removes the rounded corners */
-    white-space: pre;
-    display: block;
-    box-shadow: none !important;
-}
-
+/* Header */
 .code-header {
     display: flex; 
     justify-content: space-between; 
     align-items: center;
     padding: 6px 12px; 
-    background: rgba(0,0,0,0.03); 
+    background: rgba(0,0,0,0.02); 
     border-bottom: 1px solid var(--border-color);
+    font-family: "SF Mono", monospace;
+    font-size: 12px;
 }
 
 .lang-badge {
-    font-family: "SF Mono", monospace;
-    font-size: 10px;
+    font-size: 11px;
     color: var(--peak-secondary);
     text-transform: uppercase;
+    font-weight: 500;
 }
 
-.copy-btn {
+.copy-btn, .apply-btn {
     background: none; 
     border: none; 
     cursor: pointer; 
-    padding: 4px; 
+    padding: 4px 6px; 
     color: var(--peak-secondary);
     display: flex;
     align-items: center;
     justify-content: center;
+    border-radius: 4px;
+    transition: background-color 0.1s;
+    gap: 4px;
+    font-size: 11px;
 }
-.copy-btn:hover { color: var(--peak-primary); }
+.copy-btn:hover, .apply-btn:hover { color: var(--peak-primary); background-color: rgba(0,0,0,0.05); }
+
+/* Code Content Overrides */
+.markdown-content pre,
+.chat-code-block pre {
+    margin: 0 !important;
+    padding: 0 !important;
+    background: transparent !important;
+    border: none !important;
+    width: 100%;
+    overflow-x: auto !important; /* CRITICAL: Enables scrolling */
+}
+
+/* Ensure the code tag doesn't interfere with pre scrolling */
+.markdown-content pre code,
+.chat-code-block code {
+    background-color: transparent !important;
+    padding: 12px !important;
+    color: inherit !important;
+    font-family: "SF Mono", monospace;
+    font-size: 13px !important;
+    line-height: 1.5;
+    border: none !important;
+    white-space: pre; /* Force wrapping to respect newlines, scroll handled by pre */
+    display: block;
+}

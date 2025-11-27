@@ -1,5 +1,5 @@
 // main-entry.js
-const { ipcRenderer, shell, clipboard } = require('electron'); // Added clipboard import
+const { ipcRenderer, shell, clipboard } = require('electron');
 const tabManager = require('./src/tab-manager.js'); 
 const { AvailableModels } = require('./src/utils/enums.js');
 
@@ -17,6 +17,13 @@ window.saveBase64File = (filePath, content, encoding) => {
 };
 
 // --- 1. GLOBAL LISTENERS ---
+
+// NEW: Listen for New Tab requests from Main Process (e.g., from WebViews)
+ipcRenderer.on('open-new-tab', (event, url) => {
+    if (window.tabManager && url) {
+        window.tabManager.handlePerformAction({ mode: 'Search', query: url, engine: 'google' });
+    }
+});
 
 // AI "Apply Code Block" Listener
 document.addEventListener('click', (e) => {
@@ -131,6 +138,7 @@ window.restoreClosedTab = (id) => { window.closeInspector(); tabManager.restoreC
 window.showDashboardPage = () => tabManager.setEmptyTabMode('dashboard');
 window.showLandingPage = () => tabManager.setEmptyTabMode('landing');
 window.showFinderPage = () => tabManager.setEmptyTabMode('finder');
+window.showWorkspacesPage = () => tabManager.setEmptyTabMode('workspaces'); // ADDED THIS LINE
 window.handleBookmarkClick = (url) => tabManager.handlePerformAction({ mode: 'Search', query: url, engine: 'google' });
 window.toggleBookmark = (url, title) => tabManager.toggleBookmark(url, title);
 window.reorderBookmarks = (from, to) => tabManager.reorderBookmarks(from, to);

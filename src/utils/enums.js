@@ -2,14 +2,15 @@
 
 const InputMode = {
     SEARCH: "Search",
+    KANBAN: "Tasks",          // Kanban board
     NOTE: "Note",
     LLM: "LLM",
-    TERMINAL: "Terminal",
     PROJECT: "Project",
+    TERMINAL: "Terminal",
     MINDMAP: "Mind Map",
     WHITEBOARD: "Whiteboard", // Excalidraw/Canvas
-    KANBAN: "Tasks",          // Kanban board
-    DOCS: "Docs"              // DevDocs.io wrapper
+    DOCS: "Docs",             // DevDocs.io wrapper
+    WORKSPACES: "Workspaces"  // Replaces FINDER
 };
 
 const SearchEngine = [
@@ -30,18 +31,14 @@ const SearchEngine = [
 ];
 
 const AvailableModels = [
-    // --- Paid / Premium ---
-    { id: "openrouter/auto", name: "Auto (OpenRouter)", isPremium: true },
-    { id: "openai/gpt-4o", name: "GPT-4o", isPremium: true },
-    { id: "anthropic/claude-3.5-sonnet", name: "Claude 3.5 Sonnet", isPremium: true },
-    { id: "google/gemini-pro-1.5", name: "Gemini 1.5 Pro", isPremium: true },
-    
-    // --- Free / Cheap ---
-    { id: "google/gemini-2.0-flash-001", name: "Gemini 2.0 Flash", isPremium: false },
-    { id: "deepseek/deepseek-r1:free", name: "DeepSeek R1 (Free)", isPremium: false },
-    { id: "deepseek/deepseek-chat", name: "DeepSeek V3", isPremium: false },
-    { id: "meta-llama/llama-3.1-8b-instruct:free", name: "Llama 3.1 8B (Free)", isPremium: false },
-    { id: "mistralai/mistral-7b-instruct:free", name: "Mistral 7B (Free)", isPremium: false }
+    { id: "openrouter/auto", name: "Auto", isPremium: true, supportsReasoning: true },
+    { id: "deepseek/deepseek-r1", name: "DeepSeek R1", isPremium: true, supportsReasoning: true },
+    { id: "x-ai/grok-4-fast", name: "Grok 4 Fast", isPremium: true, supportsReasoning: true },
+    { id: "openai/gpt-5", name: "GPT-5", isPremium: true, supportsReasoning: true },
+    { id: "google/gemini-2.5-pro", name: "Gemini 2.5 Pro", isPremium: true, supportsReasoning: true },
+    { id: "google/gemini-3-pro-preview", name: "Gemini 3 Pro", isPremium: true, supportsReasoning: true },
+    { id: "anthropic/claude-sonnet-4", name: "Claude Sonnet 4", isPremium: true, supportsReasoning: true },
+    { id: "x-ai/grok-code-fast-1", name: "Grok Code Fast 1", isPremium: true, supportsReasoning: true }
 ];
 
 module.exports = {

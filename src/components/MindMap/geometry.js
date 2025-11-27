@@ -26,14 +26,14 @@ function calculateConnectionPath(parent, child) {
         endX = cCx - (cW / 2);   // Left edge of child
         startY = pCy;
         endY = cCy;
-    } 
+    }
     // 2. Child is to the LEFT
     else if (cCx < pCx - (pW / 2)) {
         startX = pCx - (pW / 2); // Left edge of parent
         endX = cCx + (cW / 2);   // Right edge of child
         startY = pCy;
         endY = cCy;
-    } 
+    }
     // 3. Vertical Fallback (Rare in this layout, but good for robustness)
     else {
         startX = pCx;
@@ -53,8 +53,8 @@ function calculateConnectionPath(parent, child) {
 
     // Horizontal S-Curve (MindNode Style)
     const dist = Math.abs(endX - startX);
-    const tension = 0.5; // Controls how "tight" the curve is
-    
+    const tension = 0.6; // Controls how "tight" the curve is
+
     // Control Points: Pull out horizontally from the start/end points
     const cp1x = startX + (dist * tension * (endX > startX ? 1 : -1));
     const cp1y = startY;

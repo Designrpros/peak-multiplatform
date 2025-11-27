@@ -1,10 +1,12 @@
 // src/components/WebView/index.js
 
 function getWebViewComponent(url, tabId) {
+    // FIX: Added 'allowpopups' back. This enables the attempt, which Main Process now blocks & redirects.
     return `
     <div class="webview-container" style="width:100%; height:100%; display:flex; flex-direction:column;">
         <webview id="webview-${tabId}" class="tab-content" 
                  src="${url}"
+                 allowpopups
                  webpreferences="nodeIntegration=false, contextIsolation=true"
                  style="width:100%; flex-grow:1; border:none;"></webview>
     </div>
@@ -63,12 +65,11 @@ function attachWebViewListeners(contentData, tabId) {
     webview.addEventListener('did-navigate-in-page', didNavigateInPage);
     webview.addEventListener('did-fail-load', didFailLoad);
 
+    // --- NEW WINDOW HANDLER (FALLBACK) ---
+    // We keep this primarily to stop standard events, but the heavy lifting 
+    // is now done by the Main Process via 'setWindowOpenHandler'.
     const newWindowListener = (e) => {
-        const { url } = e;
-        e.preventDefault();
-        if (window.tabManager) {
-             window.tabManager.handlePerformAction({ mode: 'Search', query: url, engine: 'google' });
-        }
+        e.preventDefault(); 
     };
     webview.addEventListener('new-window', newWindowListener);
 

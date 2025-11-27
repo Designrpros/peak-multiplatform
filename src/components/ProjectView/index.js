@@ -1,24 +1,24 @@
 // src/components/ProjectView/index.js
-const { 
-    renderSidebarHTML, 
-    toggleFolderState, 
-    handleFileClick, 
-    createNewFileSystemItem, 
-    renameFileSystemItem, 
-    handleDragStart, 
-    handleDragOver, 
-    handleDragLeave, 
-    handleDrop 
+const {
+    renderSidebarHTML,
+    toggleFolderState,
+    handleFileClick,
+    createNewFileSystemItem,
+    renameFileSystemItem,
+    handleDragStart,
+    handleDragOver,
+    handleDragLeave,
+    handleDrop
 } = require('./sidebar.js');
 const { setupCodeMirror, disposeEditor } = require('./editor.js');
-const TerminalView = require('../TerminalView/index.js'); 
+const TerminalView = require('../TerminalView/index.js');
 const { getFileIconHTML } = require('./icons.js');
-const path = require('path'); 
-const { clipboard } = require('electron'); 
+const path = require('path');
+const { clipboard } = require('electron');
 
 window.projectTerminalsData = window.projectTerminalsData || {};
 const allDiagnostics = new Map();
-let selectedProblem = null; 
+let selectedProblem = null;
 
 function renderProjectViewHTML(projectData, container) {
     const title = projectData.title || 'Project';
@@ -87,18 +87,18 @@ function renderProjectViewHTML(projectData, container) {
 async function attachProjectViewListeners(projectData, container) {
     if (window.ipcRenderer) window.ipcRenderer.send('did-finish-content-swap');
     const tabId = container.id.replace('tab-content-', '');
-    
+
     if (!window.projectTerminalsData[tabId]) window.projectTerminalsData[tabId] = { terminals: [], activeIndex: -1 };
     const terminalState = window.projectTerminalsData[tabId];
 
     const sidebar = container.querySelector('.project-sidebar');
-    const sidebarHeader = container.querySelector('.project-sidebar-header'); 
+    const sidebarHeader = container.querySelector('.project-sidebar-header');
     const fileTreeContainer = container.querySelector('.file-tree-container');
     const editorPane = container.querySelector('.project-editor-pane');
     const titleBar = container.querySelector('.current-file-path');
     const filterInput = container.querySelector('.sidebar-filter-input');
     const viewContainer = container.querySelector('.project-view-container');
-    
+
     const terminalPanel = container.querySelector('.terminal-panel');
     const terminalContentArea = container.querySelector('.terminal-content-area');
     const termListContainer = container.querySelector('.term-list-container');
@@ -111,8 +111,8 @@ async function attachProjectViewListeners(projectData, container) {
 
     let editorView = null;
     let currentFileContent = '';
-    let terminalCleanups = {}; 
-    let activeFilePath = null; 
+    let terminalCleanups = {};
+    let activeFilePath = null;
     window.currentFilePath = null;
 
     // --- CODE INSERTION LISTENER ---
@@ -139,7 +139,7 @@ async function attachProjectViewListeners(projectData, container) {
         window.getProjectFileContext = () => ({
             currentFilePath: activeFilePath,
             currentFileContent: currentFileContent,
-            currentFileContentError: null 
+            currentFileContentError: null
         });
     };
     const onProjectShown = (e) => {
@@ -151,11 +151,11 @@ async function attachProjectViewListeners(projectData, container) {
         }
     };
     window.addEventListener('project-tab-shown', onProjectShown);
-    updateGlobalContext(); 
+    updateGlobalContext();
 
     // Context Menu Handlers
     const onCtxReveal = (e, data) => { if (data.instanceId !== tabId) return; window.ipcRenderer.invoke('project:reveal-in-finder', data.targetPath); };
-    const onCtxDelete = async (e, data) => { if (data.instanceId !== tabId) return; if(confirm(`Delete ${path.basename(data.targetPath)}?`)) { const safeId = 'tree-' + data.targetPath.replace(/[^a-zA-Z0-9]/g, '_'); const el = fileTreeContainer.querySelector(`#${safeId}`); if (el) el.remove(); const res = await window.ipcRenderer.invoke('project:delete-path', data.targetPath); if(res.success) refreshSidebar(); } };
+    const onCtxDelete = async (e, data) => { if (data.instanceId !== tabId) return; if (confirm(`Delete ${path.basename(data.targetPath)}?`)) { const safeId = 'tree-' + data.targetPath.replace(/[^a-zA-Z0-9]/g, '_'); const el = fileTreeContainer.querySelector(`#${safeId}`); if (el) el.remove(); const res = await window.ipcRenderer.invoke('project:delete-path', data.targetPath); if (res.success) refreshSidebar(); } };
     const onCtxNewFile = (e, data) => { if (data.instanceId !== tabId) return; createNewFileSystemItem(false, data.targetPath || projectData.path, refreshSidebar, fileTreeContainer); };
     const onCtxNewFolder = (e, data) => { if (data.instanceId !== tabId) return; createNewFileSystemItem(true, data.targetPath || projectData.path, refreshSidebar, fileTreeContainer); };
     const onCtxRename = (e, data) => { if (data.instanceId !== tabId) return; const safeId = 'tree-' + data.targetPath.replace(/[^a-zA-Z0-9]/g, '_'); const li = fileTreeContainer.querySelector(`#${safeId}`); if (li) { const span = li.querySelector('.item-name'); if (span) renameFileSystemItem(data.targetPath, span, refreshSidebar); } };
@@ -195,56 +195,72 @@ async function attachProjectViewListeners(projectData, container) {
     }
 
     // Problems View
-    const renderProblemsView = () => { if (!problemsView) return; problemsView.innerHTML = ''; let totalCount = 0; if (allDiagnostics.size === 0) { problemsView.innerHTML = `<div class="empty-problems">No problems detected.</div>`; if (problemsBadge) problemsBadge.textContent = ''; return; } const sortedFiles = Array.from(allDiagnostics.keys()).sort(); sortedFiles.forEach(filePath => { const diags = allDiagnostics.get(filePath); if (!diags || diags.length === 0) return; totalCount += diags.length; const fileGroup = document.createElement('div'); fileGroup.className = 'problem-file-group'; const displayPath = path.relative(projectData.path, path.dirname(filePath)); const header = document.createElement('div'); header.className = 'problem-file-header'; header.innerHTML = `<div class="file-toggle"><i data-lucide="chevron-down"></i></div><div class="file-icon">${getFileIconHTML(path.basename(filePath))}</div><div class="file-info"><span class="file-name">${path.basename(filePath)}</span><span class="file-path">${displayPath ? displayPath : ''}</span></div><div class="file-badge">${diags.length}</div>`; header.onclick = () => { fileGroup.classList.toggle('collapsed'); const icon = header.querySelector('.file-toggle i'); icon.setAttribute('data-lucide', fileGroup.classList.contains('collapsed') ? 'chevron-right' : 'chevron-down'); if(window.lucide) window.lucide.createIcons(); }; const list = document.createElement('div'); list.className = 'problem-list'; diags.forEach(d => { const item = document.createElement('div'); item.className = 'problem-item'; if (selectedProblem && selectedProblem.diagnostic === d) item.classList.add('selected'); const severityIcon = d.severity === 'error' ? 'x-circle' : 'alert-triangle'; const severityClass = d.severity === 'error' ? 'error' : 'warning'; const lineText = (d.line !== undefined && d.col !== undefined) ? `[${d.line}, ${d.col}]` : `[Pos ${d.from}]`; item.innerHTML = `<div class="problem-gutter"></div><div class="problem-main"><i data-lucide="${severityIcon}" class="problem-icon ${severityClass}"></i><span class="problem-message" title="${d.message}">${d.message}</span><span class="problem-source">${d.source || ''}</span><span class="problem-pos">${lineText}</span></div>`; item.onclick = async (e) => { e.stopPropagation(); selectedProblem = { diagnostic: d, filePath: filePath }; problemsView.querySelectorAll('.problem-item').forEach(el => el.classList.remove('selected')); item.classList.add('selected'); problemsView.focus(); if (window.currentFilePath !== filePath) await loadFile(filePath); if (editorPane.jumpToLine) editorPane.jumpToLine(d.from); }; item.addEventListener('contextmenu', (e) => { e.preventDefault(); e.stopPropagation(); selectedProblem = { diagnostic: d, filePath: filePath }; const copyText = `${d.message} (${path.basename(filePath)} ${lineText})`; window.ipcRenderer.send('show-problem-context-menu', copyText); }); list.appendChild(item); }); fileGroup.appendChild(header); fileGroup.appendChild(list); problemsView.appendChild(fileGroup); }); if (problemsBadge) { problemsBadge.textContent = totalCount > 0 ? ` ${totalCount}` : ''; problemsBadge.style.color = totalCount > 0 ? 'var(--peak-accent)' : 'inherit'; } if(window.lucide) window.lucide.createIcons(); };
+    const renderProblemsView = () => { if (!problemsView) return; problemsView.innerHTML = ''; let totalCount = 0; if (allDiagnostics.size === 0) { problemsView.innerHTML = `<div class="empty-problems">No problems detected.</div>`; if (problemsBadge) problemsBadge.textContent = ''; return; } const sortedFiles = Array.from(allDiagnostics.keys()).sort(); sortedFiles.forEach(filePath => { const diags = allDiagnostics.get(filePath); if (!diags || diags.length === 0) return; totalCount += diags.length; const fileGroup = document.createElement('div'); fileGroup.className = 'problem-file-group'; const displayPath = path.relative(projectData.path, path.dirname(filePath)); const header = document.createElement('div'); header.className = 'problem-file-header'; header.innerHTML = `<div class="file-toggle"><i data-lucide="chevron-down"></i></div><div class="file-icon">${getFileIconHTML(path.basename(filePath))}</div><div class="file-info"><span class="file-name">${path.basename(filePath)}</span><span class="file-path">${displayPath ? displayPath : ''}</span></div><div class="file-badge">${diags.length}</div>`; header.onclick = () => { fileGroup.classList.toggle('collapsed'); const icon = header.querySelector('.file-toggle i'); icon.setAttribute('data-lucide', fileGroup.classList.contains('collapsed') ? 'chevron-right' : 'chevron-down'); if (window.lucide) window.lucide.createIcons(); }; const list = document.createElement('div'); list.className = 'problem-list'; diags.forEach(d => { const item = document.createElement('div'); item.className = 'problem-item'; if (selectedProblem && selectedProblem.diagnostic === d) item.classList.add('selected'); const severityIcon = d.severity === 'error' ? 'x-circle' : 'alert-triangle'; const severityClass = d.severity === 'error' ? 'error' : 'warning'; const lineText = (d.line !== undefined && d.col !== undefined) ? `[${d.line}, ${d.col}]` : `[Pos ${d.from}]`; item.innerHTML = `<div class="problem-gutter"></div><div class="problem-main"><i data-lucide="${severityIcon}" class="problem-icon ${severityClass}"></i><span class="problem-message" title="${d.message}">${d.message}</span><span class="problem-source">${d.source || ''}</span><span class="problem-pos">${lineText}</span></div>`; item.onclick = async (e) => { e.stopPropagation(); selectedProblem = { diagnostic: d, filePath: filePath }; problemsView.querySelectorAll('.problem-item').forEach(el => el.classList.remove('selected')); item.classList.add('selected'); problemsView.focus(); if (window.currentFilePath !== filePath) await loadFile(filePath); if (editorPane.jumpToLine) editorPane.jumpToLine(d.from); }; item.addEventListener('contextmenu', (e) => { e.preventDefault(); e.stopPropagation(); selectedProblem = { diagnostic: d, filePath: filePath }; const copyText = `${d.message} (${path.basename(filePath)} ${lineText})`; window.ipcRenderer.send('show-problem-context-menu', copyText); }); list.appendChild(item); }); fileGroup.appendChild(header); fileGroup.appendChild(list); problemsView.appendChild(fileGroup); }); if (problemsBadge) { problemsBadge.textContent = totalCount > 0 ? ` ${totalCount}` : ''; problemsBadge.style.color = totalCount > 0 ? 'var(--peak-accent)' : 'inherit'; } if (window.lucide) window.lucide.createIcons(); };
     const onDiagnostics = (e) => { const { filePath, diagnostics } = e.detail; if (!filePath) return; if (!diagnostics || diagnostics.length === 0) allDiagnostics.delete(filePath); else allDiagnostics.set(filePath, diagnostics); renderProblemsView(); };
     window.addEventListener('peak-editor-diagnostics', onDiagnostics);
     problemsView.addEventListener('keydown', (e) => { if ((e.metaKey || e.ctrlKey) && e.key === 'c' && selectedProblem) { const d = selectedProblem.diagnostic; const lineText = (d.line !== undefined) ? `[${d.line}:${d.col}]` : `[Pos ${d.from}]`; const text = `${d.message} (${path.basename(selectedProblem.filePath)} ${lineText})`; clipboard.writeText(text); e.preventDefault(); } });
     problemsView.addEventListener('click', (e) => { if (e.target === problemsView) { selectedProblem = null; problemsView.querySelectorAll('.problem-item').forEach(el => el.classList.remove('selected')); } });
 
     // Terminal Logic
-    const renderTerminalList = () => { if (termListContainer) termListContainer.innerHTML = terminalState.terminals.map((t, i) => `<div class="term-list-item ${i === terminalState.activeIndex ? 'active' : ''}" data-idx="${i}"><span>${t.name || 'bash'}</span><div class="term-close-btn" data-id="${t.id}"><i data-lucide="x" style="width:10px; height:10px;"></i></div></div>`).join(''); if(window.lucide) window.lucide.createIcons(); };
-    const showTerminal = (idx) => { Array.from(terminalContentArea.children).forEach(el=>el.style.display='none'); if(idx>=0 && idx<terminalState.terminals.length){ const t=terminalState.terminals[idx]; let el=document.getElementById(`term-instance-${t.id}`); if(!el){ el=document.createElement('div'); el.id=`term-instance-${t.id}`; el.style.cssText="width:100%;height:100%;"; terminalContentArea.appendChild(el); const vTab={id:t.id,content:{type:'terminal',data:{cwd:projectData.path,initialCommand:''}}}; TerminalView.renderTerminalHTML(vTab,el); terminalCleanups[t.id]=TerminalView.attachTerminalListeners(vTab,el); } el.style.display='block'; terminalState.activeIndex=idx; window.dispatchEvent(new CustomEvent('terminal-tab-shown',{detail:{id:t.id}})); } else { terminalState.activeIndex=-1; } renderTerminalList(); };
-    const createTerm = () => { terminalState.terminals.push({id:'term-'+Date.now(), name:'Terminal'}); showTerminal(terminalState.terminals.length-1); };
-    if(termAddBtn) termAddBtn.addEventListener('click', createTerm);
-    if(termListContainer) termListContainer.addEventListener('click', e=>{ const cb=e.target.closest('.term-close-btn'); if(cb){ e.stopPropagation(); const id=cb.dataset.id; const idx=terminalState.terminals.findIndex(t=>t.id===id); if(idx>-1){ if(terminalCleanups[id]) terminalCleanups[id](); delete terminalCleanups[id]; document.getElementById(`term-instance-${id}`)?.remove(); terminalState.terminals.splice(idx,1); if(terminalState.terminals.length===0) terminalState.activeIndex=-1; else if(idx<=terminalState.activeIndex) terminalState.activeIndex=Math.max(0, terminalState.activeIndex-1); showTerminal(terminalState.activeIndex); } } else { const it=e.target.closest('.term-list-item'); if(it) showTerminal(parseInt(it.dataset.idx)); } });
-    tabButtons.forEach(btn => btn.addEventListener('click', () => { const target = btn.dataset.target; tabButtons.forEach(b => b.classList.toggle('active', b.dataset.target === target)); views.forEach(v => v.classList.toggle('active', v.id === `view-${target}`)); if(target==='terminal' && terminalState.activeIndex >= 0) showTerminal(terminalState.activeIndex); }));
-    const toggleTerminal = () => { const isVisible = terminalPanel.style.display !== 'none'; terminalPanel.style.display = isVisible ? 'none' : 'flex'; if(!isVisible && terminalState.terminals.length===0) createTerm(); };
-    container.querySelector('.link-toggle-terminal')?.addEventListener('click', e=>{e.preventDefault(); toggleTerminal();});
+    const renderTerminalList = () => { if (termListContainer) termListContainer.innerHTML = terminalState.terminals.map((t, i) => `<div class="term-list-item ${i === terminalState.activeIndex ? 'active' : ''}" data-idx="${i}"><span>${t.name || 'bash'}</span><div class="term-close-btn" data-id="${t.id}"><i data-lucide="x" style="width:10px; height:10px;"></i></div></div>`).join(''); if (window.lucide) window.lucide.createIcons(); };
+    const showTerminal = (idx) => { Array.from(terminalContentArea.children).forEach(el => el.style.display = 'none'); if (idx >= 0 && idx < terminalState.terminals.length) { const t = terminalState.terminals[idx]; let el = document.getElementById(`term-instance-${t.id}`); if (!el) { el = document.createElement('div'); el.id = `term-instance-${t.id}`; el.style.cssText = "width:100%;height:100%;"; terminalContentArea.appendChild(el); const vTab = { id: t.id, content: { type: 'terminal', data: { cwd: projectData.path, initialCommand: '' } } }; TerminalView.renderTerminalHTML(vTab, el); terminalCleanups[t.id] = TerminalView.attachTerminalListeners(vTab, el); } el.style.display = 'block'; terminalState.activeIndex = idx; window.dispatchEvent(new CustomEvent('terminal-tab-shown', { detail: { id: t.id } })); } else { terminalState.activeIndex = -1; } renderTerminalList(); };
+    const createTerm = () => { terminalState.terminals.push({ id: 'term-' + Date.now(), name: 'Terminal' }); showTerminal(terminalState.terminals.length - 1); };
+    if (termAddBtn) termAddBtn.addEventListener('click', createTerm);
+    if (termListContainer) termListContainer.addEventListener('click', e => { const cb = e.target.closest('.term-close-btn'); if (cb) { e.stopPropagation(); const id = cb.dataset.id; const idx = terminalState.terminals.findIndex(t => t.id === id); if (idx > -1) { if (terminalCleanups[id]) terminalCleanups[id](); delete terminalCleanups[id]; document.getElementById(`term-instance-${id}`)?.remove(); terminalState.terminals.splice(idx, 1); if (terminalState.terminals.length === 0) terminalState.activeIndex = -1; else if (idx <= terminalState.activeIndex) terminalState.activeIndex = Math.max(0, terminalState.activeIndex - 1); showTerminal(terminalState.activeIndex); } } else { const it = e.target.closest('.term-list-item'); if (it) showTerminal(parseInt(it.dataset.idx)); } });
+    tabButtons.forEach(btn => btn.addEventListener('click', () => { const target = btn.dataset.target; tabButtons.forEach(b => b.classList.toggle('active', b.dataset.target === target)); views.forEach(v => v.classList.toggle('active', v.id === `view-${target}`)); if (target === 'terminal' && terminalState.activeIndex >= 0) showTerminal(terminalState.activeIndex); }));
+    const toggleTerminal = () => { const isVisible = terminalPanel.style.display !== 'none'; terminalPanel.style.display = isVisible ? 'none' : 'flex'; if (!isVisible && terminalState.terminals.length === 0) createTerm(); };
+    container.querySelector('.link-toggle-terminal')?.addEventListener('click', e => { e.preventDefault(); toggleTerminal(); });
 
     const btnToggle = container.querySelector('.link-toggle-sidebar');
     if (btnToggle) btnToggle.addEventListener('click', (e) => { e.preventDefault(); viewContainer.classList.toggle('sidebar-collapsed'); });
     const btnAi = container.querySelector('.link-ai-chat');
     if (btnAi) btnAi.addEventListener('click', (e) => { e.preventDefault(); window.openInspector('ai-assist'); });
 
-    if(resizeHandle) {
+    if (resizeHandle) {
         let startY, startHeight;
         const onDrag = e => { terminalPanel.style.height = `${startHeight + (startY - e.clientY)}px`; };
         const onStop = () => { document.removeEventListener('mousemove', onDrag); document.removeEventListener('mouseup', onStop); resizeHandle.classList.remove('resizing'); };
-        resizeHandle.addEventListener('mousedown', e => { startY=e.clientY; startHeight=terminalPanel.offsetHeight; resizeHandle.classList.add('resizing'); document.addEventListener('mousemove', onDrag); document.addEventListener('mouseup', onStop); e.preventDefault(); });
+        resizeHandle.addEventListener('mousedown', e => { startY = e.clientY; startHeight = terminalPanel.offsetHeight; resizeHandle.classList.add('resizing'); document.addEventListener('mousemove', onDrag); document.addEventListener('mouseup', onStop); e.preventDefault(); });
     }
 
     const loadFile = async (filePath) => {
         disposeEditor(editorView);
-        renderProblemsView(); 
-        if(titleBar) titleBar.textContent = path.basename(filePath);
+        renderProblemsView();
+        if (titleBar) titleBar.textContent = path.basename(filePath);
         editorPane.innerHTML = '<div class="project-editor-placeholder">Loading...</div>';
         editorPane.classList.remove('code-mirror-active');
         try {
             const content = await window.ipcRenderer.invoke('project:read-file', filePath);
             if (typeof content === 'string') {
                 currentFileContent = content;
-                activeFilePath = filePath; window.currentFilePath = filePath; 
+                activeFilePath = filePath; window.currentFilePath = filePath;
                 editorView = setupCodeMirror(editorPane, content, filePath);
-                if(editorView) {
+                if (editorView) {
                     editorPane.classList.add('code-mirror-active');
                     window.dispatchEvent(new CustomEvent('peak-project-file-selected', { detail: { filePath, content } }));
                 }
-                updateGlobalContext(); 
+                updateGlobalContext();
             } else { editorPane.innerHTML = '<div class="error">Error reading file</div>'; }
-        } catch(e) { console.error(e); editorPane.innerHTML = `<div class="error">${e.message}</div>`; }
+        } catch (e) { console.error(e); editorPane.innerHTML = `<div class="error">${e.message}</div>`; }
     };
 
-    const onSidebarClick = async (e) => { if (e.target.tagName === 'INPUT') return; const item = e.target.closest('.tree-item'); if (!item) return; const p = item.dataset.path; if (item.dataset.isDirectory === 'true') { e.stopPropagation(); await toggleFolderState(item, p, () => filterInput ? filterInput.value : ''); } else { loadFile(p); } };
+    const onSidebarClick = async (e) => {
+        if (e.target.tagName === 'INPUT') return;
+        const item = e.target.closest('.tree-item');
+        if (!item) return;
+
+        // Handle Selection
+        fileTreeContainer.querySelectorAll('.tree-item.selected').forEach(el => el.classList.remove('selected'));
+        item.classList.add('selected');
+
+        const p = item.dataset.path;
+        if (item.dataset.isDirectory === 'true') {
+            e.stopPropagation();
+            await toggleFolderState(item, p, () => filterInput ? filterInput.value : '');
+        } else {
+            loadFile(p);
+        }
+    };
     if (sidebar) sidebar.addEventListener('click', onSidebarClick);
     if (sidebar) sidebar.addEventListener('dragstart', handleDragStart);
     if (sidebar) sidebar.addEventListener('dragover', handleDragOver);
@@ -252,11 +268,11 @@ async function attachProjectViewListeners(projectData, container) {
     if (sidebar) sidebar.addEventListener('drop', (e) => handleDrop(e, refreshSidebar));
 
     await refreshSidebar();
-    if(terminalState.terminals.length>0) showTerminal(terminalState.activeIndex);
+    if (terminalState.terminals.length > 0) showTerminal(terminalState.activeIndex);
 
     return () => {
         disposeEditor(editorView);
-        Object.values(terminalCleanups).forEach(c=>c());
+        Object.values(terminalCleanups).forEach(c => c());
         window.removeEventListener('peak-editor-diagnostics', onDiagnostics);
         window.removeEventListener('peak-insert-code', onInsertCode); // Remove new listener
         window.ipcRenderer.removeListener('project:ctx-reveal', onCtxReveal);
@@ -267,7 +283,7 @@ async function attachProjectViewListeners(projectData, container) {
         window.removeEventListener('project-tab-shown', onProjectShown);
         if (sidebar) {
             sidebar.removeEventListener('click', onSidebarClick);
-            sidebar.removeEventListener('contextmenu', null); 
+            sidebar.removeEventListener('contextmenu', null);
         }
     };
 }

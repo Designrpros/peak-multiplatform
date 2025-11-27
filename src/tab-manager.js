@@ -23,13 +23,14 @@ const Whiteboard = load('./components/Whiteboard/index.js');
 const Docs = load('./components/Docs/index.js');
 const SettingsView = load('./components/SettingsView/index.js');
 const Finder = load('./components/Finder/index.js'); 
+const Workspaces = load('./components/Workspaces/index.js'); // NEW IMPORT
 
 const ChatController = load('./controllers/ChatController.js');
 const WhiteboardController = load('./controllers/WhiteboardController.js'); 
 const Inspector = load('./components/Inspector/index.js'); 
 
 // --- Store Setup ---
-let noteStore, chatStore, historyStore, closedTabsStore, bookmarkStore, mindMapStore, kanbanStore, terminalStore, whiteboardStore, docsStore, store;
+let noteStore, chatStore, historyStore, closedTabsStore, bookmarkStore, mindMapStore, kanbanStore, terminalStore, whiteboardStore, docsStore, workspaceStore, store;
 let globalTabs = [];
 let selectedTabId = null;
 const tabCleanups = new Map(); 
@@ -46,6 +47,7 @@ try {
     terminalStore = new Store({ name: 'terminals', defaults: { items: [] }, ...commonOpts });
     whiteboardStore = new Store({ name: 'whiteboards', defaults: { items: [] }, ...commonOpts });
     docsStore = new Store({ name: 'docs', defaults: { items: [] }, ...commonOpts });
+    workspaceStore = new Store({ name: 'workspaces', defaults: { items: [] }, ...commonOpts }); // NEW STORE
     
     store = new Store({ name: 'appState', ...commonOpts });
 
@@ -193,8 +195,6 @@ async function renderContentOnly() {
     let container = document.getElementById(`tab-content-${activeTab.id}`);
     const { type, id, data, viewMode } = activeTab.content;
     
-    // View types that react to changes or need full redraws
-    // NOTE: Removed 'project' from here to allow persistence
     const isReactiveView = ['note', 'llmChat', 'empty', 'mindmap', 'kanban', 'whiteboard', 'finder'].includes(type);
 
     if (!container) {
@@ -207,30 +207,25 @@ async function renderContentOnly() {
         container.style.flexDirection = 'column';
         contentArea.appendChild(container);
     } else {
-        // CONTAINER EXISTS (Persistence Logic)
         container.style.display = 'flex';
         
-        // Special Handling for Persisted Views
         if (type === 'project') {
-            // Notify the Project View that it is visible again (to resize terminal, etc.)
             window.dispatchEvent(new CustomEvent('project-tab-shown', { detail: { id: activeTab.id } }));
-            return; // Skip re-render
+            return;
         }
         
         if (type === 'terminal') {
             window.dispatchEvent(new CustomEvent('terminal-tab-shown', { detail: { id: activeTab.id } }));
-            return; // Skip re-render
+            return; 
         }
         
         if (type === 'web') {
-            // WebViews persist by default, just update UI
             if (WebView && WebView.updateWebViewUI) WebView.updateWebViewUI(activeTab.id);
             return; 
         }
 
         if (!isReactiveView) return;
         
-        // Cleanup previous listeners if re-rendering reactive views
         if (tabCleanups.has(activeTab.id)) {
             try { tabCleanups.get(activeTab.id)(); } catch(e) {}
             tabCleanups.delete(activeTab.id);
@@ -247,8 +242,13 @@ async function renderContentOnly() {
                 container.innerHTML = Dashboard.renderDashboardHTML(recentActivity, bookmarks);
                 cleanup = Dashboard.attachDashboardListeners();
             } else if (viewMode === 'finder' && Finder) { 
+                // Keeping Finder logic if still needed, though UI access might be removed
                 container.innerHTML = Finder.renderFinderHTML();
                 cleanup = Finder.attachFinderListeners(data, container);
+            } else if (viewMode === 'workspaces' && Workspaces) {
+                // NEW WORKSPACES VIEW
+                container.innerHTML = Workspaces.renderWorkspacesHTML();
+                cleanup = Workspaces.attachWorkspacesListeners(container);
             } else {
                 container.innerHTML = LandingPage.renderLandingPageHTML(activeTab.id);
                 cleanup = LandingPage.attachLandingPageListeners(activeTab.id);
@@ -275,7 +275,6 @@ async function renderContentOnly() {
             } else container.innerHTML = `<div class="error">Chat session not found.</div>`;
         } 
         else if (type === 'project' && ProjectView) {
-            // Initial Render for Project
             ProjectView.renderProjectViewHTML(data, container); 
             cleanup = await ProjectView.attachProjectViewListeners(data, container);
         } 
@@ -349,7 +348,6 @@ function toggleBookmark(url, title) {
         });
     }
     bookmarkStore.set('items', bookmarks);
-    // Refresh if on dashboard
     const activeTab = globalTabs.find(t => t.id === selectedTabId);
     if (activeTab && activeTab.content.type === 'empty' && activeTab.content.viewMode === 'dashboard') {
         renderContentOnly();
@@ -454,7 +452,6 @@ function deleteKanbanBoard(boardId) {
     const boards = kanbanStore.get('boards', []);
     kanbanStore.set('boards', boards.filter(b => b.id !== boardId));
     refreshInspector();
-    // Close tab if open
     const tab = globalTabs.find(t => t.content.type === 'kanban' && t.content.data && t.content.data.id === boardId);
     if (tab) closeTab(tab.id);
 }
@@ -466,6 +463,71 @@ function refreshInspector() {
 function getActiveTab() {
     return globalTabs.find(t => t.id === selectedTabId);
 }
+
+// --- WORKSPACE CONTROLLERS (NEW) ---
+
+function saveCurrentWorkspace(title, color) {
+    if (!workspaceStore) return;
+    
+    const currentTabs = globalTabs.map(t => ({
+        title: t.title,
+        content: t.content
+    }));
+
+    const newWorkspace = {
+        id: Date.now().toString(),
+        title: title,
+        color: color,
+        tabs: currentTabs,
+        createdAt: Date.now()
+    };
+
+    const items = workspaceStore.get('items', []);
+    items.push(newWorkspace);
+    workspaceStore.set('items', items);
+    
+    // Refresh if currently on workspaces page
+    const activeTab = globalTabs.find(t => t.id === selectedTabId);
+    if (activeTab && activeTab.content.viewMode === 'workspaces') {
+        renderContentOnly();
+    }
+}
+
+function restoreWorkspace(id) {
+    if (!workspaceStore) return;
+    const items = workspaceStore.get('items', []);
+    const workspace = items.find(w => w.id === id);
+    
+    if (workspace && workspace.tabs.length > 0) {
+        globalTabs = [];
+        workspace.tabs.forEach(savedTab => {
+            globalTabs.push({
+                id: Date.now() + Math.random(),
+                title: savedTab.title,
+                content: savedTab.content
+            });
+        });
+        
+        selectedTabId = globalTabs[0].id;
+        saveTabs();
+        renderTabBarOnly();
+        renderContentOnly();
+    }
+}
+
+function deleteWorkspace(id) {
+    if (!workspaceStore) return;
+    let items = workspaceStore.get('items', []);
+    items = items.filter(w => w.id !== id);
+    workspaceStore.set('items', items);
+    
+    const activeTab = globalTabs.find(t => t.id === selectedTabId);
+    if (activeTab && activeTab.content.viewMode === 'workspaces') {
+        renderContentOnly();
+    }
+}
+
+// --- END WORKSPACE CONTROLLERS ---
 
 function setupGlobalNavigation() {
     const btnBack = document.getElementById('global-nav-back');
@@ -480,7 +542,6 @@ function setupGlobalNavigation() {
             const container = document.getElementById(`tab-content-${activeTab.id}`);
             if (container && container.goBack) container.goBack();
         } else {
-            // Default WebView Logic
             const container = document.getElementById(`tab-content-${activeTab.id}`);
             const wv = container ? container.querySelector('webview') : null;
             if (wv && wv.canGoBack()) wv.goBack();
@@ -516,10 +577,8 @@ function setupGlobalNavigation() {
 
 // --- RENDER VIEW ---
 async function renderView() {
-    // Check for Settings Mode via URL params
     const urlParams = new URLSearchParams(window.location.search);
     if (urlParams.get('settingsMode') === 'true') {
-        // Hide main UI
         const toolbar = document.getElementById('global-toolbar-container');
         const tabBar = document.getElementById('tab-bar-container');
         const contentArea = document.getElementById('main-content-area');
@@ -529,7 +588,6 @@ async function renderView() {
         if (tabBar) tabBar.style.display = 'none';
         if (inspector) inspector.style.display = 'none';
         
-        // Render Settings
         if (contentArea && SettingsView) {
             const settings = await ipcRenderer.invoke('get-all-settings');
             contentArea.innerHTML = SettingsView.renderSettingsHTML(settings);
@@ -549,7 +607,6 @@ async function renderView() {
         setupGlobalNavigation();
     }
     
-    // Setup Global Listeners (Whiteboard)
     ipcRenderer.removeAllListeners('whiteboard-save-data');
     ipcRenderer.on('whiteboard-save-data', (event, id, data, title) => {
         const newTitle = WhiteboardController.save(id, data, title);
@@ -737,11 +794,10 @@ async function handlePerformAction(data) {
         refreshInspector();
         newContent = { type: 'docs', id, data: {} };
         title = "DevDocs";
-    } else if (data.mode === 'Finder') { // Finder Creation Support
+    } else if (data.mode === 'Workspaces') {
         const id = Date.now();
-        const startPath = data.query && data.query !== 'Finder' ? data.query : null;
-        newContent = { type: 'finder', id, data: { path: startPath } };
-        title = "Finder";
+        newContent = { type: 'empty', id, data: {}, viewMode: 'workspaces' };
+        title = "Workspaces";
     }
 
     if (newContent) {
@@ -804,6 +860,9 @@ module.exports = {
     openKanbanBoard, 
     deleteKanbanBoard, 
     refreshInspector, 
+    saveCurrentWorkspace, // Exported
+    restoreWorkspace,     // Exported
+    deleteWorkspace,      // Exported
     getActiveTab, 
     get noteStore() { return noteStore; },
     get chatStore() { return chatStore; },
@@ -815,6 +874,7 @@ module.exports = {
     get terminalStore() { return terminalStore; }, 
     get whiteboardStore() { return whiteboardStore; }, 
     get docsStore() { return docsStore; }, 
+    get workspaceStore() { return workspaceStore; }, // Exported
     get store() { return store; }, 
     addNoteBlock: (id, t, c) => require('./controllers/NoteController.js').addNoteBlock(id, t, c),
     updateNoteBlock: (id, b, c) => require('./controllers/NoteController.js').updateNoteBlock(id, b, c),

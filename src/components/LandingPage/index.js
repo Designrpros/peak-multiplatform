@@ -31,7 +31,7 @@ function renderLandingPageHTML() {
             <div class="page-indicators">
                 <span class="indicator active" id="dot-landing"></span>
                 <span class="indicator" id="dot-dashboard"></span>
-                <span class="indicator" id="dot-finder"></span>
+                <span class="indicator" id="dot-workspaces"></span>
             </div>
         </div>
     `;
@@ -57,7 +57,7 @@ function getPlaceholder() {
         case InputMode.WHITEBOARD: return "Press Enter to open Whiteboard...";
         case InputMode.KANBAN: return "Press Enter to open Tasks...";
         case InputMode.DOCS: return "Press Enter to open DevDocs...";
-        case InputMode.FINDER: return "Enter path (optional) or press Enter..."; // Added Finder Placeholder
+        case InputMode.WORKSPACES: return "Press Enter to open Workspaces..."; // Changed
         default: return "Type here...";
     }
 }
@@ -71,7 +71,7 @@ function attachLandingPageListeners() {
     
     // Navigation Dots
     const dotDash = document.getElementById('dot-dashboard');
-    const dotFinder = document.getElementById('dot-finder'); // New
+    const dotWorkspaces = document.getElementById('dot-workspaces'); // Changed
 
     const updateUI = () => {
         if (!input) return;
@@ -79,8 +79,7 @@ function attachLandingPageListeners() {
         input.style.height = input.scrollHeight + 'px';
         
         if (btn) {
-            // Updated to include FINDER in launch modes
-            const isLaunchMode = [InputMode.PROJECT, InputMode.TERMINAL, InputMode.WHITEBOARD, InputMode.KANBAN, InputMode.DOCS, InputMode.FINDER].includes(currentState.selectedMode);
+            const isLaunchMode = [InputMode.PROJECT, InputMode.TERMINAL, InputMode.WHITEBOARD, InputMode.KANBAN, InputMode.DOCS, InputMode.WORKSPACES].includes(currentState.selectedMode);
             btn.disabled = !(input.value.trim().length > 0 || isLaunchMode);
         }
     };
@@ -156,9 +155,9 @@ function attachLandingPageListeners() {
          if(window.showDashboardPage) window.showDashboardPage();
     });
     
-    // NEW: Finder Handler
-    if (dotFinder) dotFinder.addEventListener('click', () => {
-         if(window.showFinderPage) window.showFinderPage();
+    // Workspaces Handler
+    if (dotWorkspaces) dotWorkspaces.addEventListener('click', () => {
+         if(window.showWorkspacesPage) window.showWorkspacesPage();
     });
 
     return () => {};

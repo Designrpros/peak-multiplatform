@@ -1,11 +1,10 @@
 // src/controllers/ChatController.js
 const { ipcRenderer } = require('electron');
 const crypto = require('crypto');
-const { AvailableModels } = require('../utils/enums.js'); // Import from enums
+const { AvailableModels } = require('../utils/enums.js');
 
 let activeStreamTabId = null;
 
-// Helper to get shared store
 function getStore() {
     return window.tabManager ? window.tabManager.chatStore : null;
 }
@@ -15,15 +14,15 @@ function getSessions() {
     return store ? store.get('sessions', []) : []; 
 }
 
-function saveSessions(sessions) { 
+// FIX: Added 'silent' parameter to avoid full re-render loops during streaming
+function saveSessions(sessions, silent = false) { 
     const store = getStore();
     if (store) {
         store.set('sessions', sessions);
-        if (window.tabManager) window.tabManager.renderView();
+        if (!silent && window.tabManager) window.tabManager.renderView();
     }
 }
 
-// ... (Rest of sendChatMessage, stopChatStream, ipcRenderer.on listener are identical to previous fix)
 function sendChatMessage(sessionId, content, modelId, attachedFiles = []) {
     const sessions = getSessions();
     const session = sessions.find(s => s.id === sessionId);
@@ -41,6 +40,8 @@ function sendChatMessage(sessionId, content, modelId, attachedFiles = []) {
     });
 
     activeStreamTabId = sessionId;
+    
+    // Initial save to show the new bubble
     saveSessions(sessions);
 
     const sysPrompt = session.systemPrompt || "You are a helpful assistant.";
@@ -71,6 +72,7 @@ ipcRenderer.on('llm-stream-data', (event, tabId, response) => {
     if (response.type === 'data') {
         const chunk = response.content;
         if (chunk.includes('<think>')) lastMsg.activeReasoning = true;
+        
         if (lastMsg.activeReasoning) {
             if (chunk.includes('</think>')) {
                 lastMsg.activeReasoning = false;
@@ -81,12 +83,15 @@ ipcRenderer.on('llm-stream-data', (event, tabId, response) => {
         } else {
             lastMsg.content += chunk.replace('</think>', '');
         }
+        // FIX: Silent Save (True) - Updates data without refreshing UI
+        saveSessions(sessions, true);
     } else if (response.type === 'end' || response.type === 'error') {
         if (lastMsg.activeReasoning) delete lastMsg.activeReasoning;
         if (response.type === 'error') lastMsg.content += `\n[Error: ${response.message}]`;
         activeStreamTabId = null;
+        // Final save refreshes UI to ensure state is clean
+        saveSessions(sessions, false);
     }
-    saveSessions(sessions);
 });
 
 module.exports = { 
