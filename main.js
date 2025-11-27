@@ -47,7 +47,13 @@ function createWindow() {
         fullscreenable: false, center: true, transparent: true, backgroundColor: '#00000000',
         alwaysOnTop: isFloating, collectionBehavior: ['canJoinAllSpaces'], level: isFloating ? 'floating' : 'normal',
         allowsBackForwardNavigationGestures: true, resizable: true,
-        webPreferences: { nodeIntegration: true, contextIsolation: false, webviewTag: true, scrollBounce: true }
+        webPreferences: { nodeIntegration: true, contextIsolation: false, webviewTag: true, scrollBounce: true, spellcheck: true }
+    });
+
+    mainWindow.webContents.on('did-finish-load', () => {
+        mainWindow.webContents.session.setSpellCheckerLanguages(['en-US', 'nb']);
+        //console.log('[Main] Available Spellchecker Languages:', mainWindow.webContents.session.availableSpellCheckerLanguages);
+        //console.log('[Main] Configured Spellchecker Languages:', mainWindow.webContents.session.getSpellCheckerLanguages());
     });
 
     // --- NEW: Intercept Window Creation from WebViews ---
@@ -60,6 +66,43 @@ function createWindow() {
         });
     });
     // ----------------------------------------------------
+
+    // --- SPELLCHECK & STANDARD CONTEXT MENU ---
+    mainWindow.webContents.on('context-menu', (event, params) => {
+        const { misspelledWord, dictionarySuggestions, selectionText } = params;
+        console.log('[Main] Context Menu:', { misspelledWord, dictionarySuggestions, selectionText }); // DEBUG
+
+        const template = [];
+
+        if (misspelledWord && dictionarySuggestions.length > 0) {
+            template.push(
+                ...dictionarySuggestions.map(suggestion => ({
+                    label: suggestion,
+                    click: () => mainWindow.webContents.replaceMisspelling(suggestion)
+                })),
+                { type: 'separator' },
+                { label: 'Add to Dictionary', click: () => mainWindow.webContents.session.addWordToSpellCheckerDictionary(misspelledWord) },
+                { type: 'separator' }
+            );
+        }
+
+        template.push(
+            { label: 'Cut', role: 'cut' },
+            { label: 'Copy', role: 'copy', enabled: !!selectionText },
+            { label: 'Paste', role: 'paste' },
+            { type: 'separator' },
+            { label: 'Select All', role: 'selectAll' }
+        );
+
+        if (params.linkURL) {
+            template.push(
+                { type: 'separator' },
+                { label: 'Open Link', click: () => shell.openExternal(params.linkURL) }
+            );
+        }
+
+        Menu.buildFromTemplate(template).popup({ window: mainWindow });
+    });
 
     mainWindow.loadFile('index.html');
     mainWindow.on('closed', () => { mainWindow = null; });
@@ -255,7 +298,7 @@ function setupIpcHandlers() {
     ipcMain.on('toggle-dock-visibility', (e, v) => { settingsStore.set('isDockVisible', v); if (process.platform === 'darwin') app.setActivationPolicy(v ? 'regular' : 'accessory'); });
     ipcMain.on('toggle-level', (e, f) => { settingsStore.set('isFloating', f); if (mainWindow) { mainWindow.setAlwaysOnTop(f, 'floating'); mainWindow.setLevel(f ? 'floating' : 'normal'); } });
     ipcMain.on('show-block-context-menu', (e, d) => { Menu.buildFromTemplate([{ label: 'Delete Block', click: () => e.sender.send('delete-block-command', d) }]).popup({ window: BrowserWindow.fromWebContents(e.sender) }); });
-    ipcMain.handle('select-image', async () => { const { canceled, filePaths } = await dialog.showOpenDialog({ properties: ['openFile'], filters: [{ name: 'Images', extensions: ['jpg', 'png', 'gif', 'webp', 'svg'] }] }); return canceled ? null : filePaths; });
+    ipcMain.handle('select-image', async () => { const { canceled, filePaths } = await dialog.showOpenDialog({ properties: ['openFile'], filters: [{ name: 'Images', extensions: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'tiff', 'ico'] }] }); return canceled ? null : filePaths; });
     ipcMain.on('terminal-create', (e, id, cwd) => { if (!pty) return; if (ptyProcesses[id]) try { ptyProcesses[id].kill(); } catch (e) { } try { const shell = os.platform() === 'win32' ? 'powershell.exe' : (process.env.SHELL || '/bin/bash'); const proc = pty.spawn(shell, [], { name: 'xterm-256color', cols: 80, rows: 30, cwd: cwd || os.homedir(), env: process.env }); ptyProcesses[id] = proc; proc.on('data', d => { if (mainWindow) mainWindow.webContents.send('terminal-data', id, d); }); proc.on('exit', () => delete ptyProcesses[id]); } catch (err) { console.error(err); } });
     ipcMain.on('terminal-write', (e, id, d) => { if (ptyProcesses[id]) ptyProcesses[id].write(d); });
     ipcMain.on('terminal-resize', (e, id, s) => { if (ptyProcesses[id]) try { ptyProcesses[id].resize(s.cols, s.rows); } catch (e) { } });

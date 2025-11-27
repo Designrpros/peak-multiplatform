@@ -1,11 +1,11 @@
 // src/components/NoteEditor/index.js
 const { ipcRenderer } = require('electron');
 let hljs;
-try { hljs = require('highlight.js'); } catch (e) {}
+try { hljs = require('highlight.js'); } catch (e) { }
 
 function renderNoteEditorHTML(noteData) {
     const sortedBlocks = noteData.blocks ? noteData.blocks.sort((a, b) => a.orderIndex - b.orderIndex) : [];
-    const tags = noteData.tags || []; 
+    const tags = noteData.tags || [];
 
     return `
         <div class="note-editor-container" data-note-id="${noteData.id}">
@@ -39,17 +39,17 @@ function renderNoteEditorHTML(noteData) {
 }
 
 function renderBlock(block) {
-    const content = block.content || '';
+    const content = String(block.content || '');
     const safeContent = content.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
     const rawContentEncoded = content.replace(/"/g, '&quot;');
     const commonAttrs = `draggable="true" data-id="${block.id}" data-type="${block.type}" data-raw-content="${rawContentEncoded}"`;
 
-    switch(block.type) {
+    switch (block.type) {
         case 'heading': return `<div class="note-block heading-block" ${commonAttrs}>${safeContent}</div>`;
         case 'paragraph': return `<div class="note-block paragraph-block" ${commonAttrs}>${safeContent.replace(/\n/g, '<br>')}</div>`;
         case 'todo':
             const isChecked = content.startsWith('[x] ');
-            const todoText = safeContent.replace(/^\[[ x]\]\s?/, ''); 
+            const todoText = safeContent.replace(/^\[[ x]\]\s?/, '');
             return `
                 <div class="note-block todo-block" ${commonAttrs}>
                     <button class="todo-toggle ${isChecked ? 'checked' : ''}" 
@@ -60,7 +60,7 @@ function renderBlock(block) {
                 </div>
             `;
         case 'image':
-            return `<div class="note-block image-block" ${commonAttrs}><img src="${content}" style="max-width: 100%; border-radius: 8px;" onerror="this.style.display='none'"><div class="image-caption">${safeContent}</div></div>`;
+            return `<div class="note-block image-block" ${commonAttrs}><img src="${content}" style="max-width: 100%; border-radius: 8px;" onerror="this.style.display='none'"></div>`;
         case 'code':
             // HIGHLIGHTING LOGIC
             let codeText = content;
@@ -71,7 +71,7 @@ function renderBlock(block) {
                 codeText = codeText.substring(langMatch[0].length);
             }
             if (codeText.endsWith('```')) codeText = codeText.substring(0, codeText.length - 3);
-            
+
             let highlighted = safeContent;
             if (hljs) {
                 try {
@@ -127,7 +127,7 @@ function renderInputBar() {
 
 function attachNoteEditorListeners(noteData, container) {
     window.ipcRenderer.send('did-finish-content-swap');
-    const root = container || document; 
+    const root = container || document;
     const noteId = noteData.id;
     const contentArea = root.querySelector('.note-editor-content');
     const textarea = root.querySelector('.note-input-textarea');
@@ -136,8 +136,27 @@ function attachNoteEditorListeners(noteData, container) {
     const scroller = root.querySelector('.note-editor-scroller');
 
     let draggedBlockId = null;
-    if (contentArea) {
-        contentArea.addEventListener('dragstart', (e) => {
+
+    // Define paste handler for cleanup
+    const handlePaste = (e) => {
+        // Only handle if we are in this note editor
+        if (!document.querySelector(`.note-editor-container[data-note-id="${noteId}"]`)) return;
+
+        const items = (e.clipboardData || e.originalEvent.clipboardData).items;
+        for (let index in items) {
+            const item = items[index];
+            if (item.kind === 'file' && item.type.startsWith('image/')) {
+                const blob = item.getAsFile();
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    window.addNoteBlock(noteId, 'image', event.target.result);
+                };
+                reader.readAsDataURL(blob);
+            }
+        }
+    };
+    if (scroller) {
+        scroller.addEventListener('dragstart', (e) => {
             const block = e.target.closest('.note-block');
             if (!block) return;
             draggedBlockId = block.dataset.id;
@@ -145,7 +164,7 @@ function attachNoteEditorListeners(noteData, container) {
             e.dataTransfer.effectAllowed = 'move';
             e.dataTransfer.setData('text/plain', draggedBlockId);
         });
-        contentArea.addEventListener('dragend', (e) => {
+        scroller.addEventListener('dragend', (e) => {
             if (draggedBlockId) {
                 const block = contentArea.querySelector(`[data-id="${draggedBlockId}"]`);
                 if (block) block.classList.remove('dragging');
@@ -153,8 +172,8 @@ function attachNoteEditorListeners(noteData, container) {
             document.querySelectorAll('.drag-over-top, .drag-over-bottom').forEach(el => el.classList.remove('drag-over-top', 'drag-over-bottom'));
             draggedBlockId = null;
         });
-        contentArea.addEventListener('dragover', (e) => {
-            e.preventDefault();
+        scroller.addEventListener('dragover', (e) => {
+            e.preventDefault(); // allow drop everywhere
             const block = e.target.closest('.note-block');
             if (block && block.dataset.id !== draggedBlockId) {
                 const rect = block.getBoundingClientRect();
@@ -164,12 +183,27 @@ function attachNoteEditorListeners(noteData, container) {
                 else block.classList.add('drag-over-bottom');
             }
         });
-        contentArea.addEventListener('dragleave', (e) => {
-             const block = e.target.closest('.note-block');
-             if (block) block.classList.remove('drag-over-top', 'drag-over-bottom');
+        scroller.addEventListener('dragleave', (e) => {
+            const block = e.target.closest('.note-block');
+            if (block) block.classList.remove('drag-over-top', 'drag-over-bottom');
         });
-        contentArea.addEventListener('drop', (e) => {
+        scroller.addEventListener('drop', (e) => {
             e.preventDefault();
+
+            // Handle File Drop
+            if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                const file = e.dataTransfer.files[0];
+                if (file.type.startsWith('image/')) {
+                    const reader = new FileReader();
+                    reader.onload = (event) => {
+                        window.addNoteBlock(noteId, 'image', event.target.result);
+                    };
+                    reader.readAsDataURL(file);
+                }
+                return; // If it's a file drop, we're done.
+            }
+
+            // Handle Block Reorder
             const targetBlock = e.target.closest('.note-block');
             if (targetBlock && draggedBlockId && targetBlock.dataset.id !== draggedBlockId) {
                 const targetId = targetBlock.dataset.id;
@@ -178,6 +212,9 @@ function attachNoteEditorListeners(noteData, container) {
                 window.moveNoteBlock(noteId, draggedBlockId, targetId, position);
             }
         });
+        // Handle Paste
+        // Handle Paste
+        document.addEventListener('paste', handlePaste);
     }
 
     const activeTagList = root.querySelector('.active-tag-list');
@@ -202,7 +239,7 @@ function attachNoteEditorListeners(noteData, container) {
             }
         });
     }
-    
+
     if (activeTagList) {
         activeTagList.addEventListener('click', (e) => {
             if (e.target.closest('.tag-remove')) {
@@ -222,31 +259,97 @@ function attachNoteEditorListeners(noteData, container) {
     }
 
     if (contentArea) {
+        const enterEditMode = (block) => {
+            if (block.classList.contains('editing')) return;
+            block.classList.add('editing');
+            const txt = document.createElement('textarea');
+            txt.className = 'edit-textarea';
+            let raw = block.dataset.rawContent || '';
+            if (block.dataset.type === 'todo') raw = raw.replace(/^\[[ x]\]\s?/, '');
+            txt.value = raw;
+
+            block.innerHTML = '';
+            block.appendChild(txt);
+
+            // Auto-expand function
+            const autoExpand = () => {
+                txt.style.height = 'auto';
+                txt.style.height = txt.scrollHeight + 'px';
+            };
+
+            txt.focus();
+            autoExpand(); // Initial sizing
+
+            const save = () => {
+                const val = txt.value;
+                if (!val.trim()) window.deleteNoteBlock(noteId, block.dataset.id);
+                else window.updateNoteBlock(noteId, block.dataset.id, block.dataset.type === 'todo' ? `[ ] ${val}` : val);
+                // The updateNoteBlock call will trigger a re-render, effectively removing the textarea and focus
+            };
+
+            txt.addEventListener('input', autoExpand);
+
+            // BLUR handler
+            txt.addEventListener('blur', () => {
+                // Delay slightly to allow click events to register if needed, 
+                // but mostly to avoid conflict if the click was on a save button (if we had one)
+                // In this case, immediate save is fine.
+                safeSave();
+            });
+
+            // ENTER key handler
+            txt.addEventListener('keydown', (k) => {
+                if (k.key === 'Enter' && !k.shiftKey) {
+                    k.preventDefault();
+                    txt.blur();
+                }
+            });
+
+            // CLICK OUTSIDE handler (Fallback)
+            // Sometimes clicking on a non-focusable element (like a div) doesn't trigger blur immediately in all environments.
+            const clickOutsideHandler = (e) => {
+                if (!block.contains(e.target)) {
+                    txt.blur(); // This will trigger the blur handler above
+                }
+            };
+            setTimeout(() => document.addEventListener('click', clickOutsideHandler), 0);
+
+            // Cleanup function to remove the global listener when this specific edit session ends
+            // We hook into the save function to do this cleanup, but since save triggers re-render, 
+            // the closure might be lost. However, we need to make sure we don't leak listeners.
+            // WE MUST REMOVE IT.
+
+            // Let's modify save to remove the listener.
+            const originalSave = save;
+            const safeSave = () => {
+                document.removeEventListener('click', clickOutsideHandler);
+                originalSave();
+            };
+        };
+
         contentArea.addEventListener('click', (e) => {
             const block = e.target.closest('.note-block');
             if (!block || block.classList.contains('editing')) return;
             if (['separator', 'image'].includes(block.dataset.type)) return;
             if (e.target.closest('button, input, textarea')) return;
 
-            block.classList.add('editing');
-            const txt = document.createElement('textarea');
-            txt.className = 'edit-textarea';
-            let raw = block.dataset.rawContent || '';
-            if(block.dataset.type === 'todo') raw = raw.replace(/^\[[ x]\]\s?/, '');
-            txt.value = raw;
-            
-            block.innerHTML = '';
-            block.appendChild(txt);
-            txt.focus();
-            txt.style.height = txt.scrollHeight + 'px';
-            
-            const save = () => {
-                const val = txt.value;
-                if (!val.trim()) window.deleteNoteBlock(noteId, block.dataset.id);
-                else window.updateNoteBlock(noteId, block.dataset.id, block.dataset.type === 'todo' ? `[ ] ${val}` : val);
-            };
-            txt.addEventListener('blur', save);
-            txt.addEventListener('keydown', (k) => { if(k.key === 'Enter' && !k.shiftKey) { k.preventDefault(); txt.blur(); }});
+            // Handle Todo Toggle
+            if (block.dataset.type === 'todo') {
+                const rawContent = block.dataset.rawContent || '';
+                const isChecked = rawContent.startsWith('[x] ');
+                window.handleTodoToggle(noteId, block.dataset.id, !isChecked);
+                return;
+            }
+
+            enterEditMode(block);
+        });
+
+        contentArea.addEventListener('dblclick', (e) => {
+            const block = e.target.closest('.note-block');
+            if (!block || block.classList.contains('editing')) return;
+            if (block.dataset.type === 'todo') {
+                enterEditMode(block);
+            }
         });
         contentArea.addEventListener('contextmenu', (e) => {
             const block = e.target.closest('.note-block');
@@ -276,7 +379,7 @@ function attachNoteEditorListeners(noteData, container) {
         textarea.value = '';
         adjustHeight();
         textarea.focus();
-        setTimeout(() => { if(scroller) scroller.scrollTop = scroller.scrollHeight; }, 50);
+        setTimeout(() => { if (scroller) scroller.scrollTop = scroller.scrollHeight; }, 50);
     };
 
     if (textarea) {
@@ -291,7 +394,10 @@ function attachNoteEditorListeners(noteData, container) {
     const deleteHandler = (e, d) => { if (d.noteId === noteId) window.deleteNoteBlock(d.noteId, d.blockId); };
     ipcRenderer.on('delete-block-command', deleteHandler);
 
-    return () => { ipcRenderer.removeListener('delete-block-command', deleteHandler); };
+    return () => {
+        ipcRenderer.removeListener('delete-block-command', deleteHandler);
+        document.removeEventListener('paste', handlePaste);
+    };
 }
 
 module.exports = { renderNoteEditorHTML, attachNoteEditorListeners };

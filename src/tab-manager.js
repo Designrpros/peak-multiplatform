@@ -3,7 +3,7 @@ const { ipcRenderer } = require('electron');
 const Store = require('electron-store');
 
 function load(path) {
-    try { return require(path); } 
+    try { return require(path); }
     catch (e) { console.warn(`[Peak] Optional component missing: ${path}`); return null; }
 }
 
@@ -22,18 +22,18 @@ const Kanban = load('./components/Kanban/index.js');
 const Whiteboard = load('./components/Whiteboard/index.js');
 const Docs = load('./components/Docs/index.js');
 const SettingsView = load('./components/SettingsView/index.js');
-const Finder = load('./components/Finder/index.js'); 
+const Finder = load('./components/Finder/index.js');
 const Workspaces = load('./components/Workspaces/index.js'); // NEW IMPORT
 
 const ChatController = load('./controllers/ChatController.js');
-const WhiteboardController = load('./controllers/WhiteboardController.js'); 
-const Inspector = load('./components/Inspector/index.js'); 
+const WhiteboardController = load('./controllers/WhiteboardController.js');
+const Inspector = load('./components/Inspector/index.js');
 
 // --- Store Setup ---
 let noteStore, chatStore, historyStore, closedTabsStore, bookmarkStore, mindMapStore, kanbanStore, terminalStore, whiteboardStore, docsStore, workspaceStore, store;
 let globalTabs = [];
 let selectedTabId = null;
-const tabCleanups = new Map(); 
+const tabCleanups = new Map();
 
 try {
     const commonOpts = { clearInvalidConfig: true };
@@ -41,14 +41,14 @@ try {
     chatStore = new Store({ name: 'chats', defaults: { sessions: [] }, ...commonOpts });
     historyStore = new Store({ name: 'history', defaults: { items: [] }, ...commonOpts });
     closedTabsStore = new Store({ name: 'closedTabs', defaults: { items: [] }, ...commonOpts });
-    bookmarkStore = new Store({ name: 'bookmarks', defaults: { items: [] }, ...commonOpts }); 
+    bookmarkStore = new Store({ name: 'bookmarks', defaults: { items: [] }, ...commonOpts });
     mindMapStore = new Store({ name: 'mindmaps', defaults: { maps: [] }, ...commonOpts });
     kanbanStore = new Store({ name: 'kanban', defaults: { boards: [] }, ...commonOpts });
     terminalStore = new Store({ name: 'terminals', defaults: { items: [] }, ...commonOpts });
     whiteboardStore = new Store({ name: 'whiteboards', defaults: { items: [] }, ...commonOpts });
     docsStore = new Store({ name: 'docs', defaults: { items: [] }, ...commonOpts });
     workspaceStore = new Store({ name: 'workspaces', defaults: { items: [] }, ...commonOpts }); // NEW STORE
-    
+
     store = new Store({ name: 'appState', ...commonOpts });
 
     globalTabs = store.get('openTabs', []);
@@ -69,7 +69,7 @@ try {
 // --- Helper Functions ---
 
 function getTabIcon(content) {
-    switch(content.type) {
+    switch (content.type) {
         case 'note': return 'file-text';
         case 'llmChat': return 'message-square';
         case 'web': return 'globe';
@@ -79,8 +79,8 @@ function getTabIcon(content) {
         case 'whiteboard': return 'pen-tool';
         case 'kanban': return 'check-square';
         case 'docs': return 'book-open';
-        case 'finder': return 'hard-drive'; 
-        default: return 'plus'; 
+        case 'finder': return 'hard-drive';
+        default: return 'plus';
     }
 }
 
@@ -95,21 +95,21 @@ function renderTabBarOnly() {
         tabsEl.innerHTML = TabBar.renderTabBar(globalTabs, selectedTabId);
         if (TabBar.attachTabListeners) TabBar.attachTabListeners();
     }
-    
+
     const activeTab = globalTabs.find(t => t.id === selectedTabId);
     const addrBar = document.getElementById('global-address-bar-input');
     if (addrBar && activeTab) {
         const { type, data } = activeTab.content;
-        
+
         // Update Navigation Buttons State
         const backBtn = document.getElementById('global-nav-back');
         const fwdBtn = document.getElementById('global-nav-forward');
-        
+
         if (backBtn && fwdBtn) {
             // Reset first
             backBtn.disabled = true;
             fwdBtn.disabled = true;
-            
+
             if (type === 'web') {
                 if (WebView && WebView.updateWebViewUI) WebView.updateWebViewUI(activeTab.id);
             } else if (type === 'project') {
@@ -118,16 +118,16 @@ function renderTabBarOnly() {
         }
 
         if (type === 'web') {
-             // UI updated via WebView helper above
+            // UI updated via WebView helper above
         } else {
-             if (type === 'project') addrBar.value = `project://${data.title}`;
-             else if (type === 'mindmap') addrBar.value = `mindmap://${data.title}`;
-             else if (type === 'whiteboard') addrBar.value = `peak://whiteboard`;
-             else if (type === 'kanban') addrBar.value = `peak://tasks`;
-             else if (type === 'docs') addrBar.value = `peak://docs`;
-             else if (type === 'finder') addrBar.value = `file://${data.path || 'home'}`;
-             else if (type !== 'empty') addrBar.value = `${type}://${activeTab.title}`;
-             else addrBar.value = '';
+            if (type === 'project') addrBar.value = `project://${data.title}`;
+            else if (type === 'mindmap') addrBar.value = `mindmap://${data.title}`;
+            else if (type === 'whiteboard') addrBar.value = `peak://whiteboard`;
+            else if (type === 'kanban') addrBar.value = `peak://tasks`;
+            else if (type === 'docs') addrBar.value = `peak://docs`;
+            else if (type === 'finder') addrBar.value = `file://${data.path || 'home'}`;
+            else if (type !== 'empty') addrBar.value = `${type}://${activeTab.title}`;
+            else addrBar.value = '';
         }
     }
     if (window.lucide) window.lucide.createIcons();
@@ -194,8 +194,15 @@ async function renderContentOnly() {
 
     let container = document.getElementById(`tab-content-${activeTab.id}`);
     const { type, id, data, viewMode } = activeTab.content;
-    
+
     const isReactiveView = ['note', 'llmChat', 'empty', 'mindmap', 'kanban', 'whiteboard', 'finder'].includes(type);
+
+    // Preserve scroll position helper (defined here for scope access)
+    let savedScrollTop = 0;
+    const restoreScroll = () => {
+        const newScroller = container ? container.querySelector('.note-editor-scroller') : null;
+        if (newScroller) newScroller.scrollTop = savedScrollTop;
+    };
 
     if (!container) {
         container = document.createElement('div');
@@ -203,34 +210,39 @@ async function renderContentOnly() {
         container.className = 'tab-content-wrapper';
         container.style.width = '100%';
         container.style.height = '100%';
-        container.style.display = 'flex'; 
+        container.style.display = 'flex';
         container.style.flexDirection = 'column';
         contentArea.appendChild(container);
     } else {
         container.style.display = 'flex';
-        
+
         if (type === 'project') {
             window.dispatchEvent(new CustomEvent('project-tab-shown', { detail: { id: activeTab.id } }));
             return;
         }
-        
+
         if (type === 'terminal') {
             window.dispatchEvent(new CustomEvent('terminal-tab-shown', { detail: { id: activeTab.id } }));
-            return; 
+            return;
         }
-        
+
         if (type === 'web') {
             if (WebView && WebView.updateWebViewUI) WebView.updateWebViewUI(activeTab.id);
-            return; 
+            return;
         }
 
         if (!isReactiveView) return;
-        
+
         if (tabCleanups.has(activeTab.id)) {
-            try { tabCleanups.get(activeTab.id)(); } catch(e) {}
+            try { tabCleanups.get(activeTab.id)(); } catch (e) { }
             tabCleanups.delete(activeTab.id);
         }
-        container.innerHTML = ''; 
+
+        // Capture scroll position before clearing
+        const scroller = container.querySelector('.note-editor-scroller');
+        if (scroller) savedScrollTop = scroller.scrollTop;
+
+        container.innerHTML = '';
     }
 
     let cleanup = null;
@@ -238,10 +250,10 @@ async function renderContentOnly() {
         if (type === 'empty') {
             if (viewMode === 'dashboard' && Dashboard) {
                 const recentActivity = getRecentActivity();
-                const bookmarks = bookmarkStore ? bookmarkStore.get('items', []) : []; 
+                const bookmarks = bookmarkStore ? bookmarkStore.get('items', []) : [];
                 container.innerHTML = Dashboard.renderDashboardHTML(recentActivity, bookmarks);
                 cleanup = Dashboard.attachDashboardListeners();
-            } else if (viewMode === 'finder' && Finder) { 
+            } else if (viewMode === 'finder' && Finder) {
                 // Keeping Finder logic if still needed, though UI access might be removed
                 container.innerHTML = Finder.renderFinderHTML();
                 cleanup = Finder.attachFinderListeners(data, container);
@@ -253,55 +265,56 @@ async function renderContentOnly() {
                 container.innerHTML = LandingPage.renderLandingPageHTML(activeTab.id);
                 cleanup = LandingPage.attachLandingPageListeners(activeTab.id);
             }
-        } 
+        }
         else if (type === 'web' && WebView) {
             container.innerHTML = WebView.getWebViewComponent(data.url, activeTab.id);
             cleanup = WebView.attachWebViewListeners(data, activeTab.id);
-        } 
+        }
         else if (type === 'note' && NoteEditor) {
             const note = noteStore ? noteStore.get('notes', []).find(n => n.id === id) : null;
             if (note) {
-                activeTab.content.data = note; 
+                activeTab.content.data = note;
                 container.innerHTML = NoteEditor.renderNoteEditorHTML(note, activeTab.id);
                 cleanup = NoteEditor.attachNoteEditorListeners(note, container);
+                restoreScroll();
             } else container.innerHTML = `<div class="error">Note not found.</div>`;
-        } 
+        }
         else if (type === 'llmChat' && ChatView) {
             const chat = chatStore ? chatStore.get('sessions', []).find(s => s.id === id) : null;
             if (chat) {
-                activeTab.content.data = chat; 
+                activeTab.content.data = chat;
                 container.innerHTML = ChatView.renderChatViewHTML(chat, activeTab.id);
                 cleanup = ChatView.attachChatViewListeners(chat, container);
             } else container.innerHTML = `<div class="error">Chat session not found.</div>`;
-        } 
+        }
         else if (type === 'project' && ProjectView) {
-            ProjectView.renderProjectViewHTML(data, container); 
+            ProjectView.renderProjectViewHTML(data, container);
             cleanup = await ProjectView.attachProjectViewListeners(data, container);
-        } 
+        }
         else if (type === 'terminal' && TerminalView) {
             TerminalView.renderTerminalHTML(activeTab, container);
             cleanup = TerminalView.attachTerminalListeners(activeTab, container);
-        } 
+        }
         else if (type === 'mindmap' && MindMap) {
             container.innerHTML = MindMap.renderMindMapHTML(data);
             cleanup = MindMap.attachMindMapListeners(data, container, (newData) => {
                 saveCurrentMindMap(id, newData);
             });
-        } 
+        }
         else if (type === 'kanban' && Kanban) {
             if (data && data.id) {
                 container.innerHTML = Kanban.renderKanbanHTML(data);
                 cleanup = Kanban.attachKanbanListeners(data, container, saveKanban);
             }
-        } 
+        }
         else if (type === 'whiteboard' && Whiteboard) {
-            const boardId = data.id || activeTab.id; 
+            const boardId = data.id || activeTab.id;
             const savedItem = whiteboardStore ? whiteboardStore.get('items', []).find(i => i.id === boardId) : null;
-            const initialData = savedItem?.data ? { data: savedItem.data, title: savedItem.title } : {}; 
-            if(savedItem?.title) activeTab.title = savedItem.title; 
+            const initialData = savedItem?.data ? { data: savedItem.data, title: savedItem.title } : {};
+            if (savedItem?.title) activeTab.title = savedItem.title;
             container.innerHTML = Whiteboard.renderWhiteboardHTML(boardId, initialData);
             cleanup = Whiteboard.attachWhiteboardListeners(boardId, initialData);
-        } 
+        }
         else if (type === 'docs' && Docs) {
             container.innerHTML = Docs.renderDocsHTML();
             cleanup = Docs.attachDocsListeners();
@@ -315,7 +328,7 @@ async function renderContentOnly() {
         console.error("Render Content Error:", err);
         container.innerHTML = `<div class="error">Error rendering ${type}: ${err.message}</div>`;
     }
-    
+
     if (cleanup) tabCleanups.set(activeTab.id, cleanup);
     if (window.lucide) window.lucide.createIcons();
     saveTabs();
@@ -344,7 +357,7 @@ function toggleBookmark(url, title) {
             id: Date.now(),
             url,
             title: title || new URL(url).hostname,
-            icon: `https://www.google.com/s2/favicons?domain=${new URL(url).hostname}&sz=64` 
+            icon: `https://www.google.com/s2/favicons?domain=${new URL(url).hostname}&sz=64`
         });
     }
     bookmarkStore.set('items', bookmarks);
@@ -383,12 +396,12 @@ function restoreClosedTab(id) {
 function openExistingTab(type, id) {
     const existingTab = globalTabs.find(t => t.content.type === type && t.content.id === id);
     if (existingTab) { selectTab(existingTab.id); return; }
-    
+
     let data, title;
     if (type === 'note' && noteStore) {
         data = noteStore.get('notes', []).find(n => n.id === id);
         title = data?.title || 'Note';
-    } 
+    }
     else if (type === 'llmChat' && chatStore) {
         data = chatStore.get('sessions', []).find(s => s.id === id);
         title = data?.title || 'Chat';
@@ -405,7 +418,7 @@ function setEmptyTabMode(mode) {
     const activeTab = globalTabs.find(t => t.id === selectedTabId);
     if (activeTab && activeTab.content.type === 'empty') {
         activeTab.content.viewMode = mode;
-        renderContentOnly(); 
+        renderContentOnly();
     }
 }
 
@@ -422,7 +435,7 @@ function openMindMapFromHistory(id) {
 }
 
 function openTerminalFromHistory(id) { handlePerformAction({ mode: 'Terminal', query: '' }); }
-function openWhiteboardFromHistory(id) { 
+function openWhiteboardFromHistory(id) {
     const existingTab = globalTabs.find(t => t.content.type === 'whiteboard' && t.content.id === id);
     if (existingTab) { selectTab(existingTab.id); return; }
     const items = whiteboardStore.get('items', []);
@@ -468,7 +481,7 @@ function getActiveTab() {
 
 function saveCurrentWorkspace(title, color) {
     if (!workspaceStore) return;
-    
+
     const currentTabs = globalTabs.map(t => ({
         title: t.title,
         content: t.content
@@ -485,7 +498,7 @@ function saveCurrentWorkspace(title, color) {
     const items = workspaceStore.get('items', []);
     items.push(newWorkspace);
     workspaceStore.set('items', items);
-    
+
     // Refresh if currently on workspaces page
     const activeTab = globalTabs.find(t => t.id === selectedTabId);
     if (activeTab && activeTab.content.viewMode === 'workspaces') {
@@ -497,7 +510,7 @@ function restoreWorkspace(id) {
     if (!workspaceStore) return;
     const items = workspaceStore.get('items', []);
     const workspace = items.find(w => w.id === id);
-    
+
     if (workspace && workspace.tabs.length > 0) {
         globalTabs = [];
         workspace.tabs.forEach(savedTab => {
@@ -507,7 +520,7 @@ function restoreWorkspace(id) {
                 content: savedTab.content
             });
         });
-        
+
         selectedTabId = globalTabs[0].id;
         saveTabs();
         renderTabBarOnly();
@@ -520,7 +533,7 @@ function deleteWorkspace(id) {
     let items = workspaceStore.get('items', []);
     items = items.filter(w => w.id !== id);
     workspaceStore.set('items', items);
-    
+
     const activeTab = globalTabs.find(t => t.id === selectedTabId);
     if (activeTab && activeTab.content.viewMode === 'workspaces') {
         renderContentOnly();
@@ -567,7 +580,7 @@ function setupGlobalNavigation() {
         if (!activeTab) return;
         const container = document.getElementById(`tab-content-${activeTab.id}`);
         const wv = container ? container.querySelector('webview') : null;
-        if(wv) wv.reload(); else reloadActiveTab();
+        if (wv) wv.reload(); else reloadActiveTab();
     };
 
     if (btnBack) btnBack.onclick = handleBack;
@@ -583,11 +596,11 @@ async function renderView() {
         const tabBar = document.getElementById('tab-bar-container');
         const contentArea = document.getElementById('main-content-area');
         const inspector = document.getElementById('inspector-container');
-        
+
         if (toolbar) toolbar.style.display = 'none';
         if (tabBar) tabBar.style.display = 'none';
         if (inspector) inspector.style.display = 'none';
-        
+
         if (contentArea && SettingsView) {
             const settings = await ipcRenderer.invoke('get-all-settings');
             contentArea.innerHTML = SettingsView.renderSettingsHTML(settings);
@@ -596,7 +609,7 @@ async function renderView() {
         } else {
             contentArea.innerHTML = '<div style="padding:20px;">Error loading settings view.</div>';
         }
-        return; 
+        return;
     }
 
     const toolbarEl = document.getElementById('global-toolbar-container');
@@ -606,38 +619,38 @@ async function renderView() {
         if (addrInput) addrInput.addEventListener('keydown', handleAddressBarEnter);
         setupGlobalNavigation();
     }
-    
+
     ipcRenderer.removeAllListeners('whiteboard-save-data');
     ipcRenderer.on('whiteboard-save-data', (event, id, data, title) => {
         const newTitle = WhiteboardController.save(id, data, title);
         const activeTab = globalTabs.find(t => t.content.type === 'whiteboard' && t.content.id === Number(id));
-        if(activeTab && activeTab.title !== newTitle) {
+        if (activeTab && activeTab.title !== newTitle) {
             activeTab.title = newTitle;
             renderTabBarOnly();
             saveTabs();
         }
         refreshInspector();
     });
-    
+
     ipcRenderer.removeAllListeners('whiteboard-action');
     ipcRenderer.on('whiteboard-action', async (event, data) => {
-        const activeEngine = window.activeWhiteboardEngine; 
+        const activeEngine = window.activeWhiteboardEngine;
         if (!activeEngine) return;
-        
+
         const action = data.action;
         const activeObjects = activeEngine.canvas.getActiveObjects();
-        
+
         if (action === 'copy') { activeEngine.groupSystem.copy(); }
         else if (action === 'paste') { activeEngine.groupSystem.paste(); }
         else if (action === 'group') { activeEngine.groupSystem.groupSelected(); }
         else if (action === 'ungroup') { activeEngine.groupSystem.ungroupSelected(); }
         else if (action === 'copyPng') { await activeEngine.exportSelectedToClipboard(); }
-        
+
         else if (action === 'bringForward') { activeEngine.layerSystem.bringForward(activeObjects); }
         else if (action === 'sendBackwards') { activeEngine.layerSystem.sendBackwards(activeObjects); }
         else if (action === 'bringToFront') { activeEngine.layerSystem.bringToFront(activeObjects); }
         else if (action === 'sendToBack') { activeEngine.layerSystem.sendToBack(activeObjects); }
-        
+
         else if (action === 'delete') {
             if (activeObjects.length) {
                 activeEngine.canvas.remove(...activeObjects);
@@ -647,7 +660,7 @@ async function renderView() {
             }
         }
     });
-    
+
     renderTabBarOnly();
     await renderContentOnly();
 }
@@ -676,7 +689,7 @@ function closeTab(id) {
         const tabToClose = globalTabs[idx];
         if (closedTabsStore && tabToClose.content.type !== 'empty') {
             const closedItems = closedTabsStore.get('items', []);
-            closedItems.unshift({ 
+            closedItems.unshift({
                 id: Date.now(), title: tabToClose.title, type: tabToClose.content.type, content: tabToClose.content, timestamp: Date.now()
             });
             if (closedItems.length > 20) closedItems.pop();
@@ -684,7 +697,7 @@ function closeTab(id) {
             refreshInspector();
         }
         const cleanup = tabCleanups.get(id);
-        if (cleanup) { try { cleanup(); } catch(e) {} tabCleanups.delete(id); }
+        if (cleanup) { try { cleanup(); } catch (e) { } tabCleanups.delete(id); }
         const el = document.getElementById(`tab-content-${id}`);
         if (el) el.remove();
         globalTabs.splice(idx, 1);
@@ -702,8 +715,8 @@ function reloadActiveTab() { renderContentOnly(); }
 function reorderTabs(from, to) { if (from === to) return; const item = globalTabs.splice(from, 1)[0]; globalTabs.splice(to, 0, item); renderTabBarOnly(); saveTabs(); }
 function navigateTab(dir) { const idx = globalTabs.findIndex(t => t.id === selectedTabId); if (idx === -1) return; let newIdx = idx + dir; if (newIdx < 0) newIdx = globalTabs.length - 1; if (newIdx >= globalTabs.length) newIdx = 0; selectTab(globalTabs[newIdx].id); }
 function setActiveTab(id) { selectTab(id); }
-function addTab(type='empty') {
-    if (type==='note'||type==='chat') { handlePerformAction({mode: type==='note'?'Note':'LLM', query: type==='note'?'Untitled':''}); return; }
+function addTab(type = 'empty') {
+    if (type === 'note' || type === 'chat') { handlePerformAction({ mode: type === 'note' ? 'Note' : 'LLM', query: type === 'note' ? 'Untitled' : '' }); return; }
     const id = Date.now();
     globalTabs.push({ id, title: 'New Tab', content: { type: 'empty', id, data: {}, viewMode: 'landing' } });
     selectTab(id);
@@ -723,7 +736,20 @@ async function handlePerformAction(data) {
         }
         newContent = { type: 'web', id, data: { url } };
     } else if (data.mode === 'Note') {
-        const note = { id, title: data.query || 'Untitled', blocks: [], createdAt: Date.now() };
+        const initialBlocks = [];
+        if (data.query && data.query.trim() !== '' && data.query !== 'Untitled Note') {
+            const type = data.blockType || 'paragraph';
+            let content = data.query;
+            if (type === 'todo') content = `[ ] ${content}`;
+
+            initialBlocks.push({
+                id: Date.now().toString(),
+                type: type,
+                content: content,
+                orderIndex: 0
+            });
+        }
+        const note = { id, title: data.query || 'Untitled', blocks: initialBlocks, createdAt: Date.now() };
         const notes = noteStore.get('notes', []); notes.unshift(note); noteStore.set('notes', notes);
         newContent = { type: 'note', id, data: note };
         refreshInspector();
@@ -746,7 +772,7 @@ async function handlePerformAction(data) {
             if (!path) { if (LandingPage) LandingPage.resetLandingPageSubmitGuard(); return; }
             title = path.split(/[\\/]/).pop();
             newContent = { type: 'project', id, data: { path, title } };
-        } catch(e) { console.error(e); return; }
+        } catch (e) { console.error(e); return; }
     } else if (data.mode === 'Mind Map') {
         const newMap = { id, title: data.query || 'Central Idea', nodes: [], createdAt: Date.now() };
         const maps = mindMapStore.get('maps', []);
@@ -763,26 +789,26 @@ async function handlePerformAction(data) {
         refreshInspector();
         newContent = { type: 'whiteboard', id, data: newItem };
         title = newItem.title;
-    } else if (data.mode === 'Tasks') { 
+    } else if (data.mode === 'Tasks') {
         if (data.query && data.query.trim() !== '') {
-             const newBoardId = 'board-' + Date.now();
-             const newBoard = {
-                 id: newBoardId,
-                 title: data.query, 
-                 description: 'New Task Board',
-                 columns: [
-                     { id: 'col-todo', title: 'To Do', items: [] },
-                     { id: 'col-progress', title: 'In Progress', items: [] },
-                     { id: 'col-done', title: 'Done', items: [] }
-                 ],
-                 createdAt: Date.now()
-             };
-             const boards = kanbanStore.get('boards', []);
-             boards.push(newBoard);
-             kanbanStore.set('boards', boards);
-             newContent = { type: 'kanban', id, data: newBoard };
-             title = newBoard.title;
-             refreshInspector(); 
+            const newBoardId = 'board-' + Date.now();
+            const newBoard = {
+                id: newBoardId,
+                title: data.query,
+                description: 'New Task Board',
+                columns: [
+                    { id: 'col-todo', title: 'To Do', items: [] },
+                    { id: 'col-progress', title: 'In Progress', items: [] },
+                    { id: 'col-done', title: 'Done', items: [] }
+                ],
+                createdAt: Date.now()
+            };
+            const boards = kanbanStore.get('boards', []);
+            boards.push(newBoard);
+            kanbanStore.set('boards', boards);
+            newContent = { type: 'kanban', id, data: newBoard };
+            title = newBoard.title;
+            refreshInspector();
         } else {
             newContent = { type: 'kanban', id, data: {} };
             title = "Tasks";
@@ -804,7 +830,7 @@ async function handlePerformAction(data) {
         const current = globalTabs.find(t => t.id === selectedTabId);
         if (current && current.content.type === 'empty') {
             const oldContainer = document.getElementById(`tab-content-${selectedTabId}`);
-            if (oldContainer) { if(tabCleanups.has(selectedTabId)) tabCleanups.get(selectedTabId)(); oldContainer.remove(); }
+            if (oldContainer) { if (tabCleanups.has(selectedTabId)) tabCleanups.get(selectedTabId)(); oldContainer.remove(); }
             current.content = newContent;
             current.title = title;
             renderTabBarOnly();
@@ -815,7 +841,7 @@ async function handlePerformAction(data) {
         }
         if (data.mode === 'LLM' && data.query) {
             setTimeout(() => {
-                 if (ChatController && ChatController.sendChatMessage) ChatController.sendChatMessage(id, data.query, data.model);
+                if (ChatController && ChatController.sendChatMessage) ChatController.sendChatMessage(id, data.query, data.model);
             }, 200);
         }
     }
@@ -826,56 +852,56 @@ function handleAddressBarEnter(e) {
         if (!query) return;
         let mode = 'Search';
         let cleanQuery = query;
-        if (query.startsWith('note://')) { mode = 'Note'; cleanQuery = query.replace('note://',''); }
-        else if (query.startsWith('term://')) { mode = 'Terminal'; cleanQuery = query.replace('term://',''); }
-        else if (query.startsWith('chat://')) { mode = 'LLM'; cleanQuery = query.replace('chat://',''); }
-        else if (query.startsWith('project://')) { mode = 'Project'; cleanQuery = query.replace('project://',''); }
-        else if (query.startsWith('file://')) { mode = 'Finder'; cleanQuery = query.replace('file://',''); }
+        if (query.startsWith('note://')) { mode = 'Note'; cleanQuery = query.replace('note://', ''); }
+        else if (query.startsWith('term://')) { mode = 'Terminal'; cleanQuery = query.replace('term://', ''); }
+        else if (query.startsWith('chat://')) { mode = 'LLM'; cleanQuery = query.replace('chat://', ''); }
+        else if (query.startsWith('project://')) { mode = 'Project'; cleanQuery = query.replace('project://', ''); }
+        else if (query.startsWith('file://')) { mode = 'Finder'; cleanQuery = query.replace('file://', ''); }
         handlePerformAction({ mode, query: cleanQuery, engine: 'google' });
-        e.target.blur(); 
+        e.target.blur();
     }
 }
 
 module.exports = {
-    renderView, 
-    setActiveTab, 
-    addTab, 
-    closeTab, 
-    handlePerformAction, 
-    selectTab, 
-    reorderTabs, 
-    navigateTab, 
-    openExistingTab, 
-    closeActiveTab, 
+    renderView,
+    setActiveTab,
+    addTab,
+    closeTab,
+    handlePerformAction,
+    selectTab,
+    reorderTabs,
+    navigateTab,
+    openExistingTab,
+    closeActiveTab,
     reloadActiveTab,
-    logHistoryItem, 
-    restoreClosedTab, 
-    setEmptyTabMode, 
-    toggleBookmark, 
-    reorderBookmarks, 
-    openMindMapFromHistory, 
-    openTerminalFromHistory, 
-    openWhiteboardFromHistory, 
-    openDocsFromHistory, 
-    openKanbanBoard, 
-    deleteKanbanBoard, 
-    refreshInspector, 
+    logHistoryItem,
+    restoreClosedTab,
+    setEmptyTabMode,
+    toggleBookmark,
+    reorderBookmarks,
+    openMindMapFromHistory,
+    openTerminalFromHistory,
+    openWhiteboardFromHistory,
+    openDocsFromHistory,
+    openKanbanBoard,
+    deleteKanbanBoard,
+    refreshInspector,
     saveCurrentWorkspace, // Exported
     restoreWorkspace,     // Exported
     deleteWorkspace,      // Exported
-    getActiveTab, 
+    getActiveTab,
     get noteStore() { return noteStore; },
     get chatStore() { return chatStore; },
-    get historyStore() { return historyStore; }, 
-    get closedTabsStore() { return closedTabsStore; }, 
-    get bookmarkStore() { return bookmarkStore; }, 
-    get mindMapStore() { return mindMapStore; }, 
+    get historyStore() { return historyStore; },
+    get closedTabsStore() { return closedTabsStore; },
+    get bookmarkStore() { return bookmarkStore; },
+    get mindMapStore() { return mindMapStore; },
     get kanbanStore() { return kanbanStore; },
-    get terminalStore() { return terminalStore; }, 
-    get whiteboardStore() { return whiteboardStore; }, 
-    get docsStore() { return docsStore; }, 
+    get terminalStore() { return terminalStore; },
+    get whiteboardStore() { return whiteboardStore; },
+    get docsStore() { return docsStore; },
     get workspaceStore() { return workspaceStore; }, // Exported
-    get store() { return store; }, 
+    get store() { return store; },
     addNoteBlock: (id, t, c) => require('./controllers/NoteController.js').addNoteBlock(id, t, c),
     updateNoteBlock: (id, b, c) => require('./controllers/NoteController.js').updateNoteBlock(id, b, c),
     handleTodoToggle: (id, b, c) => require('./controllers/NoteController.js').handleTodoToggle(id, b, c),

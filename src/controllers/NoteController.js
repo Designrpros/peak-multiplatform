@@ -5,7 +5,7 @@ module.exports = {
         const store = window.tabManager.noteStore;
         const notes = store.get('notes', []);
         const note = notes.find(n => n.id === noteId);
-        if(note) {
+        if (note) {
             note.blocks.push({ id: Date.now(), type, content, orderIndex: note.blocks.length });
             store.set('notes', notes);
             window.tabManager.renderView();
@@ -17,11 +17,12 @@ module.exports = {
         const store = window.tabManager.noteStore;
         const notes = store.get('notes', []);
         const note = notes.find(n => n.id === noteId);
-        if(note) {
+        if (note) {
             const b = note.blocks.find(x => x.id == blockId);
-            if(b) {
+            if (b) {
                 b.content = checked ? '[x] ' + b.content.replace(/^\[[ x]\]\s?/, '') : '[ ] ' + b.content.replace(/^\[[ x]\]\s?/, '');
                 store.set('notes', notes);
+                window.tabManager.renderView();
             }
         }
     },
@@ -31,9 +32,13 @@ module.exports = {
         const store = window.tabManager.noteStore;
         const notes = store.get('notes', []);
         const note = notes.find(n => n.id === noteId);
-        if(note) {
+        if (note) {
             const b = note.blocks.find(x => x.id == blockId);
-            if(b) { b.content = content; store.set('notes', notes); }
+            if (b) {
+                b.content = content;
+                store.set('notes', notes);
+                window.tabManager.renderView();
+            }
         }
     },
 
@@ -42,7 +47,7 @@ module.exports = {
         const store = window.tabManager.noteStore;
         const notes = store.get('notes', []);
         const note = notes.find(n => n.id === noteId);
-        if(note) {
+        if (note) {
             note.blocks = note.blocks.filter(x => x.id != blockId);
             store.set('notes', notes);
             window.tabManager.renderView();
@@ -60,7 +65,7 @@ module.exports = {
             if (fromIndex > -1 && toIndex > -1) {
                 const item = note.blocks.splice(fromIndex, 1)[0];
                 let insertAt = toIndex;
-                if (fromIndex < toIndex) insertAt--; 
+                if (fromIndex < toIndex) insertAt--;
                 if (position === 'after') insertAt++;
                 note.blocks.splice(insertAt, 0, item);
                 note.blocks.forEach((b, i) => b.orderIndex = i);
@@ -82,7 +87,7 @@ module.exports = {
                 store.set('notes', notes);
                 window.tabManager.renderView();
                 // FIX: Live update sidebar
-                if(window.tabManager.refreshInspector) window.tabManager.refreshInspector();
+                if (window.tabManager.refreshInspector) window.tabManager.refreshInspector();
             }
         }
     },
@@ -97,7 +102,7 @@ module.exports = {
             store.set('notes', notes);
             window.tabManager.renderView();
             // FIX: Live update sidebar
-            if(window.tabManager.refreshInspector) window.tabManager.refreshInspector();
+            if (window.tabManager.refreshInspector) window.tabManager.refreshInspector();
         }
     }
 };
