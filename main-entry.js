@@ -1,11 +1,11 @@
 // main-entry.js
 const { ipcRenderer, shell, clipboard } = require('electron');
-const tabManager = require('./src/tab-manager.js'); 
+const tabManager = require('./src/tab-manager.js');
 const { AvailableModels } = require('./src/utils/enums.js');
 
 window.ipcRenderer = ipcRenderer;
 window.tabManager = tabManager;
-window.AvailableModels = AvailableModels; 
+window.AvailableModels = AvailableModels;
 window.handlePerformAction = (data) => tabManager.handlePerformAction(data);
 
 // Global Save Helpers
@@ -13,7 +13,7 @@ window.saveFile = (filePath, content) => {
     return ipcRenderer.invoke('project:write-file', filePath, content);
 };
 window.saveBase64File = (filePath, content, encoding) => {
-     return ipcRenderer.invoke('project:write-file', filePath, content, encoding);
+    return ipcRenderer.invoke('project:write-file', filePath, content, encoding);
 };
 
 // --- 1. GLOBAL LISTENERS ---
@@ -34,12 +34,12 @@ document.addEventListener('click', (e) => {
         if (codeBlock) {
             const code = codeBlock.querySelector('code').textContent;
             window.dispatchEvent(new CustomEvent('peak-insert-code', { detail: code }));
-            
+
             const originalHTML = btn.innerHTML;
             btn.innerHTML = '<i data-lucide="check"></i> Applied';
             btn.style.color = '#10B981';
-            if(window.lucide) window.lucide.createIcons();
-            setTimeout(() => { btn.innerHTML = originalHTML; btn.style.color = ''; if(window.lucide) window.lucide.createIcons(); }, 1500);
+            if (window.lucide) window.lucide.createIcons();
+            setTimeout(() => { btn.innerHTML = originalHTML; btn.style.color = ''; if (window.lucide) window.lucide.createIcons(); }, 1500);
         }
     }
 });
@@ -53,12 +53,12 @@ document.addEventListener('click', (e) => {
         const rawContent = msgContainer.querySelector('.raw-content');
         if (rawContent) {
             window.dispatchEvent(new CustomEvent('peak-insert-code', { detail: rawContent.textContent }));
-            
+
             const originalHTML = btn.innerHTML;
             btn.innerHTML = '<i data-lucide="check"></i> Inserted';
             btn.style.color = '#10B981';
-            if(window.lucide) window.lucide.createIcons();
-            setTimeout(() => { btn.innerHTML = originalHTML; btn.style.color = ''; if(window.lucide) window.lucide.createIcons(); }, 1500);
+            if (window.lucide) window.lucide.createIcons();
+            setTimeout(() => { btn.innerHTML = originalHTML; btn.style.color = ''; if (window.lucide) window.lucide.createIcons(); }, 1500);
         }
     }
 });
@@ -72,17 +72,69 @@ document.addEventListener('click', (e) => {
         const rawContent = msgContainer.querySelector('.raw-content');
         if (rawContent) {
             clipboard.writeText(rawContent.textContent);
-            
+
             const originalHTML = btn.innerHTML;
             btn.innerHTML = '<i data-lucide="check"></i> Copied';
             btn.style.color = '#10B981';
-            if(window.lucide) window.lucide.createIcons();
-            setTimeout(() => { btn.innerHTML = originalHTML; btn.style.color = ''; if(window.lucide) window.lucide.createIcons(); }, 1500);
+            if (window.lucide) window.lucide.createIcons();
+            setTimeout(() => { btn.innerHTML = originalHTML; btn.style.color = ''; if (window.lucide) window.lucide.createIcons(); }, 1500);
         }
     }
 });
 
-// 2. KEYBOARD SHORTCUTS
+// 2. GLOBAL FILE & COMMAND LISTENERS
+const path = require('path');
+
+window.addEventListener('peak-create-file', async (e) => {
+    console.log("[Global] Received peak-create-file:", e.detail);
+    const { path: relativePath, content } = e.detail;
+
+    // Fallback to currentProjectRoot if available, otherwise try to deduce or error
+    if (!window.currentProjectRoot) {
+        console.error("[Global] Cannot create file: No project root. Is a project open?");
+        alert("Cannot create file: No project open.");
+        return;
+    }
+
+    const fullPath = path.join(window.currentProjectRoot, relativePath);
+    try {
+        await ipcRenderer.invoke('project:write-file', fullPath, content);
+        console.log("[Global] File created successfully:", fullPath);
+
+        // Refresh sidebar if ProjectView is active
+        // Ideally, we emit an event that ProjectView listens to for refreshing
+        // But ProjectView already refreshes on its own file creation. 
+        // If we move logic here, we should trigger a refresh event.
+        window.dispatchEvent(new CustomEvent('peak-file-changed', { detail: { path: fullPath } }));
+    } catch (err) {
+        console.error("[Global] Failed to create file:", err);
+        alert(`Failed to create file: ${err.message}`);
+    }
+});
+
+window.addEventListener('peak-delete-file', async (e) => {
+    const { path: relativePath } = e.detail;
+    if (!window.currentProjectRoot) return;
+    const fullPath = path.join(window.currentProjectRoot, relativePath);
+    try {
+        await ipcRenderer.invoke('project:delete-path', fullPath);
+        window.dispatchEvent(new CustomEvent('peak-file-changed', { detail: { path: fullPath } }));
+    } catch (err) {
+        console.error("[Global] Failed to delete file:", err);
+    }
+});
+
+window.addEventListener('peak-run-command', (e) => {
+    const cmd = e.detail;
+    if (!cmd) return;
+    // We need to find an active terminal to run this in.
+    // If ProjectView is open, it handles this.
+    // But if we are in a different view, we might need to find a way to target a terminal.
+    // For now, let's log it. ProjectView's listener should still catch it if active.
+    console.log("[Global] peak-run-command dispatched:", cmd);
+});
+
+// 3. KEYBOARD SHORTCUTS
 document.addEventListener('keydown', (e) => {
     const isCmdOrCtrl = e.metaKey || e.ctrlKey;
     if (isCmdOrCtrl && e.key.toLowerCase() === 'n') { e.preventDefault(); tabManager.addTab('empty'); return; }
@@ -99,7 +151,7 @@ window.reorderTabs = (from, to) => tabManager.reorderTabs(from, to);
 window.selectTab = (id) => tabManager.selectTab(id);
 window.addEmptyTab = () => tabManager.addTab('empty');
 window.setActiveTab = (id) => tabManager.setActiveTab(Number(id));
-window.closeTab = (id, event) => { if(event) event.stopPropagation(); tabManager.closeTab(Number(id)); };
+window.closeTab = (id, event) => { if (event) event.stopPropagation(); tabManager.closeTab(Number(id)); };
 
 // 4. APP CREATION
 window.createNewProject = () => tabManager.handlePerformAction({ mode: 'Project', query: '' });
@@ -117,7 +169,7 @@ window.openInspector = (mode) => {
 };
 window.closeInspector = () => {
     const Inspector = require('./src/components/Inspector/index.js');
-    if(Inspector.close) Inspector.close();
+    if (Inspector.close) Inspector.close();
 };
 
 window.openNoteFromHistory = (id) => { window.closeInspector(); tabManager.openExistingTab('note', Number(id)); };

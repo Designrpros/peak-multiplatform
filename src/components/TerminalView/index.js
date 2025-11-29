@@ -10,14 +10,14 @@ try {
     ClipboardAddon = require('@xterm/addon-clipboard').ClipboardAddon;
     SearchAddon = require('@xterm/addon-search').SearchAddon;
     WebLinksAddon = require('@xterm/addon-web-links').WebLinksAddon;
-} catch(e) { console.error(e); }
+} catch (e) { console.error(e); }
 
 window.terminalInstances = window.terminalInstances || {};
 
 function renderTerminalHTML(tab, container) {
     container.innerHTML = `
-        <div class="terminal-wrapper" style="width:100%; height:100%; position:relative; background-color:var(--text-background-color);">
-            <div id="terminal-container-${tab.id}" class="terminal-container"></div>
+        <div class="terminal-wrapper" style="width:100%; height:100%; position:relative; background-color:var(--text-background-color); overflow:hidden;">
+            <div id="terminal-container-${tab.id}" class="terminal-container" style="width:100%; height:100%;"></div>
             <button id="term-inspector-trigger-${tab.id}" class="term-floating-btn" title="Open Terminal Ops">
                 <i data-lucide="bot"></i>
             </button>
@@ -27,7 +27,7 @@ function renderTerminalHTML(tab, container) {
 function attachTerminalListeners(tab, containerWrapper) {
     const tabId = tab.id;
     const container = document.getElementById(`terminal-container-${tabId}`);
-    if (!container) return () => {};
+    if (!container) return () => { };
 
     window.ipcRenderer.send('did-finish-content-swap');
 
@@ -42,6 +42,11 @@ function attachTerminalListeners(tab, containerWrapper) {
         macOptionIsMeta: true,
         rightClickSelectsWord: true
     });
+
+    // DEBUG: Log platform
+    // if (window.ipcRenderer) {
+    //     window.ipcRenderer.invoke('log-to-debug-file', `[Terminal] Platform: ${process.platform}`);
+    // }
 
     window.terminalInstances[tabId] = term;
 
@@ -71,21 +76,60 @@ function attachTerminalListeners(tab, containerWrapper) {
         const isCopy = isMac ? (arg.metaKey && key === 'c') : (arg.ctrlKey && arg.shiftKey && key === 'c');
         const isPaste = isMac ? (arg.metaKey && key === 'v') : (arg.ctrlKey && arg.shiftKey && key === 'v');
 
+        // DEBUG: Log key press
+        // window.ipcRenderer.invoke('log-to-debug-file', `[Terminal] Key: ${key}, Meta: ${arg.metaKey}, Ctrl: ${arg.ctrlKey}, Shift: ${arg.shiftKey}, isCopy: ${isCopy}, isPaste: ${isPaste}`);
+
         if (isCopy) {
             const selection = term.getSelection();
             if (selection) {
                 clipboard.writeText(selection);
-                arg.preventDefault(); 
-                return false; 
+                arg.preventDefault();
+                return false;
             }
-            return true; 
+            return true;
         }
         if (isPaste) {
-            arg.preventDefault(); 
+            arg.preventDefault();
             const text = clipboard.readText();
             term.paste(text);
-            return false; 
+            return false;
         }
+
+        // NEW: Handle Option+Left/Right for word jumps (macOS style)
+        if (isMac) {
+            if (arg.altKey) {
+                if (key === 'arrowleft') {
+                    arg.preventDefault();
+                    term.write('\x1bb'); // Send Esc+b (backward word)
+                    return false;
+                }
+                if (key === 'arrowright') {
+                    arg.preventDefault();
+                    term.write('\x1bf'); // Send Esc+f (forward word)
+                    return false;
+                }
+                if (key === 'backspace') {
+                    arg.preventDefault();
+                    term.write('\x17'); // Send Ctrl+W (delete word backward) - standard unix
+                    // Alternatively: term.write('\x1b\x7f'); // Esc+Backspace
+                    return false;
+                }
+            }
+            // NEW: Handle Cmd+Left/Right for line jumps
+            if (arg.metaKey) {
+                if (key === 'arrowleft') {
+                    arg.preventDefault();
+                    term.write('\x01'); // Send Ctrl+A (start of line)
+                    return false;
+                }
+                if (key === 'arrowright') {
+                    arg.preventDefault();
+                    term.write('\x05'); // Send Ctrl+E (end of line)
+                    return false;
+                }
+            }
+        }
+
         return true;
     });
 
@@ -137,22 +181,42 @@ function attachTerminalListeners(tab, containerWrapper) {
     }
 
     term.onTitleChange(t => {
-         tab.content.data.cwd = t.includes(':') ? t.split(':').pop().trim() : t;
+        tab.content.data.cwd = t.includes(':') ? t.split(':').pop().trim() : t;
     });
 
     if (window.lucide) window.lucide.createIcons();
 
-    return () => {
-        // Cleanup Listener
-        mediaQuery.removeEventListener('change', onThemeChange);
-        
-        window.removeEventListener('terminal-tab-shown', onShow);
-        window.ipcRenderer.removeListener('terminal-context-action', onContextAction);
-        window.ipcRenderer.send('terminal-kill', tabId);
-        window.ipcRenderer.removeListener('terminal-data', onPtyData);
-        onData.dispose();
-        term.dispose();
-        delete window.terminalInstances[tabId];
+    // Window Resize Handler
+    const onResize = () => {
+        try { fitAddon.fit(); } catch (e) { console.warn('Fit error:', e); }
+    };
+    window.addEventListener('resize', onResize);
+
+    // NEW: ResizeObserver for container resizing (e.g. when toggling sidebar)
+    const resizeObserver = new ResizeObserver(() => {
+        try {
+            fitAddon.fit();
+            window.ipcRenderer.send('terminal-resize', tabId, { cols: term.cols, rows: term.rows });
+        } catch (e) { }
+    });
+    resizeObserver.observe(container);
+
+    return {
+        cleanup: () => {
+            resizeObserver.disconnect();
+            window.removeEventListener('resize', onResize);
+            mediaQuery.removeEventListener('change', onThemeChange);
+            window.removeEventListener('terminal-tab-shown', onShow);
+            window.ipcRenderer.removeListener('terminal-context-action', onContextAction);
+            window.ipcRenderer.send('terminal-kill', tabId);
+            window.ipcRenderer.removeListener('terminal-data', onPtyData);
+            onData.dispose();
+            term.dispose();
+            delete window.terminalInstances[tabId];
+        },
+        fit: () => {
+            try { fitAddon.fit(); } catch (e) { console.warn('Fit error:', e); }
+        }
     };
 }
 

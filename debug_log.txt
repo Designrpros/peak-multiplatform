@@ -1,0 +1,134 @@
+[2025-11-29T07:43:36.363Z] [Renderer] [LayoutController] Constructor called
+[2025-11-29T07:43:36.421Z] [Renderer] [LayoutController] Initializing ChatView
+[2025-11-29T07:43:36.421Z] [Renderer] [ChatView] Constructor called
+[2025-11-29T07:43:36.431Z] [Renderer] [ChatView] Elements found: {"container":true,"chatThread":true,"scroller":true}
+[2025-11-29T07:43:44.306Z] [Renderer] [ChatView] Message clicked: BUTTON revert-btn
+[2025-11-29T07:43:44.308Z] [Renderer] [ChatView] Closest button: revert-btn
+[2025-11-29T07:43:44.308Z] [Renderer] [ChatView] Button action: revert
+[2025-11-29T07:43:44.309Z] [Renderer] [ChatView] Revert action triggered
+[2025-11-29T07:43:44.309Z] [Renderer] [ChatView] Revert hash: c350b90176e84372ea3aa529d446cacb52e85e91
+[2025-11-29T07:43:48.171Z] [Renderer] [LayoutController] Constructor called
+[2025-11-29T07:43:48.222Z] [Renderer] [LayoutController] Initializing ChatView
+[2025-11-29T07:43:48.222Z] [Renderer] [ChatView] Constructor called
+[2025-11-29T07:43:48.230Z] [Renderer] [ChatView] Elements found: {"container":true,"chatThread":true,"scroller":true}
+[2025-11-29T07:44:01.440Z] [Renderer] [LayoutController] Constructor called
+[2025-11-29T07:44:01.528Z] [Renderer] [LayoutController] Initializing ChatView
+[2025-11-29T07:44:01.528Z] [Renderer] [ChatView] Constructor called
+[2025-11-29T07:44:01.528Z] [Renderer] [ChatView] Elements found: {"container":true,"chatThread":true,"scroller":true}
+[2025-11-29T07:44:42.459Z] [Renderer] [LayoutController] Constructor called
+[2025-11-29T07:44:42.581Z] [Renderer] [LayoutController] Initializing ChatView
+[2025-11-29T07:44:42.581Z] [Renderer] [ChatView] Constructor called
+[2025-11-29T07:44:42.581Z] [Renderer] [ChatView] Elements found: {"container":true,"chatThread":true,"scroller":true}
+[2025-11-29T07:44:47.927Z] [Renderer] [LayoutController] Constructor called
+[2025-11-29T07:44:47.977Z] [Renderer] [LayoutController] Initializing ChatView
+[2025-11-29T07:44:47.978Z] [Renderer] [ChatView] Constructor called
+[2025-11-29T07:44:47.978Z] [Renderer] [ChatView] Elements found: {"container":true,"chatThread":true,"scroller":true}
+[2025-11-29T07:46:29.359Z] [Renderer] [LayoutController] Constructor called
+[2025-11-29T07:46:29.408Z] [Renderer] [LayoutController] Initializing ChatView
+[2025-11-29T07:46:29.408Z] [Renderer] [ChatView] Constructor called
+[2025-11-29T07:46:29.422Z] [Renderer] [ChatView] Elements found: {"container":true,"chatThread":true,"scroller":true}
+[2025-11-29T07:47:29.767Z] [Renderer] [LayoutController] Constructor called
+[2025-11-29T07:47:29.818Z] [Renderer] [LayoutController] Initializing ChatView
+[2025-11-29T07:47:29.818Z] [Renderer] [ChatView] Constructor called
+[2025-11-29T07:47:29.818Z] [Renderer] [ChatView] Elements found: {"container":true,"chatThread":true,"scroller":true}
+[2025-11-29T07:47:33.240Z] [Renderer] [LayoutController] Constructor called
+[2025-11-29T07:47:33.290Z] [Renderer] [LayoutController] Initializing ChatView
+[2025-11-29T07:47:33.290Z] [Renderer] [ChatView] Constructor called
+[2025-11-29T07:47:33.291Z] [Renderer] [ChatView] Elements found: {"container":true,"chatThread":true,"scroller":true}
+[2025-11-29T07:47:39.517Z] [Renderer] [LayoutController] Constructor called
+[2025-11-29T07:47:39.569Z] [Renderer] [LayoutController] Initializing ChatView
+[2025-11-29T07:47:39.569Z] [Renderer] [ChatView] Constructor called
+[2025-11-29T07:47:39.570Z] [Renderer] [ChatView] Elements found: {"container":true,"chatThread":true,"scroller":true}
+[2025-11-29T07:47:43.298Z] [Renderer] [LayoutController] Constructor called
+[2025-11-29T07:47:43.347Z] [Renderer] [LayoutController] Initializing ChatView
+[2025-11-29T07:47:43.348Z] [Renderer] [ChatView] Constructor called
+[2025-11-29T07:47:43.348Z] [Renderer] [ChatView] Elements found: {"container":true,"chatThread":true,"scroller":true}
+[2025-11-29T07:47:45.770Z] [Renderer] [ChatView] Message clicked: BUTTON show-more-btn
+[2025-11-29T07:47:45.770Z] [Renderer] [ChatView] Closest button: show-more-btn
+[2025-11-29T07:47:45.770Z] [Renderer] [ChatView] Button action: toggle-expand
+[2025-11-29T07:47:48.003Z] [Renderer] [ChatView] Message clicked: BUTTON show-more-btn
+[2025-11-29T07:47:48.003Z] [Renderer] [ChatView] Closest button: show-more-btn
+[2025-11-29T07:47:48.003Z] [Renderer] [ChatView] Button action: toggle-expand
+[2025-11-29T07:48:58.879Z] [Renderer] [LayoutController] Constructor called
+[2025-11-29T07:48:58.930Z] [Renderer] [LayoutController] Initializing ChatView
+[2025-11-29T07:48:58.930Z] [Renderer] [ChatView] Constructor called
+[2025-11-29T07:48:58.947Z] [Renderer] [ChatView] Elements found: {"container":true,"chatThread":true,"scroller":true}
+[2025-11-29T07:49:09.013Z] [Renderer] [LayoutController] Constructor called
+[2025-11-29T07:49:09.063Z] [Renderer] [LayoutController] Initializing ChatView
+[2025-11-29T07:49:09.063Z] [Renderer] [ChatView] Constructor called
+[2025-11-29T07:49:09.063Z] [Renderer] [ChatView] Elements found: {"container":true,"chatThread":true,"scroller":true}
+[2025-11-29T07:50:50.335Z] [Renderer] [LayoutController] Constructor called
+[2025-11-29T07:50:50.378Z] [Renderer] [LayoutController] Initializing ChatView
+[2025-11-29T07:50:50.378Z] [Renderer] [ChatView] Constructor called
+[2025-11-29T07:50:50.393Z] [Renderer] [ChatView] Elements found: {"container":true,"chatThread":true,"scroller":true}
+[2025-11-29T07:51:33.155Z] [Renderer] [ChatView] handleToolAction click target: SPAN 
+[2025-11-29T07:51:33.954Z] [Renderer] [ChatView] handleToolAction click target: SPAN 
+[2025-11-29T07:51:34.499Z] [Renderer] [ChatView] handleToolAction click target: SPAN 
+[2025-11-29T07:51:35.153Z] [Renderer] [ChatView] handleToolAction click target: SPAN 
+[2025-11-29T07:52:03.756Z] [Renderer] [LayoutController] Constructor called
+[2025-11-29T07:52:03.797Z] [Renderer] [LayoutController] Initializing ChatView
+[2025-11-29T07:52:03.798Z] [Renderer] [ChatView] Constructor called
+[2025-11-29T07:52:03.817Z] [Renderer] [ChatView] Elements found: {"container":true,"chatThread":true,"scroller":true}
+[2025-11-29T07:52:05.940Z] [Renderer] [ChatView] Revert button clicked (Direct Listener)
+[2025-11-29T07:52:07.956Z] [Main] Reverting to checkpoint: c350b90176e84372ea3aa529d446cacb52e85e91 in /Users/vegarberentsen/secret-santa
+[2025-11-29T07:52:08.000Z] [Main] Git Reset Success. Output: HEAD is now at c350b90 Peak Checkpoint: 1764357126183
+
+[2025-11-29T07:52:08.019Z] [Main] Git Clean Success. Output: 
+[2025-11-29T07:52:12.162Z] [Renderer] [LayoutController] Constructor called
+[2025-11-29T07:52:12.211Z] [Renderer] [LayoutController] Initializing ChatView
+[2025-11-29T07:52:12.212Z] [Renderer] [ChatView] Constructor called
+[2025-11-29T07:52:12.214Z] [Renderer] [ChatView] Elements found: {"container":true,"chatThread":true,"scroller":true}
+[2025-11-29T07:52:17.767Z] [Renderer] [LayoutController] Constructor called
+[2025-11-29T07:52:17.815Z] [Renderer] [LayoutController] Initializing ChatView
+[2025-11-29T07:52:17.816Z] [Renderer] [ChatView] Constructor called
+[2025-11-29T07:52:17.816Z] [Renderer] [ChatView] Elements found: {"container":true,"chatThread":true,"scroller":true}
+[2025-11-29T07:52:39.668Z] [Renderer] [LayoutController] Constructor called
+[2025-11-29T07:52:39.720Z] [Renderer] [LayoutController] Initializing ChatView
+[2025-11-29T07:52:39.720Z] [Renderer] [ChatView] Constructor called
+[2025-11-29T07:52:39.720Z] [Renderer] [ChatView] Elements found: {"container":true,"chatThread":true,"scroller":true}
+[2025-11-29T07:52:42.574Z] [Renderer] [LayoutController] Constructor called
+[2025-11-29T07:52:42.626Z] [Renderer] [LayoutController] Initializing ChatView
+[2025-11-29T07:52:42.626Z] [Renderer] [ChatView] Constructor called
+[2025-11-29T07:52:42.626Z] [Renderer] [ChatView] Elements found: {"container":true,"chatThread":true,"scroller":true}
+[2025-11-29T07:52:43.969Z] [Renderer] [LayoutController] Constructor called
+[2025-11-29T07:52:44.020Z] [Renderer] [LayoutController] Initializing ChatView
+[2025-11-29T07:52:44.020Z] [Renderer] [ChatView] Constructor called
+[2025-11-29T07:52:44.020Z] [Renderer] [ChatView] Elements found: {"container":true,"chatThread":true,"scroller":true}
+[2025-11-29T07:52:46.353Z] [Renderer] [LayoutController] Constructor called
+[2025-11-29T07:52:46.403Z] [Renderer] [LayoutController] Initializing ChatView
+[2025-11-29T07:52:46.404Z] [Renderer] [ChatView] Constructor called
+[2025-11-29T07:52:46.404Z] [Renderer] [ChatView] Elements found: {"container":true,"chatThread":true,"scroller":true}
+[2025-11-29T07:52:48.726Z] [Renderer] [LayoutController] Constructor called
+[2025-11-29T07:52:48.777Z] [Renderer] [LayoutController] Initializing ChatView
+[2025-11-29T07:52:48.777Z] [Renderer] [ChatView] Constructor called
+[2025-11-29T07:52:48.777Z] [Renderer] [ChatView] Elements found: {"container":true,"chatThread":true,"scroller":true}
+[2025-11-29T07:52:58.166Z] [Renderer] [LayoutController] Constructor called
+[2025-11-29T07:52:58.219Z] [Renderer] [LayoutController] Initializing ChatView
+[2025-11-29T07:52:58.219Z] [Renderer] [ChatView] Constructor called
+[2025-11-29T07:52:58.220Z] [Renderer] [ChatView] Elements found: {"container":true,"chatThread":true,"scroller":true}
+[2025-11-29T07:53:38.126Z] [Renderer] [ChatView] Revert button clicked (Direct Listener)
+[2025-11-29T07:53:39.372Z] [Main] Reverting to checkpoint: c350b90176e84372ea3aa529d446cacb52e85e91 in /Users/vegarberentsen/secret-santa
+[2025-11-29T07:53:39.415Z] [Main] Git Reset Success. Output: HEAD is now at c350b90 Peak Checkpoint: 1764357126183
+
+[2025-11-29T07:53:39.433Z] [Main] Git Clean Success. Output: 
+[2025-11-29T07:53:43.703Z] [Renderer] [LayoutController] Constructor called
+[2025-11-29T07:53:43.755Z] [Renderer] [LayoutController] Initializing ChatView
+[2025-11-29T07:53:43.755Z] [Renderer] [ChatView] Constructor called
+[2025-11-29T07:53:43.760Z] [Renderer] [ChatView] Elements found: {"container":true,"chatThread":true,"scroller":true}
+[2025-11-29T07:54:07.624Z] [Renderer] [ChatView] Revert button clicked (Direct Listener)
+[2025-11-29T07:54:08.839Z] [Main] Reverting to checkpoint: c350b90176e84372ea3aa529d446cacb52e85e91 in /Users/vegarberentsen/secret-santa
+[2025-11-29T07:54:08.893Z] [Main] Git Reset Success. Output: HEAD is now at c350b90 Peak Checkpoint: 1764357126183
+
+[2025-11-29T07:54:08.909Z] [Main] Git Clean Success. Output: 
+[2025-11-29T07:54:13.400Z] [Renderer] [LayoutController] Constructor called
+[2025-11-29T07:54:13.454Z] [Renderer] [LayoutController] Initializing ChatView
+[2025-11-29T07:54:13.454Z] [Renderer] [ChatView] Constructor called
+[2025-11-29T07:54:13.456Z] [Renderer] [ChatView] Elements found: {"container":true,"chatThread":true,"scroller":true}
+[2025-11-29T07:54:16.508Z] [Renderer] [LayoutController] Constructor called
+[2025-11-29T07:54:16.561Z] [Renderer] [LayoutController] Initializing ChatView
+[2025-11-29T07:54:16.561Z] [Renderer] [ChatView] Constructor called
+[2025-11-29T07:54:16.561Z] [Renderer] [ChatView] Elements found: {"container":true,"chatThread":true,"scroller":true}
+[2025-11-29T07:54:49.935Z] [Renderer] [LayoutController] Constructor called
+[2025-11-29T07:54:49.988Z] [Renderer] [LayoutController] Initializing ChatView
+[2025-11-29T07:54:49.988Z] [Renderer] [ChatView] Constructor called
+[2025-11-29T07:54:49.989Z] [Renderer] [ChatView] Elements found: {"container":true,"chatThread":true,"scroller":true}

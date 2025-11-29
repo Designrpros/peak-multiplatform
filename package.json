@@ -7,7 +7,7 @@
   "author": "Vegar Berentsen <designr.pros@gmail.com>",
   "homepage": "https://peak-browser.vercel.app",
   "scripts": {
-    "start": "electron .",
+    "start": "ELECTRON_DISABLE_SECURITY_WARNINGS=true electron . 2>&1 | grep -v 'CoreText note'",
     "rebuild": "electron-rebuild",
     "postinstall": "electron-builder install-app-deps",
     "dist": "electron-builder",
@@ -17,15 +17,22 @@
   },
   "dependencies": {
     "@babel/runtime": "latest",
+    "@codemirror/lang-cpp": "^6.0.3",
     "@codemirror/lang-css": "^6.2.1",
+    "@codemirror/lang-go": "^6.0.1",
     "@codemirror/lang-html": "^6.4.0",
     "@codemirror/lang-java": "latest",
     "@codemirror/lang-javascript": "^6.2.1",
     "@codemirror/lang-json": "^6.0.1",
     "@codemirror/lang-markdown": "^6.2.0",
+    "@codemirror/lang-php": "^6.0.2",
     "@codemirror/lang-python": "latest",
+    "@codemirror/lang-rust": "^6.0.2",
+    "@codemirror/lang-sql": "^6.10.0",
     "@codemirror/lang-xml": "latest",
+    "@codemirror/lang-yaml": "^6.1.2",
     "@codemirror/lint": "latest",
+    "@codemirror/merge": "^6.11.2",
     "@codemirror/state": "latest",
     "@codemirror/theme-one-dark": "^6.1.2",
     "@codemirror/view": "latest",
@@ -48,7 +55,8 @@
   "devDependencies": {
     "@electron/rebuild": "^4.0.1",
     "electron": "^28.0.0",
-    "electron-builder": "^26.0.12"
+    "electron-builder": "^26.0.12",
+    "eslint": "^9.39.1"
   },
   "build": {
     "appId": "com.peak.multiplatform",

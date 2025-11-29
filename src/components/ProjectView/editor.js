@@ -15,10 +15,21 @@ function getModule(name) {
 const State = getModule('@codemirror/state');
 const View = getModule('@codemirror/view');
 const Commands = getModule('@codemirror/commands');
+// FIX: Import syntaxTree safely from the package directly to avoid getModule stripping named exports
+let syntaxTree;
+try {
+    const LangPkg = require('@codemirror/language');
+    syntaxTree = LangPkg.syntaxTree || (LangPkg.default ? LangPkg.default.syntaxTree : null);
+} catch (e) { console.error("Failed to load syntaxTree", e); }
+
 const Language = getModule('@codemirror/language');
+// const { syntaxTree } = Language; // Removed unsafe destructuring
 const Autocomplete = getModule('@codemirror/autocomplete');
 const Search = getModule('@codemirror/search');
 const Lint = getModule('@codemirror/lint');
+
+// NEW: Inline Chat
+const { inlineChatField, inlineChatKeymap } = require('./InlineChat.js');
 
 // Language Packages
 const LangJs = getModule('@codemirror/lang-javascript');
@@ -29,6 +40,12 @@ const LangMd = getModule('@codemirror/lang-markdown');
 const LangPy = getModule('@codemirror/lang-python');
 const LangXml = getModule('@codemirror/lang-xml');
 const LangJava = getModule('@codemirror/lang-java');
+const LangCpp = getModule('@codemirror/lang-cpp');
+const LangRust = getModule('@codemirror/lang-rust');
+const LangGo = getModule('@codemirror/lang-go');
+const LangPhp = getModule('@codemirror/lang-php');
+const LangSql = getModule('@codemirror/lang-sql');
+const LangYaml = getModule('@codemirror/lang-yaml');
 
 let editorView = null;
 let saveTimeout = null;
@@ -42,7 +59,7 @@ function loadVSCodeTheme(isDarkMode) {
         const themePkg = getModule('@uiw/codemirror-theme-vscode');
         if (isDarkMode && themePkg.vscodeDark) return themePkg.vscodeDark;
         if (!isDarkMode && themePkg.vscodeLight) return themePkg.vscodeLight;
-    } catch (e) {}
+    } catch (e) { }
     return View.EditorView ? View.EditorView.baseTheme({}) : [];
 }
 
@@ -53,22 +70,34 @@ function getLanguageExtension(filePath) {
         switch (ext) {
             case 'js': case 'jsx': case 'mjs': case 'ts': case 'tsx':
                 return LangJs.javascript ? LangJs.javascript({ jsx: true, typescript: true }) : [];
-            case 'json': case 'jsonc': 
+            case 'json': case 'jsonc':
                 return LangJson.json ? LangJson.json() : [];
-            case 'html': case 'htm': 
+            case 'html': case 'htm':
                 return LangHtml.html ? LangHtml.html() : [];
-            case 'css': case 'less': case 'sass': 
+            case 'css': case 'less': case 'sass':
                 return LangCss.css ? LangCss.css() : [];
-            case 'md': case 'markdown': 
+            case 'md': case 'markdown':
                 return LangMd.markdown ? LangMd.markdown() : [];
-            case 'py': case 'python': 
+            case 'py': case 'python':
                 return LangPy.python ? LangPy.python() : [];
-            case 'xml': case 'svg': 
+            case 'xml': case 'svg':
                 return LangXml.xml ? LangXml.xml() : [];
-            case 'java': 
+            case 'java':
                 return LangJava.java ? LangJava.java() : [];
-            default: 
-                return []; 
+            case 'cpp': case 'c': case 'h': case 'hpp': case 'cc':
+                return LangCpp.cpp ? LangCpp.cpp() : [];
+            case 'rs': case 'rust':
+                return LangRust.rust ? LangRust.rust() : [];
+            case 'go':
+                return LangGo.go ? LangGo.go() : [];
+            case 'php':
+                return LangPhp.php ? LangPhp.php() : [];
+            case 'sql':
+                return LangSql.sql ? LangSql.sql() : [];
+            case 'yaml': case 'yml':
+                return LangYaml.yaml ? LangYaml.yaml() : [];
+            default:
+                return [];
         }
     } catch (e) {
         return [];
@@ -85,11 +114,11 @@ function getBaseExtensions() {
     if (View.drawSelection) exts.push(View.drawSelection());
     if (View.dropCursor) exts.push(View.dropCursor());
     if (Language.indentOnInput) exts.push(Language.indentOnInput());
-    
+
     if (Language.syntaxHighlighting && Language.defaultHighlightStyle) {
-        exts.push(Language.syntaxHighlighting(Language.defaultHighlightStyle, {fallback: true}));
+        exts.push(Language.syntaxHighlighting(Language.defaultHighlightStyle, { fallback: true }));
     }
-        
+
     if (Language.bracketMatching) exts.push(Language.bracketMatching());
     if (Autocomplete.closeBrackets) exts.push(Autocomplete.closeBrackets());
     if (Autocomplete.autocompletion) exts.push(Autocomplete.autocompletion());
@@ -97,14 +126,14 @@ function getBaseExtensions() {
     if (View.crosshairCursor) exts.push(View.crosshairCursor());
     if (View.highlightActiveLine) exts.push(View.highlightActiveLine());
     if (Search.highlightSelectionMatches) exts.push(Search.highlightSelectionMatches());
-    
+
     const keys = [
         ...(Commands.defaultKeymap || []),
         ...(Search.searchKeymap || []),
         ...(Commands.historyKeymap || []),
         ...(Lint.lintKeymap || [])
     ];
-    
+
     if (View.keymap) exts.push(View.keymap.of(keys));
 
     return exts;
@@ -118,6 +147,134 @@ function onThemeChange(e) {
         });
     }
 }
+
+// NEW: Generic Syntax Linter
+const syntaxLinter = (view) => {
+    const diagnostics = [];
+
+    // DEBUG: Check if syntaxTree is available
+    if (!syntaxTree) {
+        // diagnostics.push({ from: 0, to: 0, severity: 'error', message: 'System: syntaxTree is undefined. Linter cannot run.', source: 'System' });
+        return diagnostics;
+    }
+
+    try {
+        const tree = syntaxTree(view.state);
+        if (!tree) {
+            return diagnostics;
+        }
+
+        tree.iterate({
+            enter: (node) => {
+                if (node.type.isError) {
+                    let msg = "Syntax Error";
+                    const parent = node.node.parent;
+                    const doc = view.state.doc;
+
+                    // Heuristics for better error messages
+                    if (parent) {
+                        const parentName = parent.type.name;
+                        if (parentName === 'Block') msg = "Unexpected token or missing '}' in Block";
+                        else if (parentName === 'ArgList') msg = "Missing ')' or invalid argument list";
+                        else if (parentName === 'ParamList') msg = "Missing ')' or invalid parameter list";
+                        else if (parentName === 'ArrayExpression') msg = "Missing ']' or invalid array element";
+                        else if (parentName === 'ObjectExpression') msg = "Missing '}' or invalid object property";
+                        else if (parentName === 'String') msg = "Unterminated string literal";
+                        else if (parentName === 'TemplateString') msg = "Unterminated template string";
+                        else if (parentName === 'BinaryExpression') msg = "Invalid binary expression";
+                        else if (parentName === 'CallExpression') msg = "Invalid function call";
+                        else if (parentName === 'IfStatement') msg = "Invalid If Statement syntax";
+                        else if (parentName === 'ForStatement') msg = "Invalid For Statement syntax";
+                        else if (parentName === 'FunctionDeclaration') msg = "Invalid Function Declaration";
+                        else if (parentName === 'ClassBody') msg = "Invalid Class Body";
+                        else msg = `Syntax Error in ${parentName}`;
+                    }
+
+                    // Check for specific tokens if node has length
+                    if (node.to > node.from) {
+                        const text = doc.sliceString(node.from, node.to);
+                        if (text === ';') msg = "Unexpected ';'";
+                        else if (text === ',') msg = "Unexpected ','";
+                        else if (text === ')') msg = "Unexpected ')'";
+                        else if (text === '}') msg = "Unexpected '}'";
+                        else if (text === ']') msg = "Unexpected ']'";
+                    }
+
+                    diagnostics.push({
+                        from: node.from,
+                        to: node.to,
+                        severity: 'error',
+                        message: msg,
+                        source: 'Syntax'
+                    });
+                }
+            }
+        });
+    } catch (e) {
+        console.error(e);
+    }
+
+    // DEBUG: Verify linter is running
+    if (view.state.doc.toString().includes("debug")) {
+        diagnostics.push({ from: 0, to: 0, severity: 'warning', message: 'Linter is active (Debug Mode)', source: 'Debug' });
+    }
+
+    return diagnostics;
+};
+
+// NEW: ESLint Linter (Async)
+const esLinter = async (view) => {
+    const diagnostics = [];
+    const doc = view.state.doc;
+    const content = doc.toString();
+
+    // Only run for JS/TS
+    // We can check the file extension from the view state if we stored it, or just rely on where we add this linter
+
+    try {
+        // We need the filePath. It's passed to setupCodeMirror but not directly stored in view.state
+        // But we can get it from window.currentFilePath if it matches the content
+        // Better: Pass it in the closure when creating the linter extension
+    } catch (e) { console.error(e); }
+
+    return diagnostics;
+    // Wait, CodeMirror's linter function can be async and return a promise of diagnostics.
+    // But we need the filePath.
+};
+
+// Factory to create the linter with filePath context
+const createESLinter = (filePath) => {
+    return async (view) => {
+        const diagnostics = [];
+        try {
+            const content = view.state.doc.toString();
+            const rawErrors = await window.ipcRenderer.invoke('project:lint-file', filePath, content);
+
+            if (rawErrors && Array.isArray(rawErrors)) {
+                const doc = view.state.doc;
+                rawErrors.forEach(err => {
+                    // Convert line/col to pos
+                    // ESLint is 1-based, CodeMirror lines are 1-based, but cols are 0-based?
+                    // CodeMirror doc.line(n) throws if out of range
+                    try {
+                        const lineInfo = doc.line(err.line);
+                        const from = Math.min(lineInfo.to, lineInfo.from + (err.col - 1));
+                        const to = err.endLine ? Math.min(doc.line(err.endLine).to, doc.line(err.endLine).from + (err.endCol - 1)) : from;
+
+                        diagnostics.push({
+                            from: from,
+                            to: Math.max(from, to), // Ensure to >= from
+                            severity: err.severity,
+                            message: err.message,
+                            source: 'ESLint'
+                        });
+                    } catch (e) { /* ignore invalid ranges */ }
+                });
+            }
+        } catch (e) { console.error("ESLint error:", e); }
+        return diagnostics;
+    };
+};
 
 function setupCodeMirror(container, content, filePath) {
     if (!State.EditorState || !View.EditorView) {
@@ -141,7 +298,7 @@ function setupCodeMirror(container, content, filePath) {
     // --- DIAGNOSTICS LISTENER ---
     const diagnosticsListener = View.EditorView.updateListener.of((update) => {
         if (debounceDiagnostics) clearTimeout(debounceDiagnostics);
-        
+
         debounceDiagnostics = setTimeout(() => {
             if (!editorView) return;
             try {
@@ -161,10 +318,10 @@ function setupCodeMirror(container, content, filePath) {
                         });
                     });
                 }
-                window.dispatchEvent(new CustomEvent('peak-editor-diagnostics', { 
-                    detail: { diagnostics, filePath } 
+                window.dispatchEvent(new CustomEvent('peak-editor-diagnostics', {
+                    detail: { diagnostics, filePath }
                 }));
-            } catch(e) { console.error("Diagnostics error:", e); }
+            } catch (e) { console.error("Diagnostics error:", e); }
         }, 600);
 
         if (update.docChanged) {
@@ -178,11 +335,25 @@ function setupCodeMirror(container, content, filePath) {
         // Use the compartment for the theme
         themeCompartment.of(loadVSCodeTheme(isDarkMode)),
         Search.search ? Search.search() : [],
-        diagnosticsListener
+        diagnosticsListener,
+        inlineChatField,
+        inlineChatKeymap
     ];
 
     if (Lint.lintGutter) extensions.push(Lint.lintGutter());
-    if (Lint.lint) extensions.push(Lint.lint());
+
+    // FIX: Lint.lint is undefined in recent versions, use linter() directly
+    // if (Lint.lint) extensions.push(Lint.lint()); 
+
+    // Add generic syntax linter
+    if (Lint.linter) {
+        extensions.push(Lint.linter(syntaxLinter));
+
+        // Add ESLint for JS/TS
+        if (filePath.endsWith('.js') || filePath.endsWith('.jsx') || filePath.endsWith('.ts') || filePath.endsWith('.tsx')) {
+            extensions.push(Lint.linter(createESLinter(filePath)));
+        }
+    }
 
     if ((filePath.endsWith('.json') || filePath.endsWith('.jsonc')) && LangJson.jsonParseLinter && Lint.linter) {
         extensions.push(Lint.linter(LangJson.jsonParseLinter()));
@@ -216,8 +387,12 @@ function setupCodeMirror(container, content, filePath) {
 
 function disposeEditor(view) {
     // NEW: Remove Theme Listener
-    window.matchMedia('(prefers-color-scheme: dark)').removeEventListener('change', onThemeChange);
-    
+    try {
+        if (window.matchMedia) {
+            window.matchMedia('(prefers-color-scheme: dark)').removeEventListener('change', onThemeChange);
+        }
+    } catch (e) { console.warn("Failed to remove theme listener", e); }
+
     if (view) {
         if (saveTimeout) clearTimeout(saveTimeout);
         if (debounceDiagnostics) clearTimeout(debounceDiagnostics);
@@ -227,4 +402,125 @@ function disposeEditor(view) {
     window.dispatchEvent(new CustomEvent('peak-editor-diagnostics', { detail: { diagnostics: [], filePath: null } }));
 }
 
-module.exports = { setupCodeMirror, disposeEditor };
+// --- DIFF VIEW ---
+const { MergeView } = getModule('@codemirror/merge');
+
+let diffView = null;
+
+function setupDiffEditor(container, originalContent, modifiedContent, filePath) {
+    if (!MergeView) {
+        container.innerHTML = `<div class="project-editor-placeholder error">Error: MergeView failed to load.</div>`;
+        return null;
+    }
+
+    // Cleanup existing
+    if (diffView) {
+        diffView.destroy();
+        diffView = null;
+    }
+
+    const isDarkMode = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    const extensions = [
+        ...getBaseExtensions(),
+        getLanguageExtension(filePath),
+        loadVSCodeTheme(isDarkMode),
+        View.EditorView.editable.of(false) // Make read-only for now, or allow editing? Windsurf allows editing.
+        // Let's keep it simple: Read-only comparison, user accepts "Modified".
+    ];
+
+    diffView = new MergeView({
+        a: {
+            doc: originalContent,
+            extensions: extensions
+        },
+        b: {
+            doc: modifiedContent,
+            extensions: [
+                ...extensions,
+                View.EditorView.editable.of(true) // Allow editing the "Result" side
+            ]
+        },
+        parent: container,
+        highlightChanges: true,
+        gutter: true,
+        collapseUnchanged: { margin: 3 }, // Collapse unchanged regions to focus on diffs
+        orientation: 'a-b' // Default is side-by-side
+    });
+
+    // FORCE VERTICAL LAYOUT (Stacked)
+    // We inject a style tag to ensure these rules take precedence
+    let style = container.querySelector('#diff-view-style');
+    if (!style) {
+        style = document.createElement('style');
+        style.id = 'diff-view-style';
+        style.textContent = `
+            .cm-mergeView {
+                flex-direction: column !important;
+                height: 100% !important;
+            }
+            .cm-mergeViewEditors {
+                flex-direction: column !important;
+                height: 100% !important;
+            }
+            .cm-mergeViewEditor {
+                width: 100% !important;
+                height: 50% !important;
+                overflow: auto !important;
+            }
+        `;
+        container.appendChild(style);
+    }
+
+    return diffView;
+}
+
+function getDiffContent() {
+    if (!diffView) return null;
+    return diffView.b.state.doc.toString();
+}
+
+function disposeDiffEditor() {
+    if (diffView) {
+        diffView.destroy();
+        diffView = null;
+    }
+}
+
+function scanFileForErrors(content, filePath) {
+    if (!State.EditorState || !syntaxTree) return [];
+
+    try {
+        const langExt = getLanguageExtension(filePath);
+        if (!langExt || (Array.isArray(langExt) && langExt.length === 0)) return [];
+
+        const state = State.EditorState.create({
+            doc: content,
+            extensions: [
+                langExt,
+                // We don't need the full UI extensions, just the language to build the tree
+            ]
+        });
+
+        // Re-use the syntaxLinter logic, but we need to mock the 'view' object 
+        // because syntaxLinter expects { state: ... }
+        const mockView = { state };
+
+        // We can't use syntaxLinter directly if it relies on view.state.doc.toString() for debug checks
+        // But our syntaxLinter implementation is:
+        /*
+        const syntaxLinter = (view) => {
+            // ...
+            const tree = syntaxTree(view.state);
+            // ...
+        }
+        */
+        // So passing { state } should work.
+
+        return syntaxLinter(mockView);
+    } catch (e) {
+        console.error("Scan error:", e);
+        return [];
+    }
+}
+
+module.exports = { setupCodeMirror, disposeEditor, setupDiffEditor, getDiffContent, disposeDiffEditor, scanFileForErrors };

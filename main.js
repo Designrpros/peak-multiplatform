@@ -5,6 +5,7 @@ const os = require('os');
 const fs = require('fs');
 const dotenv = require('dotenv');
 const { pathToFileURL } = require('url');
+const { ESLint } = require('eslint');
 const mime = require('mime-types');
 const Store = require('electron-store');
 
@@ -222,6 +223,26 @@ function setupIpcHandlers() {
         } catch (err) { return { error: err.message }; }
     });
 
+    ipcMain.handle('project:copy-file', async (e, o, n, force = false) => {
+        try {
+            if (fs.existsSync(n)) {
+                const stat = fs.statSync(n);
+                const sourceStat = fs.statSync(o);
+                if (sourceStat.isDirectory() && stat.isFile()) return { error: 'ERR_IS_FILE' };
+                if (sourceStat.isFile() && stat.isDirectory()) return { error: 'ERR_IS_DIRECTORY' };
+                if (!force) return { error: 'ERR_EXISTS' };
+            }
+
+            const sourceStat = fs.statSync(o);
+            if (sourceStat.isDirectory()) {
+                await fs.promises.cp(o, n, { recursive: true });
+            } else {
+                await fs.promises.copyFile(o, n);
+            }
+            return { success: true };
+        } catch (err) { return { error: err.message }; }
+    });
+
     ipcMain.handle('finder:read-dir', async (event, dirPath) => { try { const dirents = await fs.promises.readdir(dirPath, { withFileTypes: true }); return dirents.filter(d => !['.git', '.DS_Store', 'node_modules'].includes(d.name)).map(d => ({ name: d.name, isDirectory: d.isDirectory(), path: path.join(dirPath, d.name), mtime: fs.statSync(path.join(dirPath, d.name)).mtime })).sort((a, b) => (a.isDirectory === b.isDirectory ? a.name.localeCompare(b.name) : a.isDirectory ? -1 : 1)); } catch (e) { return { error: e.message }; } });
     ipcMain.handle('finder:rename', async (e, o, n) => { try { await fs.promises.rename(o, n); return { success: true }; } catch (err) { return { error: err.message }; } });
     ipcMain.handle('finder:delete', async (e, p) => { try { await shell.trashItem(p); return { success: true }; } catch (err) { return { error: err.message }; } });
@@ -242,14 +263,309 @@ function setupIpcHandlers() {
     });
 
     ipcMain.on('project:watch', (event, projectPath) => { if (activeProjectWatcher) { try { activeProjectWatcher.close(); } catch (e) { } activeProjectWatcher = null; } if (!projectPath || !fs.existsSync(projectPath)) return; try { activeProjectWatcher = fs.watch(projectPath, { recursive: true }, (eventType, filename) => { if (filename && !filename.includes('.git') && !filename.includes('.DS_Store')) { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('project:files-changed', { eventType, filename }); } }); } catch (e) { console.error("Failed to watch:", e); } });
+
+    // NEW: Logging helper for Renderer -> Terminal
+    ipcMain.on('log:info', (event, ...args) => {
+        console.log('[Renderer]', ...args);
+    });
+
+    ipcMain.handle('log-to-debug-file', async (event, msg) => {
+        console.log('[DEBUG]', msg);
+        return true;
+    });
+
+    // NEW: ESLint Handler
+    let eslintInstance = null;
+    ipcMain.handle('project:lint-file', async (event, filePath, content) => {
+        try {
+            if (!eslintInstance) {
+                // Initialize ESLint (v9 uses flat config by default)
+                eslintInstance = new ESLint();
+            }
+
+            // Lint the text
+            const results = await eslintInstance.lintText(content, { filePath });
+
+            // Format results for the editor
+            if (results && results[0]) {
+                return results[0].messages.map(msg => ({
+                    from: 0, // We'll map line/col to pos in renderer
+                    to: 0,
+                    line: msg.line,
+                    col: msg.column,
+                    endLine: msg.endLine,
+                    endCol: msg.endColumn,
+                    severity: msg.severity === 2 ? 'error' : 'warning',
+                    message: msg.message,
+                    source: 'ESLint'
+                }));
+            }
+            return [];
+        } catch (e) {
+            console.error("Lint error:", e);
+            return [];
+        }
+    });
+
     ipcMain.handle('project:delete-path', async (event, itemPath) => { try { await shell.trashItem(itemPath); return { success: true }; } catch (e) { return { error: e.message }; } });
     ipcMain.handle('read-file-as-data-url', async (event, filePath) => { try { const data = await fs.promises.readFile(filePath); let mimeType = mime.lookup(filePath) || 'application/octet-stream'; return { buffer: { type: 'Buffer', data: Array.from(data) }, mimeType }; } catch (e) { return { error: e.message }; } });
     ipcMain.handle('clipboard:write-image-dataurl', (e, d) => { try { clipboard.writeImage(nativeImage.createFromDataURL(d)); return { success: true }; } catch (e) { return { error: e.message }; } });
+
+    // NEW: Clipboard File Handler
+    ipcMain.handle('clipboard:write-files', (e, filePaths) => {
+        try {
+            if (!filePaths || filePaths.length === 0) return { error: 'No files' };
+
+            // 1. Write plain text (fallback)
+            clipboard.writeText(filePaths.join('\n'));
+
+            // 2. Platform specific
+            if (process.platform === 'darwin') {
+                // macOS: NSFilenamesPboardType (Property List)
+                const plist = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<array>
+    ${filePaths.map(p => `<string>${p}</string>`).join('\n')}
+</array>
+</plist>`;
+                clipboard.writeBuffer('NSFilenamesPboardType', Buffer.from(plist));
+            } else if (process.platform === 'linux') {
+                // Linux: text/uri-list
+                const uriList = filePaths.map(p => `file://${p}`).join('\r\n');
+                clipboard.writeBuffer('text/uri-list', Buffer.from(uriList));
+            } else if (process.platform === 'win32') {
+                // Windows: Not easily supported via Electron's clipboard API directly for files without native module
+                // But writing file paths as text often works for some apps, or we rely on the text fallback.
+            }
+
+            return { success: true };
+        } catch (err) {
+            return { error: err.message };
+        }
+    });
+
     ipcMain.handle('project:read-dir', async (e, p) => { try { return (await fs.promises.readdir(p, { withFileTypes: true })).filter(i => !['.git', '.DS_Store'].includes(i.name)).map(i => ({ name: i.name, isDirectory: i.isDirectory(), path: path.join(p, i.name) })).sort((a, b) => (a.isDirectory === b.isDirectory ? a.name.localeCompare(b.name) : a.isDirectory ? -1 : 1)); } catch (e) { return null; } });
     ipcMain.handle('project:read-file', async (e, p) => { try { return await fs.promises.readFile(p, 'utf8'); } catch (err) { return { error: err.message }; } });
-    ipcMain.handle('project:write-file', async (e, p, c) => { try { await fs.promises.writeFile(p, c, 'utf8'); return { success: true }; } catch (err) { return { error: err.message }; } });
+    ipcMain.handle('project:write-file', async (e, p, c) => {
+        try {
+            const dir = path.dirname(p);
+            await fs.promises.mkdir(dir, { recursive: true });
+            await fs.promises.writeFile(p, c, 'utf8');
+            return { success: true };
+        } catch (err) {
+            return { error: err.message };
+        }
+    });
+    ipcMain.handle('project:search-text', async (e, rootPath, query) => {
+        try {
+            const results = [];
+            const searchRecursive = async (dir) => {
+                const entries = await fs.promises.readdir(dir, { withFileTypes: true });
+                for (const entry of entries) {
+                    const fullPath = path.join(dir, entry.name);
+                    if (entry.isDirectory()) {
+                        if (['node_modules', '.git', 'dist', 'build', '.DS_Store'].includes(entry.name)) continue;
+                        await searchRecursive(fullPath);
+                    } else if (entry.isFile()) {
+                        // Simple text search
+                        try {
+                            const content = await fs.promises.readFile(fullPath, 'utf8');
+                            if (content.includes(query)) {
+                                // Find line number and snippet
+                                const lines = content.split('\n');
+                                lines.forEach((line, index) => {
+                                    if (line.includes(query)) {
+                                        results.push({
+                                            filePath: path.relative(rootPath, fullPath),
+                                            line: index + 1,
+                                            content: line.trim()
+                                        });
+                                    }
+                                });
+                            }
+                        } catch (err) {
+                            // Ignore binary or unreadable files
+                        }
+                    }
+                }
+            };
+            await searchRecursive(rootPath);
+            return results.slice(0, 50); // Limit results
+        } catch (err) {
+            return { error: err.message };
+        }
+    });
     ipcMain.handle('project:read-asset-base64', async (e, r) => { try { const c = await fs.promises.readFile(path.join(__dirname, r)); return `data:image/svg+xml;base64,${c.toString('base64')}`; } catch (err) { return null; } });
-    ipcMain.on('llm-stream-request', async (event, sId, mId, msgs) => { const apiKey = settingsStore.get('openrouterApiKey'); if (!apiKey) { event.sender.send('llm-stream-data', sId, { type: 'error', message: 'API Key missing' }); return; } try { const stream = await openrouterService.streamChatCompletion(mId, msgs, apiKey, 'peak', 'Peak'); stream.on('data', c => { const lines = c.toString().split('\n').filter(l => l.trim() !== ''); for (const line of lines) { const msg = line.replace(/^data: /, ''); if (msg === '[DONE]') { event.sender.send('llm-stream-data', sId, { type: 'end' }); return; } try { const p = JSON.parse(msg); const c = p.choices[0]?.delta?.content || ''; if (c) event.sender.send('llm-stream-data', sId, { type: 'data', content: c }); } catch (e) { } } }); stream.on('end', () => event.sender.send('llm-stream-data', sId, { type: 'end' })); stream.on('error', e => event.sender.send('llm-stream-data', sId, { type: 'error', message: e.message })); } catch (e) { event.sender.send('llm-stream-data', sId, { type: 'error', message: e.message }); } });
+
+    // --- LOGGING ---
+    ipcMain.on('log', (event, ...args) => console.log('[Renderer]', ...args));
+
+    // --- DIALOG HANDLERS ---
+    ipcMain.handle('dialog:open-file', async (event, options) => {
+        const { dialog } = require('electron');
+        return await dialog.showOpenDialog(options);
+    });
+
+    ipcMain.handle('dialog:openFile', async (event) => {
+        const { dialog } = require('electron');
+        const result = await dialog.showOpenDialog({
+            properties: ['openFile', 'multiSelections']
+        });
+        if (result.canceled || result.filePaths.length === 0) return null;
+        return result.filePaths[0]; // Return single path for now to match select-image behavior
+    });
+
+    // --- GIT CHECKPOINT HANDLERS ---
+    const { exec } = require('child_process');
+
+    ipcMain.handle('git:create-checkpoint', async (event, rootPath, messageId) => {
+        return new Promise((resolve) => {
+            if (!rootPath || !fs.existsSync(path.join(rootPath, '.git'))) {
+                resolve({ error: 'Not a git repository' });
+                return;
+            }
+
+            // 1. Add all changes
+            exec('git add .', { cwd: rootPath }, (err) => {
+                if (err) {
+                    resolve({ error: `Git Add Failed: ${err.message}` });
+                    return;
+                }
+
+                // 2. Commit
+                const commitMsg = `Peak Checkpoint: ${messageId}`;
+                exec(`git commit -m "${commitMsg}"`, { cwd: rootPath }, (err, stdout) => {
+                    if (err) {
+                        // If nothing to commit, that's fine, return current HEAD
+                        if (stdout.includes('nothing to commit')) {
+                            exec('git rev-parse HEAD', { cwd: rootPath }, (e, hash) => {
+                                resolve({ hash: hash.trim() });
+                            });
+                            return;
+                        }
+                        resolve({ error: `Git Commit Failed: ${err.message}` });
+                        return;
+                    }
+
+                    // 3. Get Hash
+                    exec('git rev-parse HEAD', { cwd: rootPath }, (e, hash) => {
+                        resolve({ hash: hash.trim() });
+                    });
+                });
+            });
+        });
+    });
+
+    ipcMain.handle('git:revert-to-checkpoint', async (event, rootPath, hash) => {
+        return new Promise((resolve) => {
+            if (!rootPath || !hash) {
+                resolve({ error: 'Invalid parameters' });
+                return;
+            }
+
+            // Hard Reset
+            console.log(`[Main] Reverting to checkpoint: ${hash} in ${rootPath}`);
+            exec(`git reset --hard ${hash}`, { cwd: rootPath }, (err, stdout, stderr) => {
+                if (err) {
+                    console.error(`[Main] Git Reset Failed: ${err.message}`);
+                    resolve({ error: `Git Reset Failed: ${err.message}` });
+                } else {
+                    // Also clean untracked files to ensure full revert
+                    exec('git clean -fd', { cwd: rootPath }, (cleanErr, cleanStdout, cleanStderr) => {
+                        if (cleanErr) {
+                            console.warn(`[Main] Git Clean Failed (non-fatal): ${cleanErr.message}`);
+                        }
+                        console.log(`[Main] Git Reset & Clean Success. Reset Output: ${stdout}, Clean Output: ${cleanStdout}`);
+                        resolve({ success: true });
+                    });
+                }
+            });
+        });
+    });
+    // -------------------------------
+
+    // --- PROJECT CONTEXT HANDLERS ---
+    ipcMain.handle('get-project-files', async (event, rootPath) => {
+        if (!rootPath) return [];
+        const fileList = [];
+
+        async function scan(dir) {
+            try {
+                const dirents = await fs.promises.readdir(dir, { withFileTypes: true });
+                for (const dirent of dirents) {
+                    const res = path.resolve(dir, dirent.name);
+                    if (dirent.isDirectory()) {
+                        if (['node_modules', '.git', 'dist', 'build', '.DS_Store', '.idea', '.vscode'].includes(dirent.name)) continue;
+                        await scan(res);
+                    } else {
+                        if (['.DS_Store', 'package-lock.json', 'yarn.lock'].includes(dirent.name)) continue;
+                        // Calculate relative path for cleaner context
+                        fileList.push(path.relative(rootPath, res));
+                    }
+                }
+            } catch (e) {
+                console.error(`[Main] Error scanning ${dir}:`, e);
+            }
+        }
+
+        await scan(rootPath);
+        return fileList;
+    });
+    // --------------------------------
+
+    ipcMain.on('llm-stream-request', async (event, sId, mId, msgs) => {
+        const apiKey = settingsStore.get('openrouterApiKey');
+        if (!apiKey) {
+            event.sender.send('llm-stream-data', sId, { type: 'error', message: 'API Key missing' });
+            return;
+        }
+        try {
+            console.log(`[Main] Starting stream for model: ${mId}`);
+            const stream = await openrouterService.streamChatCompletion(mId, msgs, apiKey, 'peak', 'Peak');
+
+            stream.on('data', c => {
+                const chunkStr = c.toString();
+                // console.log('[Main] Raw Chunk:', chunkStr); // Uncomment for verbose debug
+
+                const lines = chunkStr.split('\n').filter(l => l.trim() !== '');
+
+                for (const line of lines) {
+                    if (line.startsWith(':')) continue; // Ignore OpenRouter keep-alive/status messages
+                    const msg = line.replace(/^data: /, '');
+                    if (msg === '[DONE]') {
+                        console.log('[Main] Stream received [DONE]');
+                        event.sender.send('llm-stream-data', sId, { type: 'end' });
+                        return;
+                    }
+                    try {
+                        const p = JSON.parse(msg);
+                        const content = p.choices[0]?.delta?.content || '';
+                        if (content) {
+                            // console.log('[Main] Content:', content);
+                            event.sender.send('llm-stream-data', sId, { type: 'data', content: content });
+                        }
+                    } catch (e) {
+                        console.error('[Main] JSON Parse Error:', e.message, 'Line:', line);
+                    }
+                }
+            });
+
+            stream.on('end', () => {
+                console.log('[Main] Stream ended');
+                event.sender.send('llm-stream-data', sId, { type: 'end' });
+            });
+
+            stream.on('error', e => {
+                console.error('[Main] Stream error:', e);
+                event.sender.send('llm-stream-data', sId, { type: 'error', message: e.message });
+            });
+
+        } catch (e) {
+            console.error('[Main] Request setup error:', e);
+            event.sender.send('llm-stream-data', sId, { type: 'error', message: e.message });
+        }
+    });
     ipcMain.on('save-whiteboard-data', (e, id, d, t) => { if (mainWindow) mainWindow.webContents.send('whiteboard-save-data', Number(id), d, t); });
     ipcMain.on('show-inspector-context-menu', (e, { type, id }) => { Menu.buildFromTemplate([{ label: 'Delete', click: () => e.sender.send('delete-inspector-item', { type, id }) }]).popup({ window: BrowserWindow.fromWebContents(e.sender) }); });
     ipcMain.on('show-whiteboard-context-menu', (e, d) => { Menu.buildFromTemplate([{ label: 'Delete', click: () => e.sender.send('whiteboard-action', { action: 'delete', ...d }) }]).popup({ window: BrowserWindow.fromWebContents(e.sender) }); });

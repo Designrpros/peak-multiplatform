@@ -8,7 +8,7 @@
     --peak-primary: #333333;
     --peak-secondary: #888888;
     --peak-accent: #6688AA;
-    
+
     --text-background-color: #ffffff;
     --control-background-color: #f5f5f7;
     --border-color: #e1e1e1;
@@ -28,7 +28,7 @@
         --peak-primary: #f5f5f7;
         --peak-secondary: #888888;
         --peak-accent: #7899BB;
-        
+
         --text-background-color: #1e1e1e;
         --control-background-color: #2c2c2e;
         --border-color: #3a3a3c;
@@ -43,9 +43,12 @@
     }
 }
 
-body, html {
-    margin: 0; padding: 0;
-    height: 100vh; width: 100vw;
+body,
+html {
+    margin: 0;
+    padding: 0;
+    height: 100vh;
+    width: 100vw;
     overflow: hidden;
     font-family: -apple-system, BlinkMacSystemFont, sans-serif;
     background-color: var(--window-background-color);
@@ -53,27 +56,31 @@ body, html {
 }
 
 #app {
-    display: flex; flex-direction: column; height: 100vh; width: 100vw; overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    width: 100vw;
+    overflow: hidden;
 }
 
 #content-wrapper {
     flex: 1;
     display: flex;
-    flex-direction: row; 
+    flex-direction: row;
     overflow: hidden;
     position: relative;
     width: 100%;
 }
 
 #main-content-area {
-    flex: 1;              
-    min-width: 0;         
-    display: flex;        
+    flex: 1;
+    min-width: 0;
+    display: flex;
     flex-direction: column;
     height: 100%;
     position: relative;
     background-color: var(--window-background-color);
-    transition: flex 0.3s cubic-bezier(0.25, 0.8, 0.25, 1); 
+    transition: flex 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
 }
 
 #inspector-container {
@@ -81,16 +88,65 @@ body, html {
     width: 0;
     min-width: 0;
     overflow: hidden;
+    /* Default to hidden for transition/closed state */
     border-left: none;
     transition: width 0.3s ease;
     background-color: var(--window-background-color);
     display: flex;
     flex-direction: column;
+    flex-shrink: 0;
 }
 
 #inspector-container.visible {
-    width: 320px; 
+    width: 320px;
     border-left: 1px solid var(--border-color);
+    overflow: visible;
+    /* Allow handle to protrude */
+}
+
+/* New wrapper to clip content while container is overflow:visible */
+.inspector-inner-wrapper {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    background-color: var(--window-background-color);
+}
+
+#inspector-container.resizing {
+    transition: none !important;
+    pointer-events: none;
+}
+
+.inspector-resize-handle {
+    position: absolute;
+    left: -5px;
+    /* Center on border */
+    top: 0;
+    bottom: 0;
+    width: 10px;
+    /* Wider target */
+    cursor: col-resize;
+    z-index: 9999;
+    /* Very High z-index */
+    background-color: rgba(0, 0, 0, 0.1);
+    /* Visible light gray */
+    transition: background-color 0.2s;
+    pointer-events: auto;
+    display: none;
+    /* Hidden when inspector is closed */
+    touch-action: none;
+}
+
+#inspector-container.visible .inspector-resize-handle {
+    display: block;
+}
+
+.inspector-resize-handle:hover,
+#inspector-container.resizing .inspector-resize-handle {
+    background-color: var(--peak-accent);
+    /* Visible on hover/drag */
 }
 
 /* --- GLOBAL SYNTAX HIGHLIGHTING --- */
@@ -98,18 +154,59 @@ body, html {
     display: block;
     overflow-x: auto;
     color: var(--peak-primary);
-    background: transparent !important; 
+    background: transparent !important;
     padding: 0 !important;
 }
 
-.hljs-comment, .hljs-quote { color: var(--syntax-comment); font-style: italic; }
-.hljs-keyword, .hljs-selector-tag, .hljs-literal, .hljs-name, .hljs-type { color: var(--syntax-keyword); font-weight: normal; }
-.hljs-attribute, .hljs-meta, .hljs-variable, .hljs-template-variable { color: var(--syntax-variable); }
-.hljs-string, .hljs-symbol, .hljs-bullet, .hljs-addition { color: var(--syntax-string); }
-.hljs-title, .hljs-section, .hljs-function { color: var(--syntax-func); }
-.hljs-number, .hljs-link, .hljs-regexp { color: var(--syntax-number); }
-.hljs-attr { color: var(--peak-primary); }
-.hljs-built_in, .hljs-class .hljs-title { color: var(--syntax-variable); }
+.hljs-comment,
+.hljs-quote {
+    color: var(--syntax-comment);
+    font-style: italic;
+}
+
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-literal,
+.hljs-name,
+.hljs-type {
+    color: var(--syntax-keyword);
+    font-weight: normal;
+}
+
+.hljs-attribute,
+.hljs-meta,
+.hljs-variable,
+.hljs-template-variable {
+    color: var(--syntax-variable);
+}
+
+.hljs-string,
+.hljs-symbol,
+.hljs-bullet,
+.hljs-addition {
+    color: var(--syntax-string);
+}
+
+.hljs-title,
+.hljs-section,
+.hljs-function {
+    color: var(--syntax-func);
+}
+
+.hljs-number,
+.hljs-link,
+.hljs-regexp {
+    color: var(--syntax-number);
+}
+
+.hljs-attr {
+    color: var(--peak-primary);
+}
+
+.hljs-built_in,
+.hljs-class .hljs-title {
+    color: var(--syntax-variable);
+}
 
 /* --- MARKDOWN STYLES --- */
 .markdown-content {
@@ -121,6 +218,7 @@ body, html {
 .markdown-content p {
     margin: 0 0 10px 0;
 }
+
 .markdown-content p:last-child {
     margin-bottom: 0;
 }
@@ -128,7 +226,7 @@ body, html {
 /* Inline Code */
 .markdown-content code {
     font-family: "SF Mono", monospace;
-    background: rgba(128,128,128,0.12);
+    background: rgba(128, 128, 128, 0.12);
     padding: 2px 5px;
     border-radius: 4px;
     font-size: 0.9em;
@@ -139,9 +237,10 @@ body, html {
 .chat-code-block {
     background-color: var(--control-background-color);
     border: 1px solid var(--border-color);
-    border-radius: 8px; 
-    overflow: hidden; /* Keeps the rounded corners */
-    margin: 16px 0; 
+    border-radius: 8px;
+    overflow: hidden;
+    /* Keeps the rounded corners */
+    margin: 16px 0;
     width: 100%;
     display: flex;
     flex-direction: column;
@@ -149,11 +248,11 @@ body, html {
 
 /* Header */
 .code-header {
-    display: flex; 
-    justify-content: space-between; 
+    display: flex;
+    justify-content: space-between;
     align-items: center;
-    padding: 6px 12px; 
-    background: rgba(0,0,0,0.02); 
+    padding: 6px 12px;
+    background: rgba(0, 0, 0, 0.02);
     border-bottom: 1px solid var(--border-color);
     font-family: "SF Mono", monospace;
     font-size: 12px;
@@ -166,11 +265,12 @@ body, html {
     font-weight: 500;
 }
 
-.copy-btn, .apply-btn {
-    background: none; 
-    border: none; 
-    cursor: pointer; 
-    padding: 4px 6px; 
+.copy-btn,
+.apply-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 4px 6px;
     color: var(--peak-secondary);
     display: flex;
     align-items: center;
@@ -180,7 +280,12 @@ body, html {
     gap: 4px;
     font-size: 11px;
 }
-.copy-btn:hover, .apply-btn:hover { color: var(--peak-primary); background-color: rgba(0,0,0,0.05); }
+
+.copy-btn:hover,
+.apply-btn:hover {
+    color: var(--peak-primary);
+    background-color: rgba(0, 0, 0, 0.05);
+}
 
 /* Code Content Overrides */
 .markdown-content pre,
@@ -190,7 +295,8 @@ body, html {
     background: transparent !important;
     border: none !important;
     width: 100%;
-    overflow-x: auto !important; /* CRITICAL: Enables scrolling */
+    overflow-x: auto !important;
+    /* CRITICAL: Enables scrolling */
 }
 
 /* Ensure the code tag doesn't interfere with pre scrolling */
@@ -203,6 +309,31 @@ body, html {
     font-size: 13px !important;
     line-height: 1.5;
     border: none !important;
-    white-space: pre; /* Force wrapping to respect newlines, scroll handled by pre */
+    white-space: pre;
+    /* Force wrapping to respect newlines, scroll handled by pre */
     display: block;
+}
+
+/* Revert Button */
+.revert-btn {
+    background: none;
+    border: 1px solid transparent;
+    /* Invisible border to ensure layout */
+    cursor: pointer;
+    padding: 6px;
+    /* Larger hit area */
+    color: var(--peak-secondary);
+    border-radius: 4px;
+    transition: all 0.2s;
+    pointer-events: auto !important;
+    /* Force clickable */
+    position: relative;
+    z-index: 9999;
+    /* Extreme z-index */
+}
+
+.revert-btn:hover {
+    color: var(--peak-primary);
+    background-color: rgba(0, 0, 0, 0.05);
+    border-color: var(--border-color);
 }
