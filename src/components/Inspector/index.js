@@ -376,9 +376,11 @@ ipcRenderer.on('delete-inspector-item', (event, { type, id }) => {
     if (config && config.deleteItem) { config.deleteItem(id); refresh(); }
 });
 
-window.addEventListener('peak-project-file-selected', () => {
-    if (currentMode === 'ai-assist') refresh();
-});
+// Note: Commenting this out because it was refreshing the entire inspector (and clearing chat history)
+// when users clicked on files in the sidebar. Chat history should persist across file selections.
+// window.addEventListener('peak-project-file-selected', () => {
+//     if (currentMode === 'ai-assist') refresh();
+// });
 
 // --- Session Management Helpers ---
 window.showChatHistory = () => {

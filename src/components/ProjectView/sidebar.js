@@ -384,6 +384,61 @@ async function handleDrop(e, refreshCallback) {
     if (hasChanges && typeof refreshCallback === 'function') refreshCallback();
 }
 
+async function setActiveFile(container, filePath) {
+    if (!container || !filePath) return;
+    currentFilePath = filePath;
+
+    // 1. Try to find the item directly
+    let safeId = 'tree-' + filePath.replace(/[^a-zA-Z0-9]/g, '_');
+    let item = container.querySelector(`#${safeId}`);
+
+    // 2. If not found, it might be in a collapsed folder. Ensure parents are expanded.
+    if (!item) {
+        let currentDir = path.dirname(filePath);
+        const rootPath = container.dataset.rootPath;
+        const dirsToExpand = [];
+
+        // Walk up until we find a visible parent or hit root
+        while (currentDir && currentDir !== rootPath && currentDir.length > rootPath.length) {
+            if (!activeExpandedFolders.has(currentDir)) {
+                dirsToExpand.unshift(currentDir); // Add to front (top-down)
+            }
+            currentDir = path.dirname(currentDir);
+        }
+
+        // Expand them one by one
+        for (const dir of dirsToExpand) {
+            manualExpandedFolders.add(dir);
+            activeExpandedFolders.add(dir);
+
+            // Update UI for this folder (chevron, children container)
+            const dirSafeId = 'tree-' + dir.replace(/[^a-zA-Z0-9]/g, '_');
+            const dirItem = container.querySelector(`#${dirSafeId}`);
+            if (dirItem) {
+                const chevron = dirItem.querySelector('.chevron-icon');
+                if (chevron) chevron.setAttribute('data-lucide', 'chevron-down');
+
+                // Load content if needed
+                await loadFolderContent(dir, container, '', false);
+            }
+        }
+
+        // Try finding item again after expansion
+        item = container.querySelector(`#${safeId}`);
+    }
+
+    // 3. Update Selection State
+    container.querySelectorAll('.tree-item.selected').forEach(el => el.classList.remove('selected'));
+
+    if (item) {
+        item.classList.add('selected');
+        // Scroll into view (center it)
+        item.scrollIntoView({ behavior: 'auto', block: 'center' });
+    }
+
+    if (window.lucide) window.lucide.createIcons();
+}
+
 module.exports = {
     renderSidebarHTML,
     handleFileClick,
@@ -393,5 +448,6 @@ module.exports = {
     handleDragStart,
     handleDragOver,
     handleDragLeave,
-    handleDrop
+    handleDrop,
+    setActiveFile
 };

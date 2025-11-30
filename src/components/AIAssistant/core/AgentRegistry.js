@@ -14,32 +14,66 @@ class AgentRegistry {
     loadAgents() {
         try {
             const stored = localStorage.getItem('peak-agents');
+            const version = localStorage.getItem('peak-agents-version');
+
+            // Migration: Clear old agents if version doesn't match
+            // Version 4: Add Reviewer Agents
+            const CURRENT_VERSION = '4';
+            if (stored && version !== CURRENT_VERSION) {
+                console.log('[AgentRegistry] Migrating agents to version', CURRENT_VERSION);
+                localStorage.removeItem('peak-agents');
+                localStorage.setItem('peak-agents-version', CURRENT_VERSION);
+                return this.loadDefaultAgents();
+            }
+
             if (stored) {
+                localStorage.setItem('peak-agents-version', CURRENT_VERSION);
                 return JSON.parse(stored);
             }
+
+            // First time setup
+            localStorage.setItem('peak-agents-version', CURRENT_VERSION);
         } catch (e) {
             console.error('Failed to load agents:', e);
         }
-        return this.getDefaultAgents();
+        return this.loadDefaultAgents();
     }
 
-    getDefaultAgents() {
+    loadDefaultAgents() {
         return [
             {
-                id: 'default-assistant',
+                id: 'general',
                 name: 'General Assistant',
-                description: 'The standard AI assistant for general tasks.',
-                modelId: 'openrouter/auto',
-                systemPrompt: SYSTEM_PROMPT_TEMPLATE,
+                description: 'A helpful AI assistant for general tasks.',
+                modelId: 'anthropic/claude-sonnet-4',
+                systemPrompt: null,
                 isDefault: true,
-                isSystem: true // Cannot be deleted
+                isSystem: true
             },
             {
                 id: 'code-expert',
                 name: 'Code Expert',
                 description: 'Focused on writing high-quality, efficient code.',
                 modelId: 'anthropic/claude-sonnet-4',
-                systemPrompt: "You are an expert software engineer. Your goal is to write clean, efficient, and maintainable code. Always prioritize best practices, type safety (where applicable), and performance. When modifying code, ensure you understand the surrounding context. Provide concise explanations for your changes.",
+                systemPrompt: null,
+                isDefault: false,
+                isSystem: true
+            },
+            {
+                id: 'code-reviewer',
+                name: 'Code Reviewer',
+                description: 'Specialized in reviewing code for bugs, security, and style.',
+                modelId: 'anthropic/claude-sonnet-4',
+                systemPrompt: 'You are a Code Reviewer. Focus on identifying bugs, security vulnerabilities, and code style issues. Be constructive and concise.',
+                isDefault: false,
+                isSystem: true
+            },
+            {
+                id: 'decision-reviewer',
+                name: 'Decision Reviewer',
+                description: 'Reviews architectural and design decisions.',
+                modelId: 'anthropic/claude-sonnet-4',
+                systemPrompt: 'You are a Decision Reviewer. Evaluate architectural choices, trade-offs, and long-term implications. Ensure alignment with project goals.',
                 isDefault: false,
                 isSystem: true
             },
@@ -48,7 +82,7 @@ class AgentRegistry {
                 name: 'Debugger',
                 description: 'Specialized in finding and fixing bugs.',
                 modelId: 'openrouter/auto',
-                systemPrompt: "You are a debugging expert. Your primary goal is to identify the root cause of issues and propose fixes. Analyze the code carefully, look for logical errors, race conditions, and edge cases. When proposing a fix, explain why the bug occurred and how your fix resolves it.",
+                systemPrompt: null,
                 isDefault: false,
                 isSystem: true
             }

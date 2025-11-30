@@ -13,6 +13,7 @@ const UpdateFile = require('./UpdateFile');
 const GetProblems = require('./GetProblems');
 const CaptureLiveView = require('./CaptureLiveView');
 const ReadURL = require('./ReadURL');
+const ListDirectory = require('./ListDirectory');
 const DelegateTask = require('./DelegateTask');
 
 const tools = [
@@ -22,6 +23,7 @@ const tools = [
     DeleteFile,
     SearchProject,
     ViewFile,
+    ListDirectory,
     GetProblems,
     CaptureLiveView,
     ReadURL,

@@ -1,53 +1,55 @@
 <!DOCTYPE html>
 <html>
+
 <head>
     <meta charset="UTF-8">
-    <meta http-equiv="Content-Security-Policy" 
-          content="default-src 'self'; 
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; 
                    script-src 'self' https://unpkg.com 'unsafe-eval' 'unsafe-inline'; 
                    style-src 'self' 'unsafe-inline' 'unsafe-hashes'; 
                    img-src 'self' data: https: blob:; 
                    frame-src 'self' https:;">
 
     <title>Peak Browser</title>
-    
+
     <link rel="stylesheet" href="style.css?v=999">
-    
+
     <link rel="stylesheet" href="./src/components/GlobalToolbar/style.css?v=999">
     <link rel="stylesheet" href="./src/components/TabBar/style.css?v=999">
-    <link rel="stylesheet" href="./src/components/LandingPage/style.css?v=999"> 
-    <link rel="stylesheet" href="./src/components/Dashboard/style.css?v=999"> 
+    <link rel="stylesheet" href="./src/components/LandingPage/style.css?v=999">
+    <link rel="stylesheet" href="./src/components/Dashboard/style.css?v=999">
     <link rel="stylesheet" href="./src/components/WebView/style.css?v=999">
-    
+
     <link rel="stylesheet" href="./src/components/Inspector/style.css?v=999">
     <link rel="stylesheet" href="./src/components/NoteEditor/style.css?v=999">
     <link rel="stylesheet" href="./src/components/ChatView/style.css?v=999">
     <link rel="stylesheet" href="./src/components/SettingsView/style.css?v=999">
-    
+
     <link rel="stylesheet" href="./src/components/Kanban/style.css?v=999">
-    
+
     <link rel="stylesheet" href="./src/components/MindMap/style.css?v=999">
-    
+
     <link rel="stylesheet" href="./src/components/Workspaces/style.css?v=999">
-    
+
     <link rel="stylesheet" href="./node_modules/@xterm/xterm/css/xterm.css">
     <link rel="stylesheet" href="./src/components/TerminalView/style.css?v=999">
-    
+
     <link rel="stylesheet" href="./src/components/ProjectView/style.css?v=999">
-    
+
     <script src="https://unpkg.com/lucide@latest"></script>
 </head>
+
 <body>
     <div id="app">
         <div id="global-toolbar-container"></div>
         <div id="tab-bar-container"></div>
-        
+
         <div id="content-wrapper">
             <div id="main-content-area"></div>
             <div id="inspector-container"></div>
         </div>
     </div>
-    
+
     <script src="./main-entry.js"></script>
 </body>
+
 </html>

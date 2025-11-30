@@ -5,6 +5,7 @@
 
 const { ipcRenderer } = require('electron');
 const StreamParser = require('../utils/StreamParser');
+const ResponseSanitizer = require('../utils/ResponseSanitizer');
 const SYSTEM_PROMPT_TEMPLATE = require('./SystemPrompt');
 const AgentRegistry = require('./AgentRegistry');
 
@@ -16,6 +17,7 @@ class MCPClient {
         this.currentStreamMessage = null;
         this.history = [];
         this.currentSessionId = null;
+        this.currentProjectRoot = null; // Track current project for scoped history
 
         // Load last active session or create new
         this.loadLastSession();
@@ -146,13 +148,39 @@ class MCPClient {
         const projectTitle = context.projectTitle || 'Untitled Project';
         const root = context.root || 'Current Directory';
 
-        // Use override if provided, otherwise default template
-        let systemPrompt = systemPromptOverride || SYSTEM_PROMPT_TEMPLATE;
+        // PROJECT-SCOPED HISTORY: Switch history when project changes
+        if (this.currentProjectRoot !== root) {
+            console.log(`[MCPClient] Project changed from "${this.currentProjectRoot}" to "${root}". Loading project-specific history.`);
+            this.switchProject(root);
+        }
 
-        // Perform template replacement (works for both default and custom if they use the placeholders)
-        systemPrompt = systemPrompt
-            .replace('${window.currentProjectRoot || \'Current Directory\'}', root)
-            .replace('${projectData.title || \'Untitled Project\'}', projectTitle);
+        // Use override if provided, otherwise default template
+        let systemPrompt = systemPromptOverride;
+
+        // Fallback to default if no override
+        if (!systemPrompt) {
+            if (typeof SYSTEM_PROMPT_TEMPLATE === 'string') {
+                systemPrompt = SYSTEM_PROMPT_TEMPLATE;
+            } else if (SYSTEM_PROMPT_TEMPLATE.default) {
+                systemPrompt = SYSTEM_PROMPT_TEMPLATE.default;
+            } else if (SYSTEM_PROMPT_TEMPLATE.getSystemPrompt) {
+                systemPrompt = SYSTEM_PROMPT_TEMPLATE.getSystemPrompt('auto');
+            }
+        }
+
+        // Ensure systemPrompt is a string before replacing
+        if (typeof systemPrompt !== 'string') {
+            console.warn('[MCPClient] System prompt is not a string, using hardcoded default');
+            systemPrompt = "You are a helpful AI assistant. (Fallback)";
+        }
+
+        if (typeof systemPrompt === 'string') {
+            // Perform template replacement (works for both default and custom if they use the placeholders)
+            systemPrompt = systemPrompt
+                .replace(/\{\{PROJECT_ROOT\}\}/g, root) // Use regex for global replacement
+                .replace('${window.currentProjectRoot || \'Current Directory\'}', root) // Legacy placeholder
+                .replace('${projectData.title || \'Untitled Project\'}', projectTitle);
+        }
 
         // 2. Prepare Context Message
         let contextMsg = '';
@@ -216,19 +244,29 @@ class MCPClient {
         if (data.type === 'data') {
             this.currentStreamMessage.fullContent += data.content;
 
-            // Parse and notify UI
-            const processedHtml = this.parser.parse(this.currentStreamMessage.fullContent);
+            try {
+                // Sanitize content before parsing (for real-time filtering)
+                const sanitizedContent = ResponseSanitizer.sanitize(this.currentStreamMessage.fullContent);
 
-            // Emit event for UI to update
-            window.dispatchEvent(new CustomEvent('mcp:stream-update', {
-                detail: {
-                    html: processedHtml,
-                    raw: this.currentStreamMessage.fullContent,
-                    isComplete: false
-                }
-            }));
+                // Parse and notify UI
+                const processedHtml = this.parser.parse(sanitizedContent);
+
+                // Emit event for UI to update
+                window.dispatchEvent(new CustomEvent('mcp:stream-update', {
+                    detail: {
+                        html: processedHtml,
+                        raw: sanitizedContent,
+                        isComplete: false
+                    }
+                }));
+            } catch (err) {
+                console.error('[MCPClient] Error parsing stream data:', err);
+                // Don't stop the stream, just log it. 
+                // We might want to show a partial update or just wait for more data.
+            }
 
         } else if (data.type === 'end' || data.type === 'error') {
+            console.log(`[MCPClient] Stream ended. Type: ${data.type}, Error:`, data.message);
             this.stopStream(data.type === 'error' ? data.message : null);
         }
     }
@@ -239,8 +277,18 @@ class MCPClient {
         this.isStreaming = false;
         ipcRenderer.removeListener('llm-stream-data', this.handleStreamData);
 
-        // Final parse
-        const finalHtml = this.parser.parse(this.currentStreamMessage.fullContent);
+        // Sanitize the response content before processing
+        const sanitizedContent = ResponseSanitizer.sanitize(this.currentStreamMessage.fullContent);
+
+        // Check if the response is mostly internal logs
+        if (ResponseSanitizer.isInternalLog(this.currentStreamMessage.fullContent)) {
+            console.warn('[MCPClient] Detected internal conversation logs in AI response. Sanitizing...');
+            console.log('[MCPClient] Original length:', this.currentStreamMessage.fullContent.length);
+            console.log('[MCPClient] Sanitized length:', sanitizedContent.length);
+        }
+
+        // Final parse with sanitized content
+        const finalHtml = this.parser.parse(sanitizedContent);
 
         // Check for Delegation
         // The parser might not expose the raw tool calls easily, but we can check the content or if the parser has a way.
@@ -257,30 +305,36 @@ class MCPClient {
         // Let's stick to the pattern: Client handles communication, View handles UI/Tools.
         // So we just save history here.
 
-        // Save to history
+        // Save to history (using sanitized content)
         this.history.push({
             role: 'assistant',
-            content: this.currentStreamMessage.fullContent,
+            content: sanitizedContent,
             html: finalHtml
         });
         this.saveHistory();
         window.peakChatHistory = this.history;
 
-        // Store Debug Data
+        // Store Debug Data (keep original for debugging, but log warning)
         this.debugData.lastResponse = {
-            content: this.currentStreamMessage.fullContent,
+            content: sanitizedContent,
+            originalContent: this.currentStreamMessage.fullContent, // Keep original for debugging
+            wasSanitized: sanitizedContent !== this.currentStreamMessage.fullContent,
             error,
             timestamp: new Date().toISOString()
         };
 
-        // Log to terminal for AI Agent visibility
-        ipcRenderer.send('log:info', 'LLM RESPONSE:', JSON.stringify(this.debugData.lastResponse, null, 2));
+        // Log to terminal for AI Agent visibility (sanitized version)
+        ipcRenderer.send('log:info', 'LLM RESPONSE:', JSON.stringify({
+            content: sanitizedContent.substring(0, 500) + (sanitizedContent.length > 500 ? '...' : ''),
+            length: sanitizedContent.length,
+            wasSanitized: this.debugData.lastResponse.wasSanitized
+        }, null, 2));
 
-        // Emit completion event
+        // Emit completion event (with sanitized content)
         window.dispatchEvent(new CustomEvent('mcp:stream-complete', {
             detail: {
                 html: finalHtml,
-                raw: this.currentStreamMessage.fullContent,
+                raw: sanitizedContent,
                 error: error
             }
         }));
@@ -308,14 +362,83 @@ class MCPClient {
     }
 
     saveHistory() {
-        // Override old saveHistory to use saveSession
-        this.saveSession();
+        // Save to project-specific storage if we have a currentProjectRoot
+        if (this.currentProjectRoot) {
+            this.saveProjectHistory(this.currentProjectRoot, this.history);
+        } else {
+            // Fallback to session storage if no project root set yet
+            this.saveSession();
+        }
     }
 
     clearHistory() {
         this.history = [];
         window.peakChatHistory = [];
         this.saveHistory();
+    }
+
+    /**
+     * Switches to a different project, loading its specific conversation history
+     * @param {string} projectRoot - The root path of the project
+     */
+    switchProject(projectRoot) {
+        // Save current project's history before switching
+        if (this.currentProjectRoot) {
+            this.saveProjectHistory(this.currentProjectRoot, this.history);
+        }
+
+        // Load new project's history
+        this.currentProjectRoot = projectRoot;
+        this.history = this.loadProjectHistory(projectRoot);
+        window.peakChatHistory = this.history;
+
+        console.log(`[MCPClient] Loaded ${this.history.length} messages for project: ${projectRoot}`);
+    }
+
+    /**
+     * Saves conversation history for a specific project
+     * @param {string} projectRoot - The root path of the project
+     * @param {Array} history - The conversation history
+     */
+    saveProjectHistory(projectRoot, history) {
+        try {
+            const key = `peak-history-${this.hashProjectPath(projectRoot)}`;
+            localStorage.setItem(key, JSON.stringify(history));
+        } catch (e) {
+            console.error('[MCPClient] Failed to save project history:', e);
+        }
+    }
+
+    /**
+     * Loads conversation history for a specific project
+     * @param {string} projectRoot - The root path of the project
+     * @returns {Array} The conversation history
+     */
+    loadProjectHistory(projectRoot) {
+        try {
+            const key = `peak-history-${this.hashProjectPath(projectRoot)}`;
+            const stored = localStorage.getItem(key);
+            return stored ? JSON.parse(stored) : [];
+        } catch (e) {
+            console.error('[MCPClient] Failed to load project history:', e);
+            return [];
+        }
+    }
+
+    /**
+     * Creates a simple hash of the project path for storage keys
+     * @param {string} path - The project path
+     * @returns {string} A hash string
+     */
+    hashProjectPath(path) {
+        // Simple hash function for project paths
+        let hash = 0;
+        for (let i = 0; i < path.length; i++) {
+            const char = path.charCodeAt(i);
+            hash = ((hash << 5) - hash) + char;
+            hash = hash & hash; // Convert to 32bit integer
+        }
+        return Math.abs(hash).toString(36);
     }
 
     truncateHistoryToHash(hash) {

@@ -527,6 +527,240 @@ function getAIAssistHTML(currentFileContent, currentFilePath, currentFileContent
                 margin-left: 0;
             }
 
+            /* Minimalistic Thinking Bubble */
+            .thinking-block-minimal {
+                margin: 8px 0;
+                border: none;
+                background: transparent;
+            }
+            .thinking-summary-minimal {
+                list-style: none;
+                cursor: pointer;
+                padding: 6px 8px;
+                display: flex;
+                align-items: center;
+                gap: 6px;
+                font-size: 11px;
+                color: var(--peak-secondary);
+                border-radius: 4px;
+                transition: background 0.15s;
+            }
+            .thinking-summary-minimal:hover {
+                background: var(--control-background-color);
+                color: var(--peak-primary);
+            }
+            .thinking-summary-minimal::-webkit-details-marker { 
+                display: none; 
+            }
+            .thinking-chevron {
+                transition: transform 0.2s;
+                flex-shrink: 0;
+            }
+            .thinking-block-minimal[open] .thinking-chevron {
+                transform: rotate(90deg);
+            }
+            .thinking-summary-text {
+                flex: 1;
+                opacity: 0.8;
+                font-weight: 400;
+            }
+            .thinking-content-minimal {
+                padding: 8px 12px 8px 26px;
+                font-size: 10px;
+                line-height: 1.5;
+                color: var(--peak-secondary);
+                white-space: pre-wrap;
+                font-family: 'GeistMono', 'Menlo', monospace;
+                opacity: 0.7;
+                max-height: 300px;
+                overflow-y: auto;
+            }
+
+            /* Minimalistic Analysis Block (same style as thinking) */
+            .analysis-block-minimal {
+                margin: 8px 0;
+                border: none;
+                background: transparent;
+            }
+            .analysis-summary-minimal {
+                list-style: none;
+                cursor: pointer;
+                padding: 6px 8px;
+                display: flex;
+                align-items: center;
+                gap: 6px;
+                font-size: 11px;
+                color: var(--peak-secondary);
+                border-radius: 4px;
+                transition: background 0.15s;
+            }
+            .analysis-summary-minimal:hover {
+                background: var(--control-background-color);
+                color: var(--peak-primary);
+            }
+            .analysis-summary-minimal::-webkit-details-marker { 
+                display: none; 
+            }
+            .analysis-chevron {
+                transition: transform 0.2s;
+                flex-shrink: 0;
+            }
+            .analysis-block-minimal[open] .analysis-chevron {
+                transform: rotate(90deg);
+            }
+            .analysis-summary-text {
+                flex: 1;
+                opacity: 0.8;
+                font-weight: 400;
+            }
+            .analysis-content-minimal {
+                padding: 8px 12px 8px 26px;
+                font-size: 10px;
+                line-height: 1.5;
+                color: var(--peak-secondary);
+                white-space: pre-wrap;
+                font-family: 'GeistMono', 'Menlo', monospace;
+                opacity: 0.7;
+                max-height: 300px;
+                overflow-y: auto;
+            }
+            .analysis-content-minimal pre {
+                margin: 0;
+                padding: 0;
+                background: none;
+                border: none;
+                font-size: inherit;
+                line-height: inherit;
+            }
+
+            /* Minimalistic Message Card (for assistant responses) */
+            .message-card-minimal {
+                margin: 0;
+                border: none;
+                background: transparent;
+            }
+            .message-summary-minimal {
+                list-style: none;
+                cursor: pointer;
+                padding: 6px 8px;
+                display: flex;
+                align-items: center;
+                gap: 6px;
+                font-size: 11px;
+                color: var(--peak-secondary);
+                border-radius: 4px;
+                transition: background 0.15s;
+            }
+            .message-summary-minimal:hover {
+                background: var(--control-background-color);
+                color: var(--peak-primary);
+            }
+            .message-summary-minimal::-webkit-details-marker { 
+                display: none; 
+            }
+            .message-chevron {
+                transition: transform 0.2s;
+                flex-shrink: 0;
+            }
+            .message-card-minimal[open] .message-chevron {
+                transform: rotate(90deg);
+            }
+            .message-summary-text {
+                flex: 1;
+                opacity: 0.8;
+                font-weight: 400;
+            }
+            .message-content-minimal {
+                padding: 8px 12px 8px 26px;
+            }
+            .message-content-minimal p,
+            .message-content-minimal ul,
+            .message-content-minimal ol,
+            .message-content-minimal h1,
+            .message-content-minimal h2,
+            .message-content-minimal h3,
+            .message-content-minimal h4,
+            .message-content-minimal h5,
+            .message-content-minimal h6,
+            .message-content-minimal blockquote,
+            .message-content-minimal table,
+            .message-content-minimal img {
+                padding-left: 0;
+                padding-right: 0;
+            }
+
+            /* Summaries Card */
+            .summaries-card {
+                background: var(--control-background-color);
+                border: 1px solid var(--peak-border);
+                border-radius: 6px;
+                padding: 10px 12px;
+                margin-bottom: 12px;
+            }
+            .summaries-header {
+                display: flex;
+                align-items: center;
+                gap: 6px;
+                margin-bottom: 8px;
+                font-size: 11px;
+                font-weight: 600;
+                color: var(--peak-accent);
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
+            }
+            .key-points-list {
+                list-style: none;
+                padding: 0;
+                margin: 0;
+                font-size: 12px;
+                line-height: 1.6;
+            }
+            .key-points-list li {
+                padding: 4px 0;
+                padding-left: 16px;
+                position: relative;
+                color: var(--peak-primary);
+            }
+            .key-points-list li:before {
+                content: '•';
+                position: absolute;
+                left: 4px;
+                color: var(--peak-accent);
+                font-weight: bold;
+            }
+            .key-points-list li.no-points {
+                color: var(--peak-secondary);
+                font-style: italic;
+                opacity: 0.7;
+            }
+            .summaries-meta {
+                display: flex;
+                gap: 6px;
+                flex-wrap: wrap;
+                margin-top: 8px;
+                padding-top: 8px;
+                border-top: 1px solid var(--peak-border);
+            }
+            .action-badge, .stat-badge {
+                display: inline-flex;
+                align-items: center;
+                gap: 4px;
+                padding: 3px 8px;
+                background: var(--peak-background);
+                border: 1px solid var(--peak-border);
+                border-radius: 12px;
+                font-size: 10px;
+                color: var(--peak-secondary);
+                font-weight: 500;
+            }
+            .message-divider {
+                height: 1px;
+                background: var(--peak-border);
+                margin: 12px 0;
+                opacity: 0.5;
+            }
+
+
             /* Headers */
             .tool-block .header, .file-edit-header, .section-card summary {
                 padding: 8px 12px;
@@ -721,6 +955,7 @@ function getAIAssistHTML(currentFileContent, currentFilePath, currentFileContent
         <div class="inspector-tabs-header">
             <button class="tab-btn active" data-target="ai">Chat</button>
             <button class="tab-btn" data-target="tasks">Tasks</button>
+            <button class="tab-btn" data-target="logs">Logs</button>
             <button class="tab-btn" data-target="docs">Docs</button>
             <button class="tab-btn" data-target="live">Live</button>
         </div>
@@ -747,6 +982,21 @@ function getAIAssistHTML(currentFileContent, currentFilePath, currentFileContent
                 </div>
                 <div id="tasks-content" class="markdown-content" style="flex:1; overflow-y:auto; padding:16px; font-size:13px; line-height: 1.6;">
                     <div style="color:var(--peak-secondary); text-align:center; margin-top:40px;">Loading plan...</div>
+                </div>
+            </div>
+
+            <div id="panel-logs" class="term-panel" style="display:none; height:100%; flex-direction: column;">
+                <div style="padding: 8px 12px; background: var(--control-background-color); border-bottom: 1px solid var(--border-color); display: flex; gap: 8px; align-items: center;">
+                    <div style="flex: 1; display: flex; gap: 4px;">
+                        <button class="log-filter-btn active" data-filter="all" style="padding: 4px 8px; font-size: 10px; border: 1px solid var(--border-color); background: var(--peak-accent); color: white; border-radius: 4px; cursor: pointer;">All</button>
+                        <button class="log-filter-btn" data-filter="agent" style="padding: 4px 8px; font-size: 10px; border: 1px solid var(--border-color); background: var(--control-background-color); color: var(--peak-secondary); border-radius: 4px; cursor: pointer;">Agent</button>
+                        <button class="log-filter-btn" data-filter="tools" style="padding: 4px 8px; font-size: 10px; border: 1px solid var(--border-color); background: var(--control-background-color); color: var(--peak-secondary); border-radius: 4px; cursor: pointer;">Tools</button>
+                        <button class="log-filter-btn" data-filter="errors" style="padding: 4px 8px; font-size: 10px; border: 1px solid var(--border-color); background: var(--control-background-color); color: var(--peak-secondary); border-radius: 4px; cursor: pointer;">Errors</button>
+                    </div>
+                    <button id="btn-clear-logs" class="icon-btn" style="padding: 4px;" title="Clear Logs"><i data-lucide="trash-2" style="width: 14px; height: 14px;"></i></button>
+                </div>
+                <div id="logs-stream" style="flex: 1; overflow-y: auto; padding: 8px; font-family: 'GeistMono', monospace; font-size: 10px; line-height: 1.4; background: var(--text-background-color);">
+                    <div style="color: var(--peak-secondary); text-align: center; padding: 20px;">No logs yet. Logs will appear here as the agent executes.</div>
                 </div>
             </div>
 

@@ -17,7 +17,7 @@ function streamChatCompletion(model, messages, apiKey, referer, title) {
         // Return a promise that rejects if the API key is missing
         return Promise.reject(new Error("OpenRouter API key is not configured. Please check your .env file in main.js."));
     }
-    
+
     // Convert the message array to the format expected by the API
     const payload = {
         model: model,
@@ -29,8 +29,8 @@ function streamChatCompletion(model, messages, apiKey, referer, title) {
         'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
         // Optional attribution headers for OpenRouter leaderboards
-        'HTTP-Referer': referer, 
-        'X-Title': title, 
+        'HTTP-Referer': referer,
+        'X-Title': title,
     };
 
     console.log(`[OpenRouter Service]: Streaming request started for model: ${model}`);
@@ -41,7 +41,7 @@ function streamChatCompletion(model, messages, apiKey, referer, title) {
         responseType: 'stream', // Ensure axios treats the response as a stream
     }).then(response => {
         // Return the raw readable stream from the response data
-        return response.data; 
+        return response.data;
     }).catch(error => {
         if (error.response) {
             const status = error.response.status;
@@ -51,19 +51,19 @@ function streamChatCompletion(model, messages, apiKey, referer, title) {
             } else if (status === 429) {
                 errorMessage = "API Error: Rate limit exceeded.";
             } else if (error.response.data && error.response.data.pipe) {
-                 // Attempt to read the error body from the stream
-                 return new Promise((_, reject) => {
+                // Attempt to read the error body from the stream
+                return new Promise((_, reject) => {
                     let data = '';
                     error.response.data.on('data', chunk => data += chunk);
                     error.response.data.on('end', () => {
-                       try {
-                           const errorJson = JSON.parse(data);
-                           reject(new Error(`API Error: ${errorJson.error?.message || errorJson.message || errorMessage}`));
-                       } catch {
-                           reject(new Error(`API Error: ${errorMessage} - ${data.toString().substring(0, 50)}...`));
-                       }
+                        try {
+                            const errorJson = JSON.parse(data);
+                            reject(new Error(`API Error: ${errorJson.error?.message || errorJson.message || errorMessage}`));
+                        } catch {
+                            reject(new Error(`API Error: ${errorMessage} - ${data.toString().substring(0, 50)}...`));
+                        }
                     });
-                 });
+                });
             }
             return Promise.reject(new Error(errorMessage));
         } else if (error.request) {

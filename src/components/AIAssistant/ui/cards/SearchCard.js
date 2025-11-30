@@ -1,14 +1,14 @@
 
 function renderSearchCard(query) {
     return `
-        <div class="tool-block search-block">
-            <div class="header">
-                <i data-lucide="search" style="width:12px; height:12px;"></i> Suggested Search
-            </div>
-            <div class="content">${query}</div>
-            <div class="footer">
-                <button class="msg-action-btn tool-search-btn" data-query="${encodeURIComponent(query)}">
-                    <i data-lucide="search" style="width:10px; height:10px;"></i> Search Project
+        <div class="tool-card-compact">
+            <div class="tool-line">
+                <i data-lucide="search" style="width:10px; height:10px; flex-shrink:0; color:var(--peak-secondary); opacity:0.6;"></i>
+                <span class="tool-label-compact">Search</span>
+                <span class="tool-content-compact">${query}</span>
+                <button class="tool-action-btn-compact tool-search-btn" data-query="${encodeURIComponent(query)}">
+                    <i data-lucide="arrow-right" style="width:9px; height:9px;"></i>
+                    Go
                 </button>
             </div>
         </div>

@@ -8,8 +8,11 @@ const MCPClient = require('../core/MCPClient');
 const ToolRegistry = require('../tools/ToolRegistry');
 const DocsRegistry = require('../core/DocsRegistry');
 const AgentRegistry = require('../core/AgentRegistry');
+const AgentLogger = require('../core/AgentLogger');
 const path = require('path');
 const { renderMessageCard } = require('./cards/MessageCard');
+const { renderCommandResultCard } = require('./cards/CommandResultCard');
+const { renderTerminalCard } = require('./cards/TerminalCard');
 const InputBar = require('./InputBar');
 
 class ChatView {
@@ -34,6 +37,7 @@ class ChatView {
         this.streamingMessageDiv = null;
         this.selectedFiles = new Set();
         this.selectedDocs = new Set();
+        this.messageQueue = []; // Queue for messages sent while streaming
 
         // Load active docs from local storage or default to all
         const savedDocs = localStorage.getItem('peak-active-docs');
@@ -64,10 +68,6 @@ class ChatView {
                     localStorage.setItem('peak-ai-agent', agentId);
                 }
             },
-            onModeChange: (mode) => {
-                this.mode = mode;
-                localStorage.setItem('peak-ai-mode', this.mode);
-            },
             onAddFile: () => this.handleAddFile(),
             onAddActiveFile: () => this.sendActiveFileToAI(),
             onContinue: () => this.processUserMessage('continue'),
@@ -86,16 +86,6 @@ class ChatView {
                 }
             }
         });
-
-        // Initialize mode from storage
-        const savedMode = localStorage.getItem('peak-ai-mode');
-        if (savedMode) {
-            const modeSelect = document.getElementById('ai-assist-mode-select');
-            if (modeSelect) modeSelect.value = savedMode;
-            this.mode = savedMode;
-        } else {
-            this.mode = 'assisted';
-        }
 
         // Stream Events
         this.handleStreamUpdateBound = (e) => this.updateStreamingMessage(e.detail);
@@ -492,53 +482,148 @@ class ChatView {
     async handleTerminalResponse(e) {
         const { cmd, output } = e.detail;
 
-        // Create Command Executed Block HTML
-        const blockHtml = `
-    < div class="tool-block command-executed-block" >
-                <div class="header">
-                    <i data-lucide="terminal" style="width:12px; height:12px;"></i> Command Executed: ${cmd}
-                </div>
-                <div class="content">${output.slice(0, 500) + (output.length > 500 ? '...' : '')}</div>
-                <div class="footer">
-                    <span class="meta-info">Output sent to AI</span>
-                </div>
-            </div >
-    `;
+        // Determine success (heuristic: exit code usually not available here, so assume success if output doesn't start with "Error:" or similar)
+        // For now, we'll just mark it as success unless we detect obvious failure patterns if needed.
+        // Actually, let's just show it.
+
+        const blockHtml = renderTerminalCard(cmd, output, true);
 
         // Append to Chat
         const msgDiv = document.createElement('div');
         msgDiv.className = 'term-chat-msg system';
+        msgDiv.style.width = '100%'; // Ensure full width
         msgDiv.innerHTML = blockHtml;
         this.chatThread.appendChild(msgDiv);
+
+        // Add toggle listener for this specific card
+        const toggleBtn = msgDiv.querySelector('.toggle-terminal-btn');
+        if (toggleBtn) {
+            toggleBtn.addEventListener('click', (e) => {
+                const card = e.target.closest('.terminal-card');
+                const outputBlock = card.querySelector('.terminal-output-block');
+                const icon = toggleBtn.querySelector('[data-lucide]');
+
+                if (outputBlock) {
+                    const isHidden = outputBlock.style.display === 'none';
+                    outputBlock.style.display = isHidden ? 'block' : 'none';
+
+                    // Rotate icon
+                    icon.style.transform = isHidden ? 'rotate(0deg)' : 'rotate(-90deg)';
+                    icon.style.transition = 'transform 0.2s';
+                }
+            });
+        }
+
         if (window.lucide) window.lucide.createIcons();
         this.scrollToBottom();
 
-        // Send to AI (Silent)
-        const message = `Command executed: \`${cmd}\`\nOutput:\n\`\`\`\n${output}\n\`\`\`\n\n(Proceeding automatically. Please continue with the next step.)`;
+        // Add Continue Button (Manual Confirmation)
+        const actionDiv = document.createElement('div');
+        actionDiv.style.marginTop = '8px';
+        actionDiv.style.display = 'flex';
+        actionDiv.style.justifyContent = 'flex-end';
 
-        // Manual Send Logic (Silent)
-        this.inputBar.setLoading(true);
-        this.createStreamingMessage();
+        const continueBtn = document.createElement('button');
+        continueBtn.className = 'msg-action-btn';
+        continueBtn.style.cssText = 'background:var(--peak-accent); color:white; border:none; padding:6px 12px; border-radius:4px; cursor:pointer; display:flex; align-items:center; gap:6px; font-size:11px; font-weight:500; transition: opacity 0.2s;';
+        continueBtn.innerHTML = `<i data-lucide="arrow-right" style="width:12px; height:12px;"></i> Continue`;
 
-        const modelSelect = document.getElementById('ai-assist-model-select');
-        const modelId = modelSelect ? modelSelect.value : null;
+        continueBtn.onclick = async () => {
+            // Disable button
+            continueBtn.disabled = true;
+            continueBtn.style.opacity = '0.7';
+            continueBtn.innerHTML = `<i data-lucide="loader-2" style="width:12px; height:12px; animation:spin 1s linear infinite;"></i> Sending...`;
 
-        const context = await this.getProjectContext([]);
-        await this.client.sendMessage(message, context, modelId);
+            // Send to AI
+            const message = `Command executed: \`${cmd}\`\nOutput:\n\`\`\`\n${output}\n\`\`\`\n\n`;
+
+            this.inputBar.setLoading(true);
+            this.createStreamingMessage();
+
+            const agentSelect = document.getElementById('ai-assist-agent-select');
+            const agentId = agentSelect ? agentSelect.value : null;
+
+            const context = await this.getProjectContext([]);
+            const agent = AgentRegistry.getAgent(agentId);
+            const modelId = agent ? agent.modelId : null;
+
+            try {
+                await this.client.sendMessage(message, context, modelId);
+                // Remove button after successful send to keep chat clean
+                actionDiv.remove();
+            } catch (err) {
+                console.error("Failed to send command output:", err);
+                continueBtn.disabled = false;
+                continueBtn.style.opacity = '1';
+                continueBtn.innerHTML = `<i data-lucide="alert-circle" style="width:12px; height:12px;"></i> Retry`;
+                this.appendMessage('system', `Error sending output: ${err.message}`);
+                this.inputBar.setLoading(false);
+            }
+        };
+
+        actionDiv.appendChild(continueBtn);
+        msgDiv.appendChild(actionDiv);
+
+        if (window.lucide) window.lucide.createIcons();
+        this.scrollToBottom();
     }
 
     async processUserMessage(prompt, isAuto = false) {
-        // Get selected agent
+        // Queueing Logic
+        if (this.client.isStreaming) {
+            console.log('[ChatView] Client is streaming, queueing message:', prompt);
+            this.messageQueue.push({ prompt, isAuto });
+            // Update UI to show queued state?
+            // For now, just clear input and maybe show a small indicator or just let the user know it's queued implicitly
+            // The input bar clears in handleSubmit, so that's fine.
+            return;
+        }
+
+        // Get selected agent (mode is now always 'auto')
         const agentSelect = document.getElementById('ai-assist-agent-select');
         const agentId = agentSelect ? agentSelect.value : null;
+        const mode = 'auto'; // Always use auto mode
         const agent = AgentRegistry.getAgent(agentId);
 
-        const modelId = agent ? agent.modelId : 'openrouter/auto';
-        const systemPrompt = agent ? agent.systemPrompt : null;
+        // Ensure modelId is never null - fallback to openrouter/auto
+        const modelId = (agent && agent.modelId) || 'openrouter/auto';
+
+        // Get mode-based system prompt and inject project root
+        const { getSystemPrompt } = require('../core/SystemPrompt');
+        const projectRoot = window.currentProjectRoot || (this.client && this.client.context && this.client.context.root) || '/project';
+
+        console.log('[ChatView] Loading system prompt. Mode:', mode, 'Agent:', agentId, 'Has custom prompt:', !!(agent && agent.systemPrompt));
+
+        let systemPrompt = agent && agent.systemPrompt
+            ? agent.systemPrompt
+            : getSystemPrompt(mode);
+
+        console.log('[ChatView] System prompt loaded. Length:', systemPrompt ? systemPrompt.length : 'NULL');
+
+        // Replace {{PROJECT_ROOT}} placeholder with actual project path (if prompt exists)
+        if (systemPrompt && typeof systemPrompt === 'string') {
+            systemPrompt = systemPrompt.replace(/\{\{PROJECT_ROOT\}\}/g, projectRoot);
+
+            // SAFETY NET: Ensure tool definitions are present
+            if (!systemPrompt.includes('<tool_definition>') && !systemPrompt.includes('TOOLS AVAILABLE')) {
+                console.warn('[ChatView] System prompt missing tools. Injecting defaults.');
+                const tools = ToolRegistry.getSystemPromptTools();
+                systemPrompt += `\n\n# TOOLS AVAILABLE\n${tools}\n\n# MANDATORY RULES\n1. Use tools for all file operations.\n2. Do not output code blocks for files.`;
+            }
+
+            console.log('[ChatView] Project root injected:', projectRoot);
+        } else {
+            console.error('[ChatView] Invalid system prompt:', systemPrompt);
+            systemPrompt = getSystemPrompt('hybrid'); // Fallback to hybrid mode
+            if (systemPrompt) {
+                systemPrompt = systemPrompt.replace(/\{\{PROJECT_ROOT\}\}/g, projectRoot);
+            }
+        }
+
 
         // UI Updates
         this.inputBar.setLoading(true);
-        this.inputBar.updateStatus('thinking');
+        this.inputBar.updateStatus('thinking', 'Analyzing request...');
 
         // Clear selected files from UI
         const filesToSend = Array.from(this.selectedFiles);
@@ -571,9 +656,13 @@ class ChatView {
 
         // Add User Message
         console.log('[ChatView] Appending message with hash:', commitHash);
-        this.appendMessage('user', prompt, commitHash);
+        this.appendMessage('user', prompt, commitHash, isAuto);
+
+        // Log to agent logger
+        AgentLogger.agent('User message sent', { prompt: prompt.substring(0, 100), mode, agentId });
 
         // Create AI Placeholder
+        this.inputBar.updateStatus('thinking', 'Processing request...');
         this.createStreamingMessage();
 
         // Get Context
@@ -583,8 +672,8 @@ class ChatView {
         await this.client.sendMessage(prompt, context, modelId, commitHash, systemPrompt); // Pass hash and system prompt
     }
 
-    createMessageElement(role, content, commitHash = null) {
-        const html = renderMessageCard(role, content, commitHash);
+    createMessageElement(role, content, commitHash = null, isAuto = false) {
+        const html = renderMessageCard(role, content, commitHash, true, isAuto);
         const temp = document.createElement('div');
         temp.innerHTML = html;
         const messageElement = temp.firstElementChild;
@@ -602,8 +691,8 @@ class ChatView {
         return messageElement;
     }
 
-    appendMessage(role, content, commitHash = null) {
-        const messageElement = this.createMessageElement(role, content, commitHash);
+    appendMessage(role, content, commitHash = null, isAuto = false) {
+        const messageElement = this.createMessageElement(role, content, commitHash, isAuto);
         this.chatThread.appendChild(messageElement);
         if (window.lucide) window.lucide.createIcons();
         this.scrollToBottom();
@@ -737,45 +826,118 @@ class ChatView {
         if (this.streamingMessageDiv) {
             this.streamingMessageDiv.innerHTML = html;
             if (window.lucide) window.lucide.createIcons();
+
+            // Add Accept All button early (during streaming) - REMOVED
+            // this.addAcceptAllButton(this.streamingMessageDiv);
+
             this.scrollToBottom();
         }
     }
 
     finalizeStreamingMessage({ html, error }) {
+        console.log('[ChatView] finalizeStreamingMessage called', { hasDiv: !!this.streamingMessageDiv, error });
         if (this.streamingMessageDiv) {
             this.streamingMessageDiv.innerHTML = html;
 
-            // Add Accept All if needed
-            this.addAcceptAllButton(this.streamingMessageDiv);
+            // NEW: Trigger Review Mode instead of Auto-Execute
+            const buttons = this.streamingMessageDiv.querySelectorAll('.tool-create-btn, .tool-run-btn, .tool-view-btn, .tool-search-btn, .tool-delete-btn, .tool-delegate-btn, .file-action-btn-compact, .tool-action-btn-compact');
 
-            // AUTO / HYBRID MODE EXECUTION
-            if (this.mode === 'auto') {
-                const buttons = this.streamingMessageDiv.querySelectorAll('.tool-create-btn, .tool-run-btn, .tool-view-btn, .tool-search-btn, .tool-delete-btn, .tool-delegate-btn');
-                buttons.forEach(btn => { if (!btn.disabled) btn.click(); });
-            } else if (this.mode === 'hybrid') {
-                // Auto-click safe tools
-                const safeButtons = this.streamingMessageDiv.querySelectorAll('.tool-view-btn, .tool-search-btn, .tool-problems-btn, .tool-delegate-btn');
-                safeButtons.forEach(btn => { if (!btn.disabled) btn.click(); });
+            console.log('[ChatView] Found buttons in DOM:', buttons.length);
+            buttons.forEach((b, i) => console.log(`[ChatView] Button ${i}:`, b.className, 'Disabled:', b.disabled, 'Type:', b.dataset.type));
+
+            // Filter out disabled buttons AND reject buttons
+            const pendingButtons = Array.from(buttons).filter(btn => !btn.disabled && btn.dataset.type !== 'reject');
+
+            console.log('[ChatView] Pending buttons (actionable):', pendingButtons.length);
+
+            if (pendingButtons.length > 0) {
+                console.log('[ChatView] Showing review controls for', pendingButtons.length, 'actions');
+                this.inputBar.updateStatus('ready', 'Waiting for review...');
+                this.inputBar.showReviewControls(
+                    pendingButtons.length,
+                    async () => { // On Accept
+                        console.log('[ChatView] User accepted all changes');
+                        this.inputBar.updateStatus('thinking', 'Applying changes...');
+                        this.inputBar.hideReviewControls();
+
+                        // Execute all actions sequentially
+                        for (const btn of pendingButtons) {
+                            await this.executeToolAction(btn);
+                        }
+
+                        this.inputBar.updateStatus('ready');
+
+                        // Auto-Continue
+                        console.log('[ChatView] Auto-continuing after accepted actions');
+                        this.processUserMessage('continue', true);
+                    },
+                    () => { // On Reject
+                        console.log('[ChatView] User rejected changes');
+                        this.inputBar.hideReviewControls();
+                        this.appendMessage('system', 'Actions rejected by user.');
+                        // Optionally disable buttons visually
+                        pendingButtons.forEach(btn => {
+                            btn.disabled = true;
+                            btn.style.opacity = '0.5';
+                        });
+                        this.inputBar.updateStatus('ready');
+
+                        // Check queue even if rejected? Probably yes.
+                        this.checkMessageQueue();
+                    }
+                );
+            } else {
+                console.log('[ChatView] No pending actions found. Resetting status.');
+                // DEBUG: Log innerHTML to see what was rendered
+                console.log('[ChatView] Message HTML content:', this.streamingMessageDiv.innerHTML.substring(0, 500) + '...');
+
+                // No pending actions, just reset
+                this.inputBar.setLoading(false);
+                this.inputBar.updateStatus('ready');
+
+                // Check queue
+                this.checkMessageQueue();
             }
 
             this.streamingMessageDiv = null;
+        } else {
+            console.warn('[ChatView] streamingMessageDiv is null in finalizeStreamingMessage');
         }
 
         if (error) {
             this.appendMessage('system', `Error: ${error}`);
+            this.inputBar.setLoading(false);
+            this.inputBar.updateStatus('ready');
+            this.checkMessageQueue();
         }
 
-        // Reset UI
-        this.inputBar.setLoading(false);
-        this.inputBar.updateStatus('ready');
+        // Reset UI (if not waiting for review)
+        // If we showed review controls, we don't want to reset status immediately
+        // But we do want to focus input
         setTimeout(() => this.inputBar.inputArea.focus(), 50);
         if (window.lucide) window.lucide.createIcons();
         this.scrollToBottom();
     }
 
-    scrollToBottom() {
+    checkMessageQueue() {
+        if (this.messageQueue.length > 0) {
+            console.log('[ChatView] Processing queued message. Queue length:', this.messageQueue.length);
+            const next = this.messageQueue.shift();
+            // Small delay to let UI settle
+            setTimeout(() => {
+                this.processUserMessage(next.prompt, next.isAuto);
+            }, 100);
+        }
+    }
+
+    scrollToBottom(force = false) {
         if (this.scroller) {
-            this.scroller.scrollTop = this.scroller.scrollHeight;
+            const threshold = 100; // px from bottom to consider "at bottom"
+            const isNearBottom = this.scroller.scrollHeight - this.scroller.scrollTop - this.scroller.clientHeight <= threshold;
+
+            if (force || isNearBottom) {
+                this.scroller.scrollTop = this.scroller.scrollHeight;
+            }
         }
     }
 
@@ -803,8 +965,8 @@ class ChatView {
     }
 
     addAcceptAllButton(container) {
-        // Count actions
-        const actions = container.querySelectorAll('.tool-create-btn, .tool-run-btn, .apply-msg-btn');
+        // Count actions (both old and new compact styles)
+        const actions = container.querySelectorAll('.tool-create-btn, .tool-run-btn, .apply-msg-btn, .file-action-btn-compact, .tool-action-btn-compact');
         if (actions.length > 1) {
             // Check if already exists
             if (container.querySelector('.accept-all-btn')) return;
@@ -819,6 +981,9 @@ class ChatView {
                 </button>
             `;
             container.appendChild(btnDiv);
+
+            // Refresh lucide icons
+            if (window.lucide) window.lucide.createIcons();
         }
     }
 
@@ -890,75 +1055,143 @@ If REJECTED, explain why and provide a corrected version if possible.
         return null;
     }
 
-    async handleToolAction(e) {
-        // Toggle Code
-        const toggleBtn = e.target.closest('.toggle-code-btn');
-        if (toggleBtn) {
-            const card = toggleBtn.closest('.file-edit-card');
-            const content = card.querySelector('.file-edit-content');
-            const icon = toggleBtn.querySelector('i');
-
-            if (content.style.display === 'none') {
-                content.style.display = 'block';
-                icon.setAttribute('data-lucide', 'chevron-up');
-                if (window.lucide) window.lucide.createIcons();
-            } else {
-                content.style.display = 'none';
-                icon.setAttribute('data-lucide', 'chevron-down');
-                if (window.lucide) window.lucide.createIcons();
-            }
-            return;
-        }
-
-        // Accept All
-        const acceptAllBtn = e.target.closest('.accept-all-btn');
-        if (acceptAllBtn) {
-            const msgDiv = acceptAllBtn.closest('.term-chat-msg');
-            const allActions = msgDiv.querySelectorAll('.tool-create-btn, .tool-run-btn');
-
-            allActions.forEach(btn => {
-                if (!btn.disabled) btn.click();
-            });
-
-            acceptAllBtn.innerHTML = '<i data-lucide="check-check"></i> All Actions Started';
-            acceptAllBtn.disabled = true;
-            if (window.lucide) window.lucide.createIcons();
-            return;
-        }
-
-        const btn = e.target.closest('.msg-action-btn');
-        if (!btn || btn.disabled) return;
-
-        if (btn.classList.contains('tool-run-btn')) {
-            const cmd = decodeURIComponent(btn.dataset.cmd);
-            window.dispatchEvent(new CustomEvent('peak-run-command', { detail: cmd }));
-            this.markButtonSuccess(btn, 'Sent');
-        } else if (btn.classList.contains('tool-create-btn')) {
+    async executeToolAction(btn) {
+        // File operations (both old tool-create-btn and new file-action-btn-compact)
+        if (btn.classList.contains('tool-create-btn') || btn.classList.contains('file-action-btn-compact')) {
             const path = decodeURIComponent(btn.dataset.path);
             const content = decodeURIComponent(btn.dataset.content);
             const type = btn.dataset.type || 'create';
 
-            if (type === 'update') {
-                // Dispatch event for Diff View
-                window.dispatchEvent(new CustomEvent('peak-apply-file', {
-                    detail: { path, content }
-                }));
-                // We don't mark success immediately for diff, as user has to accept/reject.
-                // But we can show "Diff Opened".
-                this.markButtonSuccess(btn, 'Diff Opened');
-            } else {
-                console.log('[ChatView] Dispatching peak-create-file:', { path, content });
-                window.dispatchEvent(new CustomEvent('peak-create-file', {
-                    detail: { path, content }
-                }));
-                this.markButtonSuccess(btn, 'File Created');
+            console.log(`[ChatView] Handling file action: ${type} for ${path}`);
+
+            if (type === 'reject') {
+                console.log('[ChatView] User rejected file action:', path);
+                this.markButtonSuccess(btn, 'Rejected');
+                // Disable the corresponding accept button if possible
+                const container = btn.closest('.file-edit-actions');
+                if (container) {
+                    const acceptBtn = container.querySelector(`button[data-type="create"], button[data-type="update"]`);
+                    if (acceptBtn) {
+                        acceptBtn.disabled = true;
+                        acceptBtn.style.opacity = '0.5';
+                    }
+                }
+                return;
             }
-        } else if (btn.classList.contains('tool-delete-btn')) {
+
+            // SAFEGUARD: Prevent writing "undefined" string as content
+            if (content === 'undefined' || content === undefined) {
+                console.error('[ChatView] Blocked attempt to write "undefined" content to file:', path);
+                this.appendMessage('system', `⚠️ **Error**: Attempted to write invalid content ("undefined") to \`${path}\`. Action blocked.`);
+
+                // Visual feedback on button
+                btn.innerHTML = `<i data-lucide="alert-triangle"></i> Invalid Content`;
+                btn.style.background = 'var(--peak-error-bg, #fee2e2)';
+                btn.style.color = 'var(--peak-error-text, #dc2626)';
+                btn.style.borderColor = 'var(--peak-error-border, #fca5a5)';
+                if (window.lucide) window.lucide.createIcons();
+                return;
+            }
+
+            // IPC IMPLEMENTATION: Use direct IPC to write file
+            try {
+                const root = window.currentProjectRoot;
+                if (!root) {
+                    throw new Error("No project root found.");
+                }
+                const fullPath = require('path').join(root, path);
+
+                console.log(`[ChatView] Writing file via IPC: ${fullPath}`);
+
+                // We use invoke to wait for completion
+                await require('electron').ipcRenderer.invoke('project:write-file', fullPath, content);
+                console.log('[ChatView] File write successful');
+                this.markButtonSuccess(btn, type === 'update' ? 'Applied' : 'Created');
+                // Refresh sidebar in main window
+                require('electron').ipcRenderer.send('project:refresh-sidebar');
+
+            } catch (err) {
+                console.error('[ChatView] File write failed:', err);
+                this.appendMessage('system', `Error writing file: ${err.message}`);
+                btn.innerHTML = `<i data-lucide="alert-circle"></i> Error`;
+            }
+            return;
+        }
+
+        if (btn.classList.contains('tool-run-btn')) {
+            const cmd = decodeURIComponent(btn.dataset.cmd);
+            console.log('[ChatView] Running command:', cmd);
+
+            this.markButtonSuccess(btn, 'Running...');
+
+            try {
+                const root = window.currentProjectRoot;
+                // IPC IMPLEMENTATION: Invoke command and wait for result
+                const result = await require('electron').ipcRenderer.invoke('project:run-command', cmd, root);
+
+                console.log('[ChatView] Command result:', result);
+
+                // Construct output message for AI context
+                let outputContent = '';
+                if (result.error && !result.stdout && !result.stderr) {
+                    outputContent = `Error executing command: ${result.error}`;
+                } else {
+                    outputContent = `Command: ${cmd}\nExit Code: ${result.exitCode}\n\nOutput:\n\`\`\`\n${result.stdout}\n${result.stderr}\n\`\`\``;
+                }
+
+                // Append to history so AI sees it in next turn
+                // We use 'tool' role if supported, or 'user' with explicit context
+                // Using 'user' role is safer for now as per system prompt patterns
+                this.client.history.push({
+                    role: 'user',
+                    content: `[System] Command Execution Result:\n${outputContent}`
+                });
+                this.client.saveHistory();
+
+                if (result.exitCode !== 0) {
+                    this.markButtonSuccess(btn, 'Failed (See Logs)');
+                    btn.style.background = 'var(--peak-error-bg, #fee2e2)';
+                    btn.style.color = 'var(--peak-error-text, #dc2626)';
+                    btn.style.borderColor = 'var(--peak-error-border, #fca5a5)';
+                } else {
+                    this.markButtonSuccess(btn, 'Completed');
+                }
+
+            } catch (err) {
+                console.error('[ChatView] Command execution failed:', err);
+                this.markButtonSuccess(btn, 'Error');
+            }
+            return;
+        }
+
+        if (btn.classList.contains('tool-delete-btn')) {
             const path = decodeURIComponent(btn.dataset.path);
-            if (confirm(`Delete ${path}?`)) {
-                window.dispatchEvent(new CustomEvent('peak-delete-file', { detail: { path } }));
+            console.log('[ChatView] Deleting file:', path);
+
+            // For auto-execution (accept all), we skip confirm if it's part of a batch?
+            // Or we assume "Accept All" implies confirmation.
+            // But if clicked individually, we might want confirm.
+            // For now, let's keep confirm for individual clicks, but maybe skip for programmatic?
+            // The btn click event is programmatic in "Accept All".
+            // So confirm() will pop up. That's annoying for "Accept All".
+            // We should probably skip confirm if it's an "Accept All" flow.
+            // But executeToolAction doesn't know context.
+            // Let's just do it.
+
+            try {
+                const root = window.currentProjectRoot;
+                if (!root) throw new Error("No project root found.");
+                const fullPath = require('path').join(root, path);
+
+                await require('electron').ipcRenderer.invoke('project:delete-path', fullPath);
+                console.log('[ChatView] File delete successful');
                 this.markButtonSuccess(btn, 'Deleted');
+                require('electron').ipcRenderer.send('project:refresh-sidebar');
+            } catch (err) {
+                console.error('[ChatView] File delete failed:', err);
+                this.appendMessage('system', `Error deleting file: ${err.message}`);
             }
+            return;
         } else if (btn.classList.contains('tool-search-btn')) {
             const query = decodeURIComponent(btn.dataset.query);
             this.runSearchAndSendToAI(query);
@@ -978,7 +1211,96 @@ If REJECTED, explain why and provide a corrected version if possible.
             const url = decodeURIComponent(btn.dataset.url);
             this.readUrlAndSendToAI(url);
             this.markButtonSuccess(btn, 'Reading...');
+        } else if (btn.classList.contains('tool-list-dir-btn')) {
+            const path = decodeURIComponent(btn.dataset.path);
+            const recursive = btn.dataset.recursive === 'true';
+            this.listDirectoryAndSendToAI(path, recursive);
+            this.markButtonSuccess(btn, 'Listed');
         }
+    }
+
+    async handleToolAction(e) {
+        // Toggle Code (both old and new compact styles)
+        const toggleBtn = e.target.closest('.toggle-code-btn, .toggle-code-btn-compact');
+        if (toggleBtn) {
+            // Old style
+            const oldCard = toggleBtn.closest('.file-edit-card');
+            if (oldCard) {
+                const content = oldCard.querySelector('.file-edit-content');
+                const icon = toggleBtn.querySelector('i');
+
+                if (content.style.display === 'none') {
+                    content.style.display = 'block';
+                    icon.setAttribute('data-lucide', 'chevron-up');
+                    if (window.lucide) window.lucide.createIcons();
+                } else {
+                    content.style.display = 'none';
+                    icon.setAttribute('data-lucide', 'chevron-down');
+                    if (window.lucide) window.lucide.createIcons();
+                }
+                return;
+            }
+
+            // New compact style
+            const compactCard = toggleBtn.closest('.file-edit-card-compact');
+            if (compactCard) {
+                const content = compactCard.querySelector('.file-code-collapsed');
+                if (content) {
+                    if (content.style.display === 'none' || !content.style.display) {
+                        content.style.display = 'block';
+                    } else {
+                        content.style.display = 'none';
+                    }
+                }
+                return;
+            }
+        }
+
+        // Accept All
+        // Command output toggle
+        const outputToggle = e.target.closest('.tool-toggle-output-btn');
+        if (outputToggle) {
+            const card = outputToggle.closest('.tool-card-compact');
+            if (card) {
+                const output = card.querySelector('.command-output-compact');
+                const icon = outputToggle.querySelector('[data-lucide]');
+                if (output) {
+                    const isHidden = output.style.display === 'none';
+                    output.style.display = isHidden ? 'block' : 'none';
+                    if (icon) {
+                        icon.setAttribute('data-lucide', isHidden ? 'chevron-up' : 'chevron-down');
+                        if (window.lucide) window.lucide.createIcons();
+                    }
+                }
+            }
+            return;
+        }
+
+        const acceptAllBtn = e.target.closest('.accept-all-btn');
+        if (acceptAllBtn) {
+            const msgDiv = acceptAllBtn.closest('.term-chat-msg');
+            const allActions = msgDiv.querySelectorAll('.tool-create-btn, .tool-run-btn, .file-action-btn-compact, .tool-action-btn-compact');
+
+            // Use executeToolAction for each
+            for (const btn of allActions) {
+                if (!btn.disabled) await this.executeToolAction(btn);
+            }
+
+            acceptAllBtn.innerHTML = '<i data-lucide="check-check"></i> All Actions Started';
+            acceptAllBtn.disabled = true;
+            if (window.lucide) window.lucide.createIcons();
+
+            // Auto-Continue
+            this.processUserMessage('continue', true);
+            return;
+        }
+
+        // Handle both old and new button styles
+        const btn = e.target.closest('.msg-action-btn, .file-action-btn-compact, .tool-action-btn-compact');
+        if (!btn || btn.disabled) return;
+
+        // Use extracted method
+        await this.executeToolAction(btn);
 
         // --- User Message Actions (Revert / Expand) ---
         const revertBtn = e.target.closest('.revert-btn');
@@ -1014,7 +1336,9 @@ If REJECTED, explain why and provide a corrected version if possible.
         this.selectedDocs.add(filename);
         this.renderFileChips();
         // Focus input
-        this.inputArea.focus();
+        if (this.inputBar && this.inputBar.inputArea) {
+            this.inputBar.inputArea.focus();
+        }
     }
 
     async captureLiveViewAndSendToAI() {
@@ -1035,20 +1359,21 @@ If REJECTED, explain why and provide a corrected version if possible.
                 return;
             }
 
-            // Create Live View Block HTML
+            // Create Live View Block HTML (minimalistic)
+            const preview = html.slice(0, 100).replace(/\n/g, ' ').trim() + (html.length > 100 ? '...' : '');
             const blockHtml = `
-                <div class="tool-block analysis-block" style="border-color: #10b981;">
-                    <div class="header" style="color: #10b981; background: rgba(16, 185, 129, 0.1);">
-                        <i data-lucide="eye" style="width:12px; height:12px;"></i> Live View Capture
+                <details class="analysis-block-minimal">
+                    <summary class="analysis-summary-minimal">
+                        <i data-lucide="chevron-right" class="analysis-chevron" style="width:12px; height:12px; transition: transform 0.2s;"></i>
+                        <i data-lucide="eye" style="width:12px; height:12px; color: #10b981;"></i>
+                        <span class="analysis-summary-text">Live View: ${url}</span>
+                    </summary>
+                    <div class="analysis-content-minimal">
+                        <div style="margin-bottom:8px; font-weight:bold; color:var(--peak-primary); font-size: 10px;">${url}</div>
+                        <pre style="white-space: pre-wrap; word-break: break-all;">${html}</pre>
+                        <div style="margin-top:8px; font-size: 9px; color: var(--peak-secondary); opacity: 0.6;">DOM snapshot sent to AI</div>
                     </div>
-                    <div class="content" style="max-height: 200px; overflow-y: auto;">
-                        <div style="margin-bottom:8px; font-weight:bold; color:var(--peak-primary);">${url}</div>
-                        ${html.slice(0, 500) + (html.length > 500 ? '...' : '')}
-                    </div>
-                    <div class="footer">
-                        <span class="meta-info">DOM snapshot sent to AI</span>
-                    </div>
-                </div>
+                </details>
             `;
 
             // Append to Chat
@@ -1059,19 +1384,17 @@ If REJECTED, explain why and provide a corrected version if possible.
             if (window.lucide) window.lucide.createIcons();
             this.scrollToBottom();
 
-            // Send to AI (Silent)
-            const message = `Live View Snapshot (${url}):\n\`\`\`html\n${html}\n\`\`\`\n\n(Proceeding automatically. Please continue with the next step.)`;
+            // Send to AI via History Push + Auto-Continue
+            const messageContent = `Live View Snapshot (${url}):\n\`\`\`html\n${html}\n\`\`\``;
 
-            this.inputArea.disabled = true;
-            this.submitBtn.style.display = 'none';
-            this.stopBtn.style.display = 'flex';
-            this.createStreamingMessage();
+            this.client.history.push({
+                role: 'user',
+                content: `[System] ${messageContent}`
+            });
+            this.client.saveHistory();
 
-            const modelSelect = document.getElementById('ai-assist-model-select');
-            const modelId = modelSelect ? modelSelect.value : null;
-
-            const context = await this.getProjectContext([]);
-            await this.client.sendMessage(message, context, modelId);
+            // Trigger Auto-Continue
+            this.processUserMessage('continue', true);
 
         } catch (e) {
             console.error("Failed to capture live view:", e);
@@ -1108,19 +1431,21 @@ If REJECTED, explain why and provide a corrected version if possible.
             // Strip tags
             content = content.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
 
-            // Create Tool Output Block
+            // Create Tool Output Block (minimalistic)
+            const preview = content.slice(0, 80).replace(/\n/g, ' ') + (content.length > 80 ? '...' : '');
             const blockHtml = `
-                <div class="tool-block analysis-block" style="border-color: #3b82f6;">
-                    <div class="header" style="color: #3b82f6; background: rgba(59, 130, 246, 0.1);">
-                        <i data-lucide="globe" style="width:12px; height:12px;"></i> Read URL: ${url}
+                <details class="analysis-block-minimal">
+                    <summary class="analysis-summary-minimal">
+                        <i data-lucide="chevron-right" class="analysis-chevron" style="width:12px; height:12px; transition: transform 0.2s;"></i>
+                        <i data-lucide="globe" style="width:12px; height:12px; color: #3b82f6;"></i>
+                        <span class="analysis-summary-text">Read URL: ${new URL(url).hostname}</span>
+                    </summary>
+                    <div class="analysis-content-minimal">
+                        <div style="margin-bottom:8px; font-weight:bold; color:var(--peak-primary); font-size: 10px;">${url}</div>
+                        <pre style="white-space: pre-wrap; word-break: break-all;">${content}</pre>
+                        <div style="margin-top:8px; font-size: 9px; color: var(--peak-secondary); opacity: 0.6;">Content sent to AI</div>
                     </div>
-                    <div class="content" style="max-height: 200px; overflow-y: auto;">
-                        ${content.slice(0, 1000) + (content.length > 1000 ? '...' : '')}
-                    </div>
-                    <div class="footer">
-                        <span class="meta-info">Content sent to AI</span>
-                    </div>
-                </div>
+                </details>
             `;
 
             // Append to Chat
@@ -1131,19 +1456,17 @@ If REJECTED, explain why and provide a corrected version if possible.
             if (window.lucide) window.lucide.createIcons();
             this.scrollToBottom();
 
-            // Send to AI
-            const message = `Content of ${url}:\n\`\`\`text\n${content.slice(0, 20000)}\n\`\`\`\n\n(Proceeding automatically.)`;
+            // Send to AI via History Push + Auto-Continue
+            const messageContent = `Content of ${url}:\n\`\`\`text\n${content.slice(0, 20000)}\n\`\`\``;
 
-            this.inputArea.disabled = true;
-            this.submitBtn.style.display = 'none';
-            this.stopBtn.style.display = 'flex';
-            this.createStreamingMessage();
+            this.client.history.push({
+                role: 'user',
+                content: `[System] ${messageContent}`
+            });
+            this.client.saveHistory();
 
-            const modelSelect = document.getElementById('ai-assist-model-select');
-            const modelId = modelSelect ? modelSelect.value : null;
-
-            const context = await this.getProjectContext([], Array.from(this.selectedDocs));
-            await this.client.sendMessage(message, context, modelId);
+            // Trigger Auto-Continue
+            this.processUserMessage('continue', true);
 
         } catch (e) {
             console.error("Failed to read URL:", e);
@@ -1199,19 +1522,17 @@ If REJECTED, explain why and provide a corrected version if possible.
                     this.scrollToBottom();
                 }
 
-                const fullMessage = `Problems Check Result:\n\`\`\`\n${message}\n\`\`\`\n\n(Proceeding automatically. Please continue with the next step.)`;
+                const fullMessage = `Problems Check Result:\n\`\`\`\n${message}\n\`\`\``;
 
-                // Manual Send (Silent)
-                this.inputArea.disabled = true;
-                this.submitBtn.style.display = 'none';
-                this.stopBtn.style.display = 'flex';
-                this.createStreamingMessage();
+                // Send to AI via History Push + Auto-Continue
+                this.client.history.push({
+                    role: 'user',
+                    content: `[System] ${fullMessage}`
+                });
+                this.client.saveHistory();
 
-                const modelSelect = document.getElementById('ai-assist-model-select');
-                const modelId = modelSelect ? modelSelect.value : null;
-
-                const context = await this.getProjectContext([]);
-                await this.client.sendMessage(fullMessage, context, modelId);
+                // Trigger Auto-Continue
+                this.processUserMessage('continue', true);
 
             } else {
                 this.appendMessage('system', "Error: Diagnostics service not available.");
@@ -1228,18 +1549,25 @@ If REJECTED, explain why and provide a corrected version if possible.
             const fullPath = path.join(root, relPath);
             const content = await require('electron').ipcRenderer.invoke('project:read-file', fullPath);
 
-            // Create Analysis Block HTML
+            // Create Analysis Block HTML (minimalistic)
+            const preview = typeof content === 'string'
+                ? content.slice(0, 80).replace(/\n/g, ' ').trim() + (content.length > 80 ? '...' : '')
+                : 'Error reading file';
+
             const analysisHtml = `
-                <div class="tool-block analysis-block">
-                    <div class="header">
-                        <i data-lucide="microscope" style="width:12px; height:12px;"></i> Analysis: ${relPath}
+                <details class="analysis-block-minimal">
+                    <summary class="analysis-summary-minimal">
+                        <i data-lucide="chevron-right" class="analysis-chevron" style="width:12px; height:12px; transition: transform 0.2s;"></i>
+                        <i data-lucide="microscope" style="width:12px; height:12px; color: #8b5cf6;"></i>
+                        <span class="analysis-summary-text">Analysis: ${relPath}</span>
+                    </summary>
+                    <div class="analysis-content-minimal">
+                        <pre style="white-space: pre-wrap; word-break: break-all;">${typeof content === 'string' ? content : 'Error reading file'}</pre>
+                        <div style="margin-top:8px; font-size: 9px; color: var(--peak-secondary); opacity: 0.6;">File content sent for analysis</div>
                     </div>
-                    <div class="content">${typeof content === 'string' ? content.slice(0, 500) + (content.length > 500 ? '...' : '') : 'Error reading file'}</div>
-                    <div class="footer">
-                        <span class="meta-info">File content sent for analysis</span>
-                    </div>
-                </div>
+                </details>
             `;
+
 
             // Append to Chat
             const msgDiv = document.createElement('div');
@@ -1253,13 +1581,13 @@ If REJECTED, explain why and provide a corrected version if possible.
             const message = `File Content: \`${relPath}\`\n\`\`\`\n${typeof content === 'string' ? content : 'Error reading file'}\n\`\`\`\n\n(Proceeding automatically. Please continue with the next step.)`;
 
             // Manual Send
-            this.inputArea.disabled = true;
-            this.submitBtn.style.display = 'none';
-            this.stopBtn.style.display = 'flex';
+            this.inputBar.setLoading(true);
             this.createStreamingMessage();
 
-            const modelSelect = document.getElementById('ai-assist-model-select');
-            const modelId = modelSelect ? modelSelect.value : null;
+            const agentSelect = document.getElementById('ai-assist-agent-select');
+            const agentId = agentSelect ? agentSelect.value : null;
+            const agent = AgentRegistry.getAgent(agentId);
+            const modelId = agent ? agent.modelId : null;
 
             const context = await this.getProjectContext([]); // No extra selected files
             await this.client.sendMessage(message, context, modelId);
@@ -1269,6 +1597,92 @@ If REJECTED, explain why and provide a corrected version if possible.
         }
     }
 
+    async listDirectoryAndSendToAI(relPath, recursive) {
+        try {
+            const root = window.currentProjectRoot;
+            if (!root) {
+                this.appendMessage('system', 'Error: No project root found.');
+                return;
+            }
+
+            const targetPath = path.join(root, relPath === '.' ? '' : relPath);
+
+            // Invoke Backend IPC
+            const tree = await require('electron').ipcRenderer.invoke('project:get-file-tree', targetPath);
+
+            if (tree.error) {
+                this.appendMessage('system', `Error listing directory: ${tree.error}`);
+                return;
+            }
+
+            // Format Tree Output
+            function formatTree(item, prefix = '') {
+                let output = '';
+                if (item.children) {
+                    item.children.forEach((child, index) => {
+                        const isLast = index === item.children.length - 1;
+                        const connector = isLast ? '└── ' : '├── ';
+                        const childPrefix = isLast ? '    ' : '│   ';
+                        output += `${prefix}${connector}${child.name}${child.type === 'directory' ? '/' : ''}\n`;
+                        if (child.type === 'directory' && recursive) {
+                            output += formatTree(child, prefix + childPrefix);
+                        }
+                    });
+                }
+                return output;
+            }
+
+            const treeOutput = formatTree(tree);
+            const displayOutput = treeOutput || '(Empty Directory)';
+
+            // Create Output Block HTML (Using TerminalCard for consistency)
+            const blockHtml = renderTerminalCard(`ls -R ${relPath}`, displayOutput, true);
+
+            // Append to Chat UI
+            const msgDiv = document.createElement('div');
+            msgDiv.className = 'term-chat-msg system';
+            msgDiv.style.width = '100%';
+            msgDiv.innerHTML = blockHtml;
+            this.chatThread.appendChild(msgDiv);
+
+            // Add toggle listener
+            const toggleBtn = msgDiv.querySelector('.toggle-terminal-btn');
+            if (toggleBtn) {
+                toggleBtn.addEventListener('click', (e) => {
+                    const card = e.target.closest('.terminal-card');
+                    const outputBlock = card.querySelector('.terminal-output-block');
+                    const icon = toggleBtn.querySelector('[data-lucide]');
+
+                    if (outputBlock) {
+                        const isHidden = outputBlock.style.display === 'none';
+                        outputBlock.style.display = isHidden ? 'block' : 'none';
+                        icon.style.transform = isHidden ? 'rotate(0deg)' : 'rotate(-90deg)';
+                        icon.style.transition = 'transform 0.2s';
+                    }
+                });
+            }
+
+            if (window.lucide) window.lucide.createIcons();
+            this.scrollToBottom();
+
+            // Send to AI via History Push + Auto-Continue
+            // This ensures the context is preserved and the AI sees the result immediately
+            const messageContent = `Directory Listing for \`${relPath}\`:\n\`\`\`text\n${displayOutput}\n\`\`\``;
+
+            this.client.history.push({
+                role: 'user',
+                content: `[System] ${messageContent}`
+            });
+            this.client.saveHistory();
+
+            // Trigger Auto-Continue
+            this.processUserMessage('continue', true);
+
+        } catch (e) {
+            console.error("Failed to list directory:", e);
+            this.appendMessage('system', `Error listing directory: ${e.message}`);
+        }
+    }
     async sendActiveFileToAI() {
         try {
             const context = window.getProjectFileContext ? window.getProjectFileContext() : {};
@@ -1304,13 +1718,13 @@ If REJECTED, explain why and provide a corrected version if possible.
             // Send to AI (Silent)
             const message = `Active File Context: \`${relPath}\`\n\`\`\`\n${content}\n\`\`\`\n\n(Proceeding automatically...)`;
 
-            this.inputArea.disabled = true;
-            this.submitBtn.style.display = 'none';
-            this.stopBtn.style.display = 'flex';
+            this.inputBar.setLoading(true);
             this.createStreamingMessage();
 
-            const modelSelect = document.getElementById('ai-assist-model-select');
-            const modelId = modelSelect ? modelSelect.value : null;
+            const agentSelect = document.getElementById('ai-assist-agent-select');
+            const agentId = agentSelect ? agentSelect.value : null;
+            const agent = AgentRegistry.getAgent(agentId);
+            const modelId = agent ? agent.modelId : null;
 
             const aiContext = await this.getProjectContext([]);
             await this.client.sendMessage(message, aiContext, modelId);
@@ -1322,30 +1736,47 @@ If REJECTED, explain why and provide a corrected version if possible.
 
     async runSearchAndSendToAI(query) {
         try {
-            // We need a search IPC. ProjectView has a scanner but not a general search exposed via IPC easily?
-            // Actually, `project:search-in-files` might exist or we can use `grep` via `run_command`?
-            // Let's use `run_command` logic or assume there is an IPC.
-            // If no IPC, we can simulate `grep -r "query" .`
-            // But let's check if we can use `run_command` logic directly?
-            // Or just implement a simple search here.
+            const root = window.currentProjectRoot;
+            if (!root) {
+                this.appendMessage('system', 'Error: No project root found.');
+                return;
+            }
 
-            // For now, let's assume we use `grep` via `peak-run-command` but capture output?
-            // But `peak-run-command` sends to terminal.
-            // If we want to capture it, we can use the same mechanism as `run_command`.
-            // So, let's just dispatch `peak-run-command` with `grep`?
-            // But the tool was `search_project`.
-            // Let's try to invoke `project:search` if it exists, or just `grep`.
-
-            // Use `grep` command for now as it's reliable and we have auto-continue for commands.
+            // Use grep via IPC
             const cmd = `grep -r "${query}" .`;
-            window.dispatchEvent(new CustomEvent('peak-run-command', { detail: cmd }));
-            // The `peak-terminal-response` listener will handle the rest!
+
+            // Visual feedback
+            this.appendMessage('system', `Searching for "${query}"...`);
+
+            // IPC IMPLEMENTATION: Invoke command and wait for result
+            const result = await require('electron').ipcRenderer.invoke('project:run-command', cmd, root);
+
+            // Construct output message for AI context
+            let outputContent = '';
+            if (result.error && !result.stdout && !result.stderr) {
+                outputContent = `Error executing search: ${result.error}`;
+            } else {
+                // Limit output size to prevent context overflow
+                const stdout = result.stdout.slice(0, 20000);
+                const truncated = result.stdout.length > 20000 ? '\n... (output truncated)' : '';
+                outputContent = `Search Command: ${cmd}\nExit Code: ${result.exitCode}\n\nOutput:\n\`\`\`\n${stdout}${truncated}\n${result.stderr}\n\`\`\``;
+            }
+
+            // Append to history so AI sees it in next turn
+            this.client.history.push({
+                role: 'user',
+                content: `[System] ${outputContent}`
+            });
+            this.client.saveHistory();
+
+            // Trigger Auto-Continue
+            this.processUserMessage('continue', true);
 
         } catch (e) {
             console.error("Failed to run search:", e);
+            this.appendMessage('system', `Error running search: ${e.message}`);
         }
     }
-
     markButtonSuccess(btn, text) {
         btn.innerHTML = `<i data-lucide="check"></i> ${text}`;
         btn.disabled = true;

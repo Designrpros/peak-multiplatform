@@ -396,6 +396,24 @@ function setupIpcHandlers() {
             return { error: err.message };
         }
     });
+
+    // NEW: Run Command Handler
+    ipcMain.handle('project:run-command', async (event, cmd, cwd) => {
+        return new Promise((resolve) => {
+            // Default to home dir if no cwd provided, but ideally should be project root
+            // The renderer should pass the project root
+            const options = { cwd: cwd || os.homedir(), maxBuffer: 1024 * 1024 * 10 }; // 10MB buffer
+
+            exec(cmd, options, (error, stdout, stderr) => {
+                resolve({
+                    stdout: stdout || '',
+                    stderr: stderr || '',
+                    error: error ? error.message : null,
+                    exitCode: error ? error.code : 0
+                });
+            });
+        });
+    });
     ipcMain.handle('project:read-asset-base64', async (e, r) => { try { const c = await fs.promises.readFile(path.join(__dirname, r)); return `data:image/svg+xml;base64,${c.toString('base64')}`; } catch (err) { return null; } });
 
     // --- LOGGING ---
@@ -513,6 +531,50 @@ function setupIpcHandlers() {
         return fileList;
     });
     // --------------------------------
+
+    ipcMain.handle('project:get-file-tree', async (event, rootPath) => {
+        if (!rootPath) return { error: 'No root path provided' };
+
+        async function getDirectoryTree(dir) {
+            const name = path.basename(dir);
+            const item = { name, path: dir, type: 'directory', children: [] };
+
+            try {
+                const dirents = await fs.promises.readdir(dir, { withFileTypes: true });
+
+                // Sort: Directories first, then files
+                dirents.sort((a, b) => {
+                    if (a.isDirectory() && !b.isDirectory()) return -1;
+                    if (!a.isDirectory() && b.isDirectory()) return 1;
+                    return a.name.localeCompare(b.name);
+                });
+
+                for (const dirent of dirents) {
+                    const fullPath = path.join(dir, dirent.name);
+
+                    // Ignore common patterns
+                    if (['node_modules', '.git', 'dist', 'build', '.DS_Store', '.idea', '.vscode'].includes(dirent.name)) continue;
+
+                    if (dirent.isDirectory()) {
+                        const child = await getDirectoryTree(fullPath);
+                        item.children.push(child);
+                    } else {
+                        item.children.push({
+                            name: dirent.name,
+                            path: fullPath,
+                            type: 'file'
+                        });
+                    }
+                }
+            } catch (e) {
+                console.error(`[Main] Error scanning ${dir}:`, e);
+                item.error = e.message;
+            }
+            return item;
+        }
+
+        return await getDirectoryTree(rootPath);
+    });
 
     ipcMain.on('llm-stream-request', async (event, sId, mId, msgs) => {
         const apiKey = settingsStore.get('openrouterApiKey');

@@ -7,6 +7,7 @@ const ChatView = require('./ChatView');
 const path = require('path');
 const { ipcRenderer } = require('electron');
 const { renderMarkdown } = require('../../../utils/markdown');
+const AgentLogger = require('../core/AgentLogger');
 
 class LayoutController {
     constructor() {
@@ -25,6 +26,7 @@ class LayoutController {
         this.attachTabListeners();
         this.attachTaskListeners();
         this.attachLiveViewListeners();
+        this.attachLogListeners();
     }
 
     attachTabListeners() {
@@ -60,6 +62,129 @@ class LayoutController {
         if (btnRefresh) {
             btnRefresh.addEventListener('click', () => this.loadTasks());
         }
+    }
+
+    attachLogListeners() {
+        const logsStream = document.getElementById('logs-stream');
+        const btnClearLogs = document.getElementById('btn-clear-logs');
+        const filterBtns = document.querySelectorAll('.log-filter-btn');
+
+        let currentFilter = 'all';
+
+        // Filter buttons
+        filterBtns.forEach(btn => {
+            btn.addEventListener('click', () => {
+                currentFilter = btn.dataset.filter;
+                filterBtns.forEach(b => {
+                    b.classList.remove('active');
+                    b.style.background = 'var(--control-background-color)';
+                    b.style.color = 'var(--peak-secondary)';
+                });
+                btn.classList.add('active');
+                btn.style.background = 'var(--peak-accent)';
+                btn.style.color = 'white';
+                this.renderLogs(currentFilter);
+            });
+        });
+
+        // Clear logs
+        if (btnClearLogs) {
+            btnClearLogs.addEventListener('click', () => {
+                AgentLogger.clear();
+                this.renderLogs(currentFilter);
+            });
+        }
+
+        // Listen for new logs
+        AgentLogger.on('log', (logEntry) => {
+            if (currentFilter === 'all' || currentFilter === logEntry.type) {
+                this.appendLog(logEntry);
+            }
+        });
+
+        AgentLogger.on('clear', () => {
+            if (logsStream) {
+                logsStream.innerHTML = '<div style="color: var(--peak-secondary); text-align: center; padding: 20px;">No logs yet. Logs will appear here as the agent executes.</div>';
+            }
+        });
+
+        // Initial Render of Persisted Logs
+        this.renderLogs(currentFilter);
+    }
+
+    renderLogs(filter = 'all') {
+        const logsStream = document.getElementById('logs-stream');
+        if (!logsStream) return;
+
+        const logs = AgentLogger.getLogs(filter);
+
+        if (logs.length === 0) {
+            logsStream.innerHTML = '<div style="color: var(--peak-secondary); text-align: center; padding: 20px;">No logs for this filter.</div>';
+            return;
+        }
+
+        // Group logs by Agent/Context if possible, or just improve styling
+        // For now, let's keep it linear but with better visual separation for agents
+        logsStream.innerHTML = logs.map(log => this.formatLogEntry(log)).join('');
+        logsStream.scrollTop = logsStream.scrollHeight;
+    }
+
+    appendLog(logEntry) {
+        const logsStream = document.getElementById('logs-stream');
+        if (!logsStream) return;
+
+        // Remove empty state if exists
+        if (logsStream.querySelector('div[style*="text-align: center"]')) {
+            logsStream.innerHTML = '';
+        }
+
+        const logHTML = this.formatLogEntry(logEntry);
+        logsStream.insertAdjacentHTML('beforeend', logHTML);
+        logsStream.scrollTop = logsStream.scrollHeight;
+    }
+
+    formatLogEntry(log) {
+        const colors = {
+            agent: '#8b5cf6', // Purple for Agent
+            tool: '#10b981',  // Green for Tools
+            error: '#ef4444', // Red for Errors
+            system: '#64748b' // Slate for System
+        };
+
+        const color = colors[log.type] || '#666';
+
+        // Use specific icons for agents if available in data
+        let icon = 'circle';
+        if (log.type === 'agent') icon = 'bot';
+        else if (log.type === 'tool') icon = 'wrench';
+        else if (log.type === 'error') icon = 'alert-triangle';
+        else if (log.type === 'system') icon = 'info';
+
+        // Agent specific styling
+        const isAgent = log.type === 'agent';
+        const bgStyle = isAgent ? 'background: rgba(139, 92, 246, 0.05);' : '';
+        const borderStyle = isAgent ? 'border-left: 2px solid var(--peak-accent);' : 'border-left: 2px solid transparent;';
+
+        return `
+            <div style="padding: 6px 8px; border-bottom: 1px solid var(--border-color); display: flex; gap: 8px; align-items: flex-start; ${bgStyle} ${borderStyle}">
+                <span style="color: ${color}; flex-shrink: 0; margin-top: 2px;">
+                    <i data-lucide="${icon}" style="width: 12px; height: 12px;"></i>
+                </span>
+                <div style="flex: 1; min-width: 0;">
+                    <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 2px;">
+                        <span style="color: ${color}; font-weight: 600; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px;">${log.type}</span>
+                        <span style="color: var(--peak-secondary); font-size: 9px; font-family: monospace;">${log.time}</span>
+                    </div>
+                    <div style="color: var(--peak-primary); font-size: 11px; line-height: 1.4;">${this.escapeHTML(log.message)}</div>
+                    ${log.data && Object.keys(log.data).length > 0 ? `
+                        <details style="margin-top: 4px;">
+                            <summary style="cursor: pointer; color: var(--peak-secondary); font-size: 9px; user-select: none;">Details</summary>
+                            <pre style="margin: 4px 0 0; font-size: 9px; color: var(--peak-secondary); background: var(--control-background-color); padding: 4px; border-radius: 4px; overflow-x: auto;">${this.escapeHTML(JSON.stringify(log.data, null, 2))}</pre>
+                        </details>
+                    ` : ''}
+                </div>
+            </div>
+        `;
     }
 
     attachLiveViewListeners() {

@@ -38,6 +38,10 @@ class InputBar {
                         <span id="ai-status-indicator" style="font-size:9px; font-weight:600; color:var(--peak-secondary); display:flex; align-items:center; gap:3px;">
                             <span style="width:5px; height:5px; border-radius:50%; background:var(--peak-secondary);"></span> Ready
                         </span>
+                        <div id="ai-review-controls" style="display:none; align-items:center; gap:6px;">
+                            <button id="ai-review-reject-btn" style="background:none; border:1px solid var(--peak-error-border, #fca5a5); color:var(--peak-error-text, #dc2626); padding:2px 6px; border-radius:4px; font-size:9px; cursor:pointer;">Reject All</button>
+                            <button id="ai-review-accept-btn" style="background:var(--peak-accent); border:none; color:white; padding:2px 8px; border-radius:4px; font-size:9px; font-weight:600; cursor:pointer;">Accept All</button>
+                        </div>
                     </div>
                 </div>
 
@@ -68,11 +72,6 @@ class InputBar {
                                 <select id="ai-assist-agent-select" class="model-select" title="Select Agent">
                                     ${agents.map(agent => `<option value="${agent.id}" ${agent.id === currentAgentId ? 'selected' : ''}>${agent.name}</option>`).join('')}
                                     <option value="manage-agents" style="font-style:italic; border-top:1px solid #ccc;">Manage Agents...</option>
-                                </select>
-                                <select id="ai-assist-mode-select" class="model-select" title="Execution Mode">
-                                    <option value="assisted">Assisted</option>
-                                    <option value="auto">Auto</option>
-                                    <option value="hybrid">Hybrid</option>
                                 </select>
                              </div>
                         </div>
@@ -106,6 +105,10 @@ class InputBar {
         this.addFileBtn = container.querySelector('#ai-assist-add-file-btn');
         this.addActiveFileBtn = container.querySelector('#ai-assist-add-active-file-btn');
         this.continueBtn = container.querySelector('#ai-assist-continue-btn');
+
+        // Debug Review Controls
+        const reviewControls = container.querySelector('#ai-review-controls');
+        console.log('[InputBar] attachListeners: Review controls found?', !!reviewControls);
 
         // Submit
         if (this.submitBtn) {
@@ -262,16 +265,46 @@ class InputBar {
     }
 
     setLoading(isLoading) {
-        if (this.inputArea) this.inputArea.disabled = isLoading;
-        if (this.submitBtn) this.submitBtn.style.display = isLoading ? 'none' : 'flex';
+        // Allow typing while loading for queueing
+        // if (this.inputArea) this.inputArea.disabled = isLoading; 
+
+        if (this.submitBtn) {
+            // Change submit button to "Queue" or just keep it active?
+            // If we keep it active, user can click it.
+            // Let's keep it active but maybe change icon?
+            // For now, just keep it active.
+            this.submitBtn.style.display = 'flex';
+            this.submitBtn.style.opacity = isLoading ? '0.7' : '1';
+        }
+
         if (this.stopBtn) this.stopBtn.style.display = isLoading ? 'flex' : 'none';
+
+        // If loading, hide submit button? No, we want to allow queueing.
+        // But we also want to show Stop button.
+        // So show BOTH? Or just Stop?
+        // If we show Stop, we can't show Submit in the same spot if they overlap.
+        // In the HTML, they are siblings.
+        // Let's show both if loading.
+        if (isLoading) {
+            this.submitBtn.style.display = 'flex';
+            this.stopBtn.style.display = 'flex';
+        } else {
+            this.submitBtn.style.display = 'flex';
+            this.stopBtn.style.display = 'none';
+        }
     }
 
-    updateStatus(status) {
+    updateStatus(status, customMessage = null) {
         const indicator = this.container.querySelector('#ai-status-indicator');
         if (!indicator) return;
 
-        if (status === 'thinking') {
+        // If custom message is provided, show it with pulse animation
+        if (customMessage) {
+            indicator.innerHTML = `
+                <span style="width:6px; height:6px; border-radius:50%; background:var(--peak-accent); animation: pulse 1s infinite;"></span> ${customMessage}
+            `;
+            indicator.style.color = 'var(--peak-accent)';
+        } else if (status === 'thinking') {
             indicator.innerHTML = `
                 <span style="width:6px; height:6px; border-radius:50%; background:var(--peak-accent); animation: pulse 1s infinite;"></span> Thinking...
             `;
@@ -282,6 +315,47 @@ class InputBar {
             `;
             indicator.style.color = 'var(--peak-secondary)';
         }
+    }
+
+    showReviewControls(count, onAccept, onReject) {
+        console.log('[InputBar] showReviewControls called', { count });
+        const indicator = this.container.querySelector('#ai-status-indicator');
+        const controls = this.container.querySelector('#ai-review-controls');
+        const acceptBtn = this.container.querySelector('#ai-review-accept-btn');
+        const rejectBtn = this.container.querySelector('#ai-review-reject-btn');
+
+        console.log('[InputBar] Controls found:', {
+            indicator: !!indicator,
+            controls: !!controls,
+            acceptBtn: !!acceptBtn,
+            rejectBtn: !!rejectBtn
+        });
+
+        if (indicator) indicator.style.display = 'none';
+        if (controls) controls.style.display = 'flex';
+
+        if (acceptBtn) {
+            acceptBtn.textContent = `Accept All (${count})`;
+            acceptBtn.onclick = (e) => {
+                e.stopPropagation();
+                if (onAccept) onAccept();
+            };
+        }
+
+        if (rejectBtn) {
+            rejectBtn.onclick = (e) => {
+                e.stopPropagation();
+                if (onReject) onReject();
+            };
+        }
+    }
+
+    hideReviewControls() {
+        const indicator = this.container.querySelector('#ai-status-indicator');
+        const controls = this.container.querySelector('#ai-review-controls');
+
+        if (indicator) indicator.style.display = 'flex';
+        if (controls) controls.style.display = 'none';
     }
 }
 

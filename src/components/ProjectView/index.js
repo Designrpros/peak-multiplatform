@@ -8,7 +8,8 @@ const {
     handleDragStart,
     handleDragOver,
     handleDragLeave,
-    handleDrop
+    handleDrop,
+    setActiveFile
 } = require('./sidebar.js');
 const { setupCodeMirror, disposeEditor, setupDiffEditor, getDiffContent, disposeDiffEditor, scanFileForErrors } = require('./editor.js');
 const TerminalView = require('../TerminalView/index.js');
@@ -128,6 +129,7 @@ async function attachProjectViewListeners(projectData, container) {
     };
     // --- DIFF VIEW LOGIC ---
     let isDiffMode = false;
+    let currentDiffFilePath = null; // Track the file being diffed
     const diffContainer = document.createElement('div');
     diffContainer.className = 'diff-view-container';
     diffContainer.style.display = 'none';
@@ -170,13 +172,28 @@ async function attachProjectViewListeners(projectData, container) {
     };
 
     diffContainer.querySelector('#diff-reject-btn').addEventListener('click', closeDiffView);
-    diffContainer.querySelector('#diff-accept-btn').addEventListener('click', () => {
+    diffContainer.querySelector('#diff-accept-btn').addEventListener('click', async () => {
         const newContent = getDiffContent();
         if (newContent !== null && editorView) {
+            // Update editor
             const transaction = editorView.state.update({
                 changes: { from: 0, to: editorView.state.doc.length, insert: newContent }
             });
             editorView.dispatch(transaction);
+
+            // Save to disk
+            if (currentDiffFilePath && window.ipcRenderer) {
+                try {
+                    await window.ipcRenderer.invoke('project:write-file', currentDiffFilePath, newContent);
+                    currentFileContent = newContent; // Update tracked content
+                    console.log('[ProjectView] File saved after diff acceptance:', currentDiffFilePath);
+                } catch (err) {
+                    console.error('[ProjectView] Failed to save file after diff acceptance:', err);
+                    alert(`Failed to save file: ${err.message}`);
+                    // Don't close diff on error so user can try again
+                    return;
+                }
+            }
         }
         closeDiffView();
         editorView.focus();
@@ -212,6 +229,7 @@ async function attachProjectViewListeners(projectData, container) {
                     editorPane.style.display = 'none';
                     diffContainer.style.display = 'flex';
                     const currentContent = editorView.state.doc.toString();
+                    currentDiffFilePath = targetPath; // Store the file path for saving
                     setupDiffEditor(diffEditorHost, currentContent, content, targetPath);
                 });
             } else {
@@ -220,49 +238,80 @@ async function attachProjectViewListeners(projectData, container) {
                 editorPane.style.display = 'none';
                 diffContainer.style.display = 'flex';
                 const currentContent = editorView.state.doc.toString();
+                currentDiffFilePath = activeFilePath; // Store the file path for saving
                 setupDiffEditor(diffEditorHost, currentContent, content, activeFilePath);
             }
         }
     };
 
     // --- AGENTIC TOOL LISTENERS ---
+
+    // Dedicated AI Terminal (hidden, for AI command execution only)
+    let aiTerminalId = null;
+
+    const ensureAITerminal = () => {
+        if (aiTerminalId && terminalCleanups[aiTerminalId]) {
+            return aiTerminalId; // Already exists
+        }
+
+        // Create a hidden AI terminal
+        const termId = 'ai-term-' + Date.now();
+        aiTerminalId = termId;
+
+        // Create DOM element (hidden but with dimensions)
+        const el = document.createElement('div');
+        el.id = `term-instance-${termId}`;
+        // Use off-screen positioning to ensure it has layout dimensions for xterm.js
+        el.style.cssText = "position:absolute; left:-9999px; top:0; width:800px; height:600px; visibility:hidden; z-index:-1;";
+        terminalContentArea.appendChild(el);
+
+        // Initialize terminal
+        const vTab = { id: termId, content: { type: 'terminal', data: { cwd: projectData.path, initialCommand: '' } } };
+        TerminalView.renderTerminalHTML(vTab, el);
+        const termObj = TerminalView.attachTerminalListeners(vTab, el);
+        terminalCleanups[termId] = termObj;
+
+        console.log('[AI Terminal] Created dedicated background terminal:', termId);
+        return termId;
+    };
+
     const onRunCommand = (e) => {
         const cmd = e.detail;
         if (!cmd) return;
 
-        // Find active terminal
-        const terminalState = window.projectTerminalsData[tabId];
-        if (terminalState && terminalState.activeIndex >= 0) {
-            const termId = terminalState.terminals[terminalState.activeIndex].id;
+        // Use dedicated AI terminal instead of user's active terminal
+        const termId = ensureAITerminal();
 
-            // Send command to Main Process PTY
-            window.ipcRenderer.send('terminal-write', termId, cmd + '\r');
-
-            // TERMINAL AGENCY: Capture output feedback
-            // Wait for command to likely finish or produce output (2 seconds for now)
-            setTimeout(() => {
-                const termInstance = window.terminalInstances ? window.terminalInstances[termId] : null;
-
-                if (termInstance && termInstance.buffer && termInstance.buffer.active) {
-                    const buffer = termInstance.buffer.active;
-                    const lines = [];
-                    // Capture last 20 lines
-                    const start = Math.max(0, buffer.baseY + buffer.cursorY - 20);
-                    const end = buffer.baseY + buffer.cursorY;
-                    for (let i = start; i <= end; i++) {
-                        const line = buffer.getLine(i);
-                        if (line) lines.push(line.translateToString(true));
-                    }
-                    const output = lines.join('\n');
-                    // Dispatch back to AI
-                    window.dispatchEvent(new CustomEvent('peak-terminal-response', { detail: { cmd, output } }));
-                }
-            }, 2000);
-        } else {
-            console.warn("No active terminal to run command:", cmd);
-            // Optional: Auto-create terminal if none exists?
-            // createTerm(); // We would need to access createTerm here or trigger it
+        // Force resize to ensure good width for output capture
+        const termInstance = window.terminalInstances ? window.terminalInstances[termId] : null;
+        if (termInstance) {
+            termInstance.resize(120, 40); // Ensure wide enough for most output
         }
+
+        // Send command to AI Terminal in Main Process PTY
+        window.ipcRenderer.send('terminal-write', termId, cmd + '\r');
+        console.log('[AI Terminal] Executing command:', cmd);
+
+        // TERMINAL AGENCY: Capture output feedback
+        // Wait for command to likely finish or produce output (optimized to 800ms for responsiveness)
+        setTimeout(() => {
+            const termInstance = window.terminalInstances ? window.terminalInstances[termId] : null;
+
+            if (termInstance && termInstance.buffer && termInstance.buffer.active) {
+                const buffer = termInstance.buffer.active;
+                const lines = [];
+                // Capture last 20 lines
+                const start = Math.max(0, buffer.baseY + buffer.cursorY - 20);
+                const end = buffer.baseY + buffer.cursorY;
+                for (let i = start; i <= end; i++) {
+                    const line = buffer.getLine(i);
+                    if (line) lines.push(line.translateToString(true));
+                }
+                const output = lines.join('\n');
+                // Dispatch back to AI
+                window.dispatchEvent(new CustomEvent('peak-terminal-response', { detail: { cmd, output } }));
+            }
+        }, 800); // Reduced from 2000ms for better responsiveness
     };
 
     const onCreateFile = async (e) => {
@@ -642,6 +691,11 @@ INSTRUCTIONS:
                     window.dispatchEvent(new CustomEvent('peak-project-file-selected', { detail: { filePath, content } }));
                 }
                 updateGlobalContext();
+
+                // SYNC SIDEBAR
+                if (fileTreeContainer) {
+                    setActiveFile(fileTreeContainer, filePath);
+                }
             } else {
                 editorPane.innerHTML = '<div class="error">Error reading file</div>';
             }

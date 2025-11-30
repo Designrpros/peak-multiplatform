@@ -35,6 +35,7 @@ const AvailableModels = [
     { id: "deepseek/deepseek-r1", name: "DeepSeek R1", isPremium: true, supportsReasoning: true },
     { id: "x-ai/grok-4-fast", name: "Grok 4 Fast", isPremium: true, supportsReasoning: true },
     { id: "openai/gpt-5", name: "GPT-5", isPremium: true, supportsReasoning: true },
+    { id: "google/gemini-2.5-flash-preview-09-2025", name: "Gemini 2.5 Flash", isPremium: true, supportsReasoning: true },
     { id: "google/gemini-2.5-pro", name: "Gemini 2.5 Pro", isPremium: true, supportsReasoning: true },
     { id: "google/gemini-3-pro-preview", name: "Gemini 3 Pro", isPremium: true, supportsReasoning: true },
     { id: "anthropic/claude-sonnet-4", name: "Claude Sonnet 4", isPremium: true, supportsReasoning: true },

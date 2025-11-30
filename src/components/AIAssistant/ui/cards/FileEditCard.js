@@ -11,6 +11,12 @@ function escapeHTML(str) {
 }
 
 function renderFileEditCard(path, content, type, titleOverride) {
+    // SAFEGUARD: Prevent undefined or null content from being encoded
+    if (content === undefined || content === null) {
+        console.warn('[FileEditCard] Received undefined/null content for path:', path);
+        content = '';  // Use empty string as fallback
+    }
+
     // Detect language from path extension
     const ext = path.split('.').pop().toLowerCase();
     const langMap = {
@@ -42,38 +48,44 @@ function renderFileEditCard(path, content, type, titleOverride) {
     }
 
     const lineCount = rawContent.split('\n').length;
-    const title = titleOverride || (type === 'create' ? `Create: ${path}` : `Update: ${path}`);
-    const icon = type === 'create' ? 'file-plus' : 'file-code';
-    const actionLabel = type === 'create' ? 'Create File' : 'Apply Edit';
+    const icon = type === 'create' ? 'file-plus' : 'pencil';
+    const actionLabel = type === 'create' ? 'Create' : 'Apply';
 
+    // Ultra-compact single-line design
     return `
-        <div class="file-edit-card">
-            <div class="file-edit-header">
-                <div style="display:flex; align-items:center; gap:8px;">
-                    <div class="icon-wrapper ${type}">
-                            <i data-lucide="${icon}" style="width:14px; height:14px;"></i>
-                    </div>
-                    <span class="file-title">${title}</span>
+        <div class="file-edit-card-compact">
+            <div class="file-edit-line">
+                <i data-lucide="${icon}" style="width:10px; height:10px; flex-shrink:0; color:var(--peak-secondary); opacity:0.6;"></i>
+                <span class="file-path-compact">${path}</span>
+                <span class="file-meta-compact">${lineCount}L</span>
+                <button class="toggle-code-btn-compact" title="Toggle Code">
+                    <i data-lucide="code" style="width:9px; height:9px;"></i>
+                </button>
+                <div style="display:flex; gap:4px; margin-left:auto;">
+                    <button class="file-action-btn-compact reject-btn" data-type="reject" data-path="${encodeURIComponent(path)}" style="background:rgba(220,38,38,0.1); color:#dc2626; border:1px solid rgba(220,38,38,0.2);">
+                        <i data-lucide="x" style="width:9px; height:9px;"></i>
+                        Reject
+                    </button>
+                    <button class="file-action-btn-compact" data-type="${type}" data-path="${encodeURIComponent(path)}" data-content="${encodeURIComponent(rawContent)}">
+                        <i data-lucide="check" style="width:9px; height:9px;"></i>
+                        ${actionLabel}
+                    </button>
                 </div>
-                <button class="icon-btn toggle-code-btn" title="Toggle Content" style="width:auto; padding:0 8px; gap:4px;">
-                    <span style="font-size:10px; font-weight:500;">Show Code</span>
-                    <i data-lucide="chevron-down" style="width:14px; height:14px;"></i>
-                </button>
             </div>
-            <div class="file-edit-content" style="display:none;">
+            <div class="file-code-collapsed" style="display:none;">
                 <pre><code class="hljs language-${lang}">${highlightedCode}</code></pre>
-            </div>
-            <div class="file-edit-footer">
-                <span class="meta-info">${lineCount} lines</span>
-                <button class="msg-action-btn tool-create-btn" data-type="${type}" data-path="${encodeURIComponent(path)}" data-content="${encodeURIComponent(rawContent)}">
-                    <i data-lucide="save" style="width:12px; height:12px;"></i> ${actionLabel}
-                </button>
             </div>
         </div>
     `;
 }
 
 function renderGeneratingFileCard(path, content) {
+    // SAFEGUARD: Handle undefined/null content gracefully
+    if (content === undefined || content === null) {
+        content = '';
+    }
+
+
     // Detect language
     const ext = path.split('.').pop().toLowerCase();
     const langMap = {
@@ -95,25 +107,21 @@ function renderGeneratingFileCard(path, content) {
         highlightedCode = escapeHTML(content);
     }
 
+
     return `
-        <div class="file-edit-card generating">
-            <div class="file-edit-header">
-                <div style="display:flex; align-items:center; gap:8px;">
-                    <i data-lucide="loader-2" class="spin" style="width:14px; height:14px; color:var(--peak-accent); animation: spin 1s linear infinite;"></i>
-                    <span class="file-title">Generating: ${path}</span>
-                </div>
-                <button class="icon-btn toggle-code-btn" title="Toggle Content" style="width:auto; padding:0 8px; gap:4px;">
-                    <span style="font-size:10px; font-weight:500;">Show Code</span>
-                    <i data-lucide="chevron-down" style="width:14px; height:14px;"></i>
+        <div class="file-edit-card-compact generating">
+            <div class="file-edit-line">
+                <i data-lucide="loader-2" class="spin" style="width:10px; height:10px; flex-shrink:0; color:var(--peak-accent); animation: spin 1s linear infinite;"></i>
+                <span class="file-path-compact">Generating: ${path}</span>
+                <span class="file-meta-compact" style="margin-left:auto;">
+                    <i data-lucide="loader" style="width:8px; height:8px; animation: spin 2s linear infinite;"></i>
+                </span>
+                <button class="toggle-code-btn-compact" title="Toggle Code" style="margin-left:8px;">
+                    <i data-lucide="code" style="width:9px; height:9px;"></i>
                 </button>
             </div>
             <div class="file-edit-content" style="display:none;">
                 <pre><code class="hljs language-${lang}">${highlightedCode}</code></pre>
-            </div>
-            <div class="file-edit-footer" style="justify-content: flex-start;">
-                <span class="meta-info" style="display:flex; align-items:center; gap:6px;">
-                    <i data-lucide="loader" style="width:10px; height:10px; animation: spin 2s linear infinite;"></i> Generating code...
-                </span>
             </div>
         </div>
     `;
