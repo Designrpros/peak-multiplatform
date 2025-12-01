@@ -7,7 +7,7 @@ function renderTerminalCard(cmd, output, success = true) {
     const cleanOutput = output ? output.trim() : 'No output';
 
     return `
-        <div class="tool-card-compact terminal-card" style="border-left:3px solid ${statusColor}; width:100%; box-sizing:border-box; background:#1e1e1e; margin-top:8px; margin-bottom:8px;">
+        <div class="tool-card-compact terminal-card" style="border-left:3px solid ${statusColor}; background:#1e1e1e;">
             <div class="tool-line" style="align-items:center; padding:8px; border-bottom:1px solid #333;">
                 <i data-lucide="terminal" style="width:12px; height:12px; flex-shrink:0; color:#a0a0a0;"></i>
                 <span style="font-size:11px; font-weight:600; color:#e0e0e0; margin-left:8px;">Terminal</span>

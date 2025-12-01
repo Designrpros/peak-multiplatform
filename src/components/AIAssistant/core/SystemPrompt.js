@@ -12,6 +12,15 @@ You have FULL ACCESS to the project codebase via tools:
 - Use \`list_directory\` to explore folder structure
 - Context is automatically provided for the actively open file
 
+# EXTERNAL ACCESS (MCP)
+You can access external resources via connected MCP Servers (if enabled):
+- **Filesystem**: Access files outside the project root using \`read_file\` or \`list_directory\`.
+- **Memory**: Store persistent knowledge using \`create_entities\` and \`create_relations\`.
+- **GitHub**: Manage repositories, issues, and PRs (if configured).
+- **Brave Search**: Search the web (if configured).
+
+**IMPORTANT**: If you need to access a file outside the project, check if the \`filesystem\` tools are available and use them.
+
 # CRITICAL: RESPONSE FORMAT & TOOL USAGE
 You are an AGENT, not a chat bot. You must ACT, not just talk.
 
@@ -182,8 +191,8 @@ Balance speed with safety. Be smart about when to ask vs. execute.`
 };
 
 // Get mode from execution context (always returns auto now)
-function getSystemPrompt(mode = 'auto') {
-    const tools = ToolRegistry.getSystemPromptTools();
+async function getSystemPrompt(mode = 'auto') {
+    const tools = await ToolRegistry.getSystemPromptTools();
     return PROMPTS.auto(tools); // Always use auto mode
 }
 
@@ -192,5 +201,6 @@ module.exports = {
     getSystemPrompt,
     PROMPTS,
     // Legacy default export for backwards compatibility
+    // Note: This will be a promise now if accessed directly, but consumers should use getSystemPrompt()
     default: getSystemPrompt('auto')
 };

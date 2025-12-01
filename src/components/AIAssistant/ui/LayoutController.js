@@ -26,7 +26,40 @@ class LayoutController {
         this.attachTabListeners();
         this.attachTaskListeners();
         this.attachLiveViewListeners();
-        this.attachLogListeners();
+        this.attachMCPListeners();
+
+        // Initial Connection
+        this.connectToMCPServers();
+
+        // Listen for config changes from Settings
+        window.addEventListener('peak-mcp-config-updated', () => {
+            console.log("[LayoutController] MCP Config updated, reconnecting...");
+            this.connectToMCPServers();
+        });
+    }
+
+    async connectToMCPServers() {
+        const config = JSON.parse(localStorage.getItem('peak-mcp-config') || '{}');
+
+        // Cleanup legacy git config
+        if (config.git) {
+            delete config.git;
+            localStorage.setItem('peak-mcp-config', JSON.stringify(config));
+        }
+
+        // Ensure filesystem is enabled by default if not present
+        if (!config.filesystem) {
+            config.filesystem = { enabled: true };
+            localStorage.setItem('peak-mcp-config', JSON.stringify(config));
+        }
+
+        try {
+            const result = await ipcRenderer.invoke('mcp:connect-dynamic', config);
+            console.log("MCP Dynamic Connect Result:", result);
+            this.renderMCPServers();
+        } catch (err) {
+            console.error("MCP Connect Failed:", err);
+        }
     }
 
     attachTabListeners() {
@@ -64,127 +97,57 @@ class LayoutController {
         }
     }
 
-    attachLogListeners() {
-        const logsStream = document.getElementById('logs-stream');
-        const btnClearLogs = document.getElementById('btn-clear-logs');
-        const filterBtns = document.querySelectorAll('.log-filter-btn');
-
-        let currentFilter = 'all';
-
-        // Filter buttons
-        filterBtns.forEach(btn => {
-            btn.addEventListener('click', () => {
-                currentFilter = btn.dataset.filter;
-                filterBtns.forEach(b => {
-                    b.classList.remove('active');
-                    b.style.background = 'var(--control-background-color)';
-                    b.style.color = 'var(--peak-secondary)';
-                });
-                btn.classList.add('active');
-                btn.style.background = 'var(--peak-accent)';
-                btn.style.color = 'white';
-                this.renderLogs(currentFilter);
-            });
-        });
-
-        // Clear logs
-        if (btnClearLogs) {
-            btnClearLogs.addEventListener('click', () => {
-                AgentLogger.clear();
-                this.renderLogs(currentFilter);
-            });
+    attachMCPListeners() {
+        const btnRefresh = document.getElementById('btn-refresh-mcp');
+        if (btnRefresh) {
+            btnRefresh.addEventListener('click', () => this.renderMCPServers());
         }
+        this.renderMCPServers();
+    }
 
-        // Listen for new logs
-        AgentLogger.on('log', (logEntry) => {
-            if (currentFilter === 'all' || currentFilter === logEntry.type) {
-                this.appendLog(logEntry);
+    async renderMCPServers() {
+        const listContainer = document.getElementById('mcp-server-list');
+        if (!listContainer) return;
+
+        try {
+            listContainer.innerHTML = '<div style="padding:20px; text-align:center; color:var(--peak-secondary);">Loading...</div>';
+            const servers = await ipcRenderer.invoke('mcp:get-server-status');
+
+            if (!servers || servers.length === 0) {
+                listContainer.innerHTML = '<div style="padding:20px; text-align:center; color:var(--peak-secondary);">No active MCP servers.</div>';
+                return;
             }
-        });
 
-        AgentLogger.on('clear', () => {
-            if (logsStream) {
-                logsStream.innerHTML = '<div style="color: var(--peak-secondary); text-align: center; padding: 20px;">No logs yet. Logs will appear here as the agent executes.</div>';
-            }
-        });
+            const descriptions = {
+                'filesystem': 'Access to local files',
+                'git': 'Git version control',
+                'memory': 'Persistent knowledge graph'
+            };
 
-        // Initial Render of Persisted Logs
-        this.renderLogs(currentFilter);
-    }
-
-    renderLogs(filter = 'all') {
-        const logsStream = document.getElementById('logs-stream');
-        if (!logsStream) return;
-
-        const logs = AgentLogger.getLogs(filter);
-
-        if (logs.length === 0) {
-            logsStream.innerHTML = '<div style="color: var(--peak-secondary); text-align: center; padding: 20px;">No logs for this filter.</div>';
-            return;
-        }
-
-        // Group logs by Agent/Context if possible, or just improve styling
-        // For now, let's keep it linear but with better visual separation for agents
-        logsStream.innerHTML = logs.map(log => this.formatLogEntry(log)).join('');
-        logsStream.scrollTop = logsStream.scrollHeight;
-    }
-
-    appendLog(logEntry) {
-        const logsStream = document.getElementById('logs-stream');
-        if (!logsStream) return;
-
-        // Remove empty state if exists
-        if (logsStream.querySelector('div[style*="text-align: center"]')) {
-            logsStream.innerHTML = '';
-        }
-
-        const logHTML = this.formatLogEntry(logEntry);
-        logsStream.insertAdjacentHTML('beforeend', logHTML);
-        logsStream.scrollTop = logsStream.scrollHeight;
-    }
-
-    formatLogEntry(log) {
-        const colors = {
-            agent: '#8b5cf6', // Purple for Agent
-            tool: '#10b981',  // Green for Tools
-            error: '#ef4444', // Red for Errors
-            system: '#64748b' // Slate for System
-        };
-
-        const color = colors[log.type] || '#666';
-
-        // Use specific icons for agents if available in data
-        let icon = 'circle';
-        if (log.type === 'agent') icon = 'bot';
-        else if (log.type === 'tool') icon = 'wrench';
-        else if (log.type === 'error') icon = 'alert-triangle';
-        else if (log.type === 'system') icon = 'info';
-
-        // Agent specific styling
-        const isAgent = log.type === 'agent';
-        const bgStyle = isAgent ? 'background: rgba(139, 92, 246, 0.05);' : '';
-        const borderStyle = isAgent ? 'border-left: 2px solid var(--peak-accent);' : 'border-left: 2px solid transparent;';
-
-        return `
-            <div style="padding: 6px 8px; border-bottom: 1px solid var(--border-color); display: flex; gap: 8px; align-items: flex-start; ${bgStyle} ${borderStyle}">
-                <span style="color: ${color}; flex-shrink: 0; margin-top: 2px;">
-                    <i data-lucide="${icon}" style="width: 12px; height: 12px;"></i>
-                </span>
-                <div style="flex: 1; min-width: 0;">
-                    <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 2px;">
-                        <span style="color: ${color}; font-weight: 600; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px;">${log.type}</span>
-                        <span style="color: var(--peak-secondary); font-size: 9px; font-family: monospace;">${log.time}</span>
+            listContainer.innerHTML = servers.map(server => {
+                const statusColor = server.status === 'connected' ? '#4caf50' : '#f44336';
+                return `
+                    <div style="padding: 12px; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <div style="font-size: 12px; font-weight: 600; color: var(--peak-primary); display: flex; align-items: center; gap: 6px;">
+                                ${server.id}
+                                <span style="width: 6px; height: 6px; border-radius: 50%; background-color: ${statusColor};"></span>
+                            </div>
+                            <div style="font-size: 11px; color: var(--peak-secondary); margin-top: 2px;">
+                                ${descriptions[server.id] || 'External Tool Provider'}
+                            </div>
+                        </div>
+                        <div style="font-size: 10px; color: var(--peak-secondary); opacity: 0.7; text-transform: uppercase;">
+                            ${server.status}
+                        </div>
                     </div>
-                    <div style="color: var(--peak-primary); font-size: 11px; line-height: 1.4;">${this.escapeHTML(log.message)}</div>
-                    ${log.data && Object.keys(log.data).length > 0 ? `
-                        <details style="margin-top: 4px;">
-                            <summary style="cursor: pointer; color: var(--peak-secondary); font-size: 9px; user-select: none;">Details</summary>
-                            <pre style="margin: 4px 0 0; font-size: 9px; color: var(--peak-secondary); background: var(--control-background-color); padding: 4px; border-radius: 4px; overflow-x: auto;">${this.escapeHTML(JSON.stringify(log.data, null, 2))}</pre>
-                        </details>
-                    ` : ''}
-                </div>
-            </div>
-        `;
+                `;
+            }).join('');
+
+        } catch (e) {
+            console.error("Failed to render MCP servers:", e);
+            listContainer.innerHTML = `<div style="padding:20px; text-align:center; color:var(--error-color);">Error: ${e.message}</div>`;
+        }
     }
 
     attachLiveViewListeners() {

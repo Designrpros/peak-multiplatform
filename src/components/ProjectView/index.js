@@ -446,6 +446,8 @@ INSTRUCTIONS:
             currentFileContentError: null,
             projectTitle: projectData.title || path.basename(projectData.path)
         });
+        // Notify other components (like ChatView) that project root is available
+        window.dispatchEvent(new CustomEvent('peak-project-root-updated', { detail: { root: window.currentProjectRoot } }));
     };
     const onProjectShown = (e) => {
         if (e.detail.id.toString() === tabId.toString()) {

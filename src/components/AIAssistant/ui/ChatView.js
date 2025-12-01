@@ -14,49 +14,126 @@ const { renderMessageCard } = require('./cards/MessageCard');
 const { renderCommandResultCard } = require('./cards/CommandResultCard');
 const { renderTerminalCard } = require('./cards/TerminalCard');
 const InputBar = require('./InputBar');
+const { renderMarkdown } = require('../../../utils/markdown');
+
+// Ensure window.markdown is available for MessageCard
+if (!window.markdown) {
+    window.markdown = { render: renderMarkdown };
+}
 
 class ChatView {
     constructor() {
-        const { ipcRenderer } = require('electron');
-        ipcRenderer.send('log', '[ChatView] Constructor called');
-        this.client = MCPClient.getInstance();
-        this.container = document.getElementById('ai-assist-content');
-        this.chatThread = document.getElementById('ai-assist-chat-thread');
-        this.chatThread = document.getElementById('ai-assist-chat-thread');
-        this.scroller = document.getElementById('ai-assist-scroller');
+        try {
+            const { ipcRenderer } = require('electron');
+            ipcRenderer.send('log', '[ChatView] Constructor called');
+            this.client = MCPClient.getInstance();
+            this.container = document.getElementById('ai-assist-content');
+            this.chatThread = document.getElementById('ai-assist-chat-thread');
+            this.scroller = document.getElementById('ai-assist-scroller');
 
-        // Instantiate InputBar
-        this.inputBar = new InputBar();
+            // Instantiate InputBar
+            this.inputBar = new InputBar();
 
-        ipcRenderer.send('log', '[ChatView] Elements found:', {
-            container: !!this.container,
-            chatThread: !!this.chatThread,
-            scroller: !!this.scroller
-        });
+            ipcRenderer.send('log', '[ChatView] Elements found:', {
+                container: !!this.container,
+                chatThread: !!this.chatThread,
+                scroller: !!this.scroller
+            });
 
-        this.streamingMessageDiv = null;
-        this.selectedFiles = new Set();
-        this.selectedDocs = new Set();
-        this.messageQueue = []; // Queue for messages sent while streaming
+            this.streamingMessageDiv = null;
+            this.selectedFiles = new Set();
+            this.selectedDocs = new Set();
+            this.messageQueue = []; // Queue for messages sent while streaming
 
-        // Load active docs from local storage or default to all
-        const savedDocs = localStorage.getItem('peak-active-docs');
-        this.activeDocs = savedDocs ? JSON.parse(savedDocs) : DocsRegistry.map(d => d.id);
+            // Load active docs from local storage or default to all
+            const savedDocs = localStorage.getItem('peak-active-docs');
+            ipcRenderer.send('log', '[ChatView] Saved docs:', savedDocs);
 
-        this.init();
+            ipcRenderer.send('log', '[ChatView] DocsRegistry type:', typeof DocsRegistry);
+            if (Array.isArray(DocsRegistry)) {
+                ipcRenderer.send('log', '[ChatView] DocsRegistry is array, length:', DocsRegistry.length);
+            } else {
+                ipcRenderer.send('log', '[ChatView] DocsRegistry is NOT array:', DocsRegistry);
+            }
+
+            this.activeDocs = savedDocs ? JSON.parse(savedDocs) : DocsRegistry.map(d => d.id);
+            ipcRenderer.send('log', '[ChatView] Active docs initialized');
+
+            this.isAgentMode = localStorage.getItem('peak-agent-mode') === 'true';
+            this.currentAgentId = null; // Track current agent to detect switches
+
+            console.log('[ChatView] Initialized with Debug Logging (Step 212)');
+            this.init();
+        } catch (e) {
+            console.error('[ChatView] Constructor Error:', e);
+            const { ipcRenderer } = require('electron');
+            ipcRenderer.send('log', '[ChatView] Constructor Error:', e.message);
+        }
     }
 
     init() {
-        this.attachListeners();
-        this.renderHistory();
-        this.renderDocsMenu();
+        try {
+            const { ipcRenderer } = require('electron');
+            ipcRenderer.send('log', '[ChatView] init() called');
+            console.log('[ChatView] Initializing...');
+
+            ipcRenderer.send('log', '[ChatView] calling attachListeners()...');
+            this.attachListeners();
+            ipcRenderer.send('log', '[ChatView] attachListeners() finished');
+
+            // Ensure we are in the correct project context
+            if (window.currentProjectRoot) {
+                ipcRenderer.send('log', '[ChatView] Switching to project root:', window.currentProjectRoot);
+                this.client.switchProject(window.currentProjectRoot);
+            } else {
+                ipcRenderer.send('log', '[ChatView] No currentProjectRoot found in window');
+            }
+
+            // Listen for project root updates (fixes race condition)
+            this.handleProjectRootUpdateBound = this.handleProjectRootUpdate.bind(this);
+            window.addEventListener('peak-project-root-updated', this.handleProjectRootUpdateBound);
+
+            // Listen for agent updates (e.g. reordering in settings)
+            window.addEventListener('peak-agents-updated', () => {
+                console.log('[ChatView] Agents updated, re-rendering input bar...');
+                this.renderInputBar();
+            });
+
+            // Trigger background fetch of remote tools
+            ToolRegistry.getTools().then(() => {
+                console.log('[ChatView] Remote tools fetched, re-rendering input bar...');
+                this.renderInputBar();
+            }).catch(e => console.error('[ChatView] Failed to fetch remote tools:', e));
+
+            this.renderHistory();
+            ipcRenderer.send('log', '[ChatView] renderHistory() finished');
+
+            this.renderDocsMenu();
+            ipcRenderer.send('log', '[ChatView] init() finished');
+        } catch (e) {
+            console.error('[ChatView] Init Error:', e);
+            const { ipcRenderer } = require('electron');
+            ipcRenderer.send('log', '[ChatView] Init Error:', e.message);
+            if (this.chatThread) {
+                this.chatThread.innerHTML = `<div style="color:red; padding:20px;">Error initializing ChatView: ${e.message}</div>`;
+            }
+        }
     }
 
     attachListeners() {
-        // Attach InputBar listeners
-        this.inputBar.attachListeners(this.container, {
+        const { ipcRenderer } = require('electron');
+        ipcRenderer.send('log', '[ChatView] attachListeners started');
+
+        // Define InputBar callbacks
+        this.inputBarCallbacks = {
             onSubmit: (value) => this.handleSubmit(value),
-            onStop: () => this.client.abort(),
+            onStop: () => {
+                this.client.abort();
+                if (this.isAgentMode) {
+                    const AgentOrchestrator = require('../core/AgentOrchestrator');
+                    AgentOrchestrator.stopLoop();
+                }
+            },
             onAgentChange: (agentId) => {
                 if (agentId === 'manage-agents') {
                     this.toggleSettings(true);
@@ -70,7 +147,11 @@ class ChatView {
             },
             onAddFile: () => this.handleAddFile(),
             onAddActiveFile: () => this.sendActiveFileToAI(),
-            onContinue: () => this.processUserMessage('continue'),
+            onAgentModeToggle: (enabled) => {
+                this.isAgentMode = enabled;
+                localStorage.setItem('peak-agent-mode', enabled);
+                console.log('[ChatView] Agent Mode toggled:', enabled);
+            },
             onDocsMenuToggle: (menu) => this.renderDocsMenu(menu),
             onDocsMenuClick: (e) => {
                 const item = e.target.closest('.menu-item');
@@ -78,14 +159,13 @@ class ChatView {
                 const action = item.dataset.action;
                 if (action === 'insert-doc') {
                     const docId = item.dataset.doc;
-                    // Logic to insert doc context (usually handled by client or just inserting text)
-                    // For now, let's just insert the doc ID or similar
-                    // Actually, ChatView usually handles this by adding to context
-                    // Let's check handleDocAction if it exists or implement it
                     this.handleDocAction(action, docId);
                 }
             }
-        });
+        };
+
+        // Attach InputBar listeners
+        this.inputBar.attachListeners(this.container, this.inputBarCallbacks);
 
         // Stream Events
         this.handleStreamUpdateBound = (e) => this.updateStreamingMessage(e.detail);
@@ -94,18 +174,118 @@ class ChatView {
         window.addEventListener('mcp:stream-update', this.handleStreamUpdateBound);
         window.addEventListener('mcp:stream-complete', this.handleStreamCompleteBound);
 
+        // Auto-Naming Trigger
+        window.addEventListener('mcp:stream-complete', () => {
+            if (this.client && this.client.history.length > 0 && this.client.history.length < 4) {
+                const sessions = this.client.getSessions();
+                // Filter out empty sessions AND the current session
+                const nonEmptySessions = sessions.filter(s => {
+                    // Exclude current session
+                    if (s.id === this.client.currentSessionId) return false;
+
+                    if (!s.history || s.history.length === 0) return false;
+
+                    // Filter out effectively empty sessions
+                    const hasVisibleContent = s.history.some(msg => {
+                        if (msg.role === 'system') return false;
+                        if (msg.content && msg.content.toLowerCase() === 'continue') return false;
+                        return true;
+                    });
+
+                    return hasVisibleContent;
+                });
+
+                if (nonEmptySessions.length > 0) {
+                    const current = sessions.find(s => s.id === this.client.currentSessionId);
+                    if (current && (current.title === 'New Chat' || current.title.startsWith('New Chat'))) {
+                        console.log('[ChatView] Triggering auto-naming...');
+                        this.client.generateSessionTitle();
+                    }
+                }
+            }
+        });
+
+        // Agent Active Change Event
+        window.addEventListener('agent:active-change', (e) => {
+            console.log('[ChatView] Active agent changed:', e.detail.agent.name);
+            this.activeStreamAgent = e.detail.agent;
+
+            // Collapse previous messages
+            const openDetails = this.chatThread.querySelectorAll('details.message-card-minimal[open]');
+            openDetails.forEach(details => {
+                // Don't close the one we are about to create (though it doesn't exist yet)
+                // Just close everything. The new one will be created with 'open'.
+                details.removeAttribute('open');
+            });
+
+            // Force creation of a new card for the new agent
+            // We set streamingMessageDiv to null to ensure createStreamingMessage makes a new one
+            this.streamingMessageDiv = null;
+            this.createStreamingMessage(e.detail.agent);
+        });
+
+        // Agent Waiting Review (Pause)
+        window.addEventListener('peak-agent-waiting-review', (e) => {
+            console.log('[ChatView] Agent waiting for review');
+            this.inputBar.updateStatus('ready', 'Waiting for review...');
+
+            // Show Continue Button in InputBar (reusing review controls or adding new one)
+            // We'll use a custom "Continue" button injection for now or reuse Accept All if appropriate
+            // Actually, let's just ensure the user knows they need to Accept/Reject and then Continue.
+
+            // We can inject a "Continue" button into the chat or input bar.
+            // Let's use the input bar's review controls but customize them.
+
+            this.inputBar.showReviewControls(0, () => {
+                // On "Continue" (mapped to Accept button visually)
+                const AgentOrchestrator = require('../core/AgentOrchestrator');
+                AgentOrchestrator.resumeLoop();
+                this.inputBar.hideReviewControls();
+                this.inputBar.updateStatus('thinking');
+            }, () => {
+                // On "Stop" (mapped to Reject button visually)
+                // Maybe stop the loop?
+                const AgentOrchestrator = require('../core/AgentOrchestrator');
+                AgentOrchestrator.finishLoop(); // We need to expose this or just set isLoopActive = false
+                this.inputBar.hideReviewControls();
+                this.inputBar.updateStatus('ready');
+            });
+
+            // Customize button text
+            const acceptBtn = document.getElementById('ai-review-accept-btn');
+            if (acceptBtn) {
+                acceptBtn.textContent = "Continue Chain";
+                acceptBtn.style.background = "var(--peak-accent)";
+            }
+            const rejectBtn = document.getElementById('ai-review-reject-btn');
+            if (rejectBtn) {
+                rejectBtn.textContent = "Stop Chain";
+            }
+        });
+
         // Terminal Response (Auto-Continue)
         this.handleTerminalResponseBound = (e) => this.handleTerminalResponse(e);
         window.addEventListener('peak-terminal-response', this.handleTerminalResponseBound);
 
         // Tool Actions (Delegation)
         if (this.chatThread) {
-            this.handleToolActionBound = (e) => this.handleToolAction(e);
+            this.handleToolActionBound = (e) => {
+                // Log execution attempt
+                const btn = e.target.closest('button');
+                if (btn && btn.dataset.action) {
+                    AgentLogger.tool(`Tool Action: ${btn.dataset.action}`, {
+                        action: btn.dataset.action,
+                        tool: btn.dataset.tool
+                    });
+                }
+                this.handleToolAction(e);
+            };
             this.chatThread.addEventListener('click', this.handleToolActionBound);
 
             // Listen for auto-run delegation
             this.chatThread.addEventListener('tool-auto-run', (e) => {
                 if (e.detail.tool === 'delegate_task') {
+                    AgentLogger.tool('Auto-Running Delegation', e.detail.args);
                     this.handleDelegation(e.detail.args);
                 }
             });
@@ -219,7 +399,7 @@ class ChatView {
         // Listen for Session Changes
         window.addEventListener('peak-session-changed', (e) => {
             console.log('[ChatView] Session changed:', e.detail.id);
-            this.renderHistory();
+            this.renderHistory(true); // Force clear for session switch
         });
 
         // Listen for Docs Settings Updates
@@ -231,30 +411,203 @@ class ChatView {
         });
 
         // Initial Render
-        // Initial Render
         this.renderHistory();
     }
 
-    renderHistory() {
+    renderHistory(forceClear = false) {
+        const { ipcRenderer } = require('electron');
+        ipcRenderer.send('log', '[ChatView] renderHistory called');
+
         if (!this.chatThread) return;
-        this.chatThread.innerHTML = '';
 
-        const MAX_INITIAL = 20;
-        const total = this.client.history.length;
-        const start = Math.max(0, total - MAX_INITIAL);
-        const messages = this.client.history.slice(start);
-
-        if (start > 0) {
-            this.renderLoadMoreButton(start);
+        // Safety check for history
+        if (!this.client || !this.client.history) {
+            ipcRenderer.send('log', '[ChatView] History is undefined/null');
+            this.chatThread.innerHTML = '';
+            this.chatThread.style.height = 'auto';
+            this.renderInitialView();
+            return;
         }
 
-        messages.forEach(msg => {
-            const el = this.createMessageElement(msg.role, msg.content, msg.commitHash);
-            this.chatThread.appendChild(el);
-        });
+        ipcRenderer.send('log', '[ChatView] History length:', this.client.history.length, 'Session ID:', this.client.currentSessionId);
+        console.log('[ChatView] renderHistory called. Length:', this.client.history.length, 'Session ID:', this.client.currentSessionId);
 
+        // Check if history is empty
+        if (this.client.history.length === 0) {
+            console.log('[ChatView] History is empty, rendering initial view');
+            this.chatThread.innerHTML = '';
+            this.chatThread.style.height = 'auto';
+            this.renderInitialView();
+            return;
+        }
+
+        // If forceClear is true (e.g., switching sessions), clear everything first
+        if (forceClear) {
+            console.log('[ChatView] Force clearing chat for session switch');
+            this.chatThread.innerHTML = '';
+            this.chatThread.style.height = 'auto';
+        }
+
+        // Don't clear existing messages - only append new ones
+        // Track how many messages are already rendered
+        const existingMessages = forceClear ? 0 : this.chatThread.querySelectorAll('.term-chat-msg, .term-chat-msg-user').length;
+
+        // Only render messages that aren't already in the DOM
+        const newMessages = this.client.history.slice(existingMessages);
+
+        if (newMessages.length > 0) {
+            newMessages.forEach(msg => {
+                // Filter out internal agent handoff messages
+                const isHandoffMessage = msg.role === 'user' &&
+                    msg.content &&
+                    msg.content.includes('Previous Agent Output:');
+
+                if (!isHandoffMessage) {
+                    const el = this.createMessageElement(msg.role, msg.content, msg.commitHash, false, msg.agent);
+                    if (el) {
+                        this.chatThread.appendChild(el);
+                    }
+                }
+            });
+
+            if (window.lucide) window.lucide.createIcons();
+            this.scrollToBottom();
+        }
+    }
+
+    renderInitialView() {
+        const { ipcRenderer } = require('electron');
+        ipcRenderer.send('log', '[ChatView] renderInitialView called');
+        this.chatThread.innerHTML = '';
+        // Force full height
+        this.chatThread.style.height = '100%';
+        this.chatThread.style.flex = '1';
+        this.chatThread.style.display = 'flex';
+        this.chatThread.style.flexDirection = 'column';
+
+        const container = document.createElement('div');
+        container.className = 'initial-view-container';
+        // Ensure it takes full height and is visible
+        container.style.cssText = 'padding: 0; height: 100%; min-height: 100%; display: flex; flex-direction: column; gap: 16px; overflow-y: auto; flex: 1;';
+
+        // --- HEADER & HOW IT WORKS ---
+        const introSection = document.createElement('div');
+        introSection.innerHTML = `
+            <div style="text-align: center; margin-bottom: 16px;">
+                <div style="width: 40px; height: 40px; background: var(--peak-accent); border-radius: 10px; margin: 0 auto 8px; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
+                    <i data-lucide="sparkles" style="width: 20px; height: 20px; color: white;"></i>
+                </div>
+                <h1 style="margin: 0; font-size: 16px; font-weight: 600; color: var(--peak-primary);">AI Assistant</h1>
+                <p style="margin: 4px 0 0; font-size: 12px; color: var(--peak-secondary);">Your intelligent coding partner.</p>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px;">
+                <div style="background: var(--control-background-color); padding: 10px; border-radius: 6px; text-align: center;">
+                    <i data-lucide="map" style="width: 16px; height: 16px; color: var(--peak-accent); margin-bottom: 6px;"></i>
+                    <div style="font-size: 11px; font-weight: 600; color: var(--peak-primary);">Plan</div>
+                    <div style="font-size: 9px; color: var(--peak-secondary); margin-top: 2px;">Breaks down tasks</div>
+                </div>
+                <div style="background: var(--control-background-color); padding: 10px; border-radius: 6px; text-align: center;">
+                    <i data-lucide="code-2" style="width: 16px; height: 16px; color: var(--peak-accent); margin-bottom: 6px;"></i>
+                    <div style="font-size: 11px; font-weight: 600; color: var(--peak-primary);">Execute</div>
+                    <div style="font-size: 9px; color: var(--peak-secondary); margin-top: 2px;">Writes code</div>
+                </div>
+                <div style="background: var(--control-background-color); padding: 10px; border-radius: 6px; text-align: center;">
+                    <i data-lucide="check-circle-2" style="width: 16px; height: 16px; color: var(--peak-accent); margin-bottom: 6px;"></i>
+                    <div style="font-size: 11px; font-weight: 600; color: var(--peak-primary);">Review</div>
+                    <div style="font-size: 9px; color: var(--peak-secondary); margin-top: 2px;">Validates changes</div>
+                </div>
+            </div>
+        `;
+        container.appendChild(introSection);
+
+        // --- PREVIOUS PROJECTS ---
+        const sessions = this.client.getSessions();
+        if (sessions.length > 0) {
+            const projectsSection = document.createElement('div');
+            projectsSection.innerHTML = `
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                    <h2 style="margin: 0; font-size: 13px; font-weight: 600; color: var(--peak-secondary); text-transform: uppercase;">Recent Conversations</h2>
+                    <button id="btn-flush-history" style="background: none; border: none; color: var(--peak-secondary); font-size: 11px; cursor: pointer; display: flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 4px; transition: background 0.1s;">
+                        <i data-lucide="trash-2" style="width: 12px; height: 12px;"></i> Clear All
+                    </button>
+                </div>
+                <div id="recent-sessions-list" style="display: flex; flex-direction: column; gap: 8px;">
+                    <!-- Sessions injected here -->
+                </div>
+            `;
+
+            const list = projectsSection.querySelector('#recent-sessions-list');
+            sessions.slice(0, 10).forEach(session => {
+                const item = document.createElement('div');
+                item.style.cssText = 'padding: 10px; background: var(--window-background-color); border: 1px solid var(--border-color); border-radius: 6px; cursor: pointer; transition: all 0.1s; display: flex; align-items: center; gap: 12px;';
+                item.onmouseover = () => {
+                    item.style.borderColor = 'var(--peak-accent)';
+                    item.style.transform = 'translateY(-1px)';
+                    item.style.boxShadow = '0 2px 8px rgba(0,0,0,0.05)';
+                };
+                item.onmouseout = () => {
+                    item.style.borderColor = 'var(--border-color)';
+                    item.style.transform = 'none';
+                    item.style.boxShadow = 'none';
+                };
+                item.onclick = () => {
+                    this.client.loadSession(session.id);
+                    // renderHistory will be called by the event listener in constructor
+                };
+
+                // Context Menu for Deletion
+                item.oncontextmenu = (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+
+                    // Create a simple custom context menu or use Electron's Menu
+                    // Using Electron's Menu via remote or IPC is better, but for simplicity let's use a browser confirm for now
+                    // or a custom overlay.
+                    // Let's use a simple confirm for MVP.
+
+                    if (confirm(`Delete conversation "${session.title || 'Untitled'}"?`)) {
+                        this.client.deleteSession(session.id);
+                        this.renderInitialView(); // Re-render list
+                    }
+                };
+
+                const date = new Date(session.lastModified).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+
+                item.innerHTML = `
+                    <div style="width: 32px; height: 32px; background: var(--control-background-color); border-radius: 6px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+                        <i data-lucide="message-square" style="width: 16px; height: 16px; color: var(--peak-secondary);"></i>
+                    </div>
+                    <div style="flex: 1; min-width: 0;">
+                        <div style="font-size: 13px; font-weight: 500; color: var(--peak-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${session.title || 'Untitled Conversation'}</div>
+                        <div style="font-size: 11px; color: var(--peak-secondary); margin-top: 2px;">${date}</div>
+                    </div>
+                    <i data-lucide="chevron-right" style="width: 14px; height: 14px; color: var(--peak-secondary); opacity: 0.5;"></i>
+                `;
+                list.appendChild(item);
+            });
+
+            // Flush Handler
+            const flushBtn = projectsSection.querySelector('#btn-flush-history');
+            if (flushBtn) {
+                flushBtn.onclick = (e) => {
+                    e.stopPropagation();
+                    if (confirm('Are you sure you want to delete all conversation history? This cannot be undone.')) {
+                        localStorage.removeItem('peak-chat-sessions');
+                        localStorage.removeItem('peak-last-session-id');
+                        this.client.startNewSession(); // This triggers renderHistory -> renderInitialView
+                    }
+                };
+                flushBtn.onmouseover = () => flushBtn.style.background = 'rgba(220, 38, 38, 0.1)';
+                flushBtn.onmouseout = () => flushBtn.style.background = 'transparent';
+                flushBtn.style.color = 'var(--error-color, #dc2626)';
+            }
+
+            container.appendChild(projectsSection);
+        }
+
+        this.chatThread.appendChild(container);
         if (window.lucide) window.lucide.createIcons();
-        this.scrollToBottom();
     }
 
     renderLoadMoreButton(remainingCount) {
@@ -293,9 +646,14 @@ class ChatView {
             fragment.appendChild(btn);
         }
 
-        messages.forEach(msg => {
-            const el = this.createMessageElement(msg.role, msg.content, msg.commitHash);
-            fragment.appendChild(el);
+        messages.forEach((msg, index) => {
+            if (index < 3) {
+                try { require('electron').ipcRenderer.send('log', `[ChatView] History msg[${index}] agent:`, msg.agent); } catch (e) { }
+            }
+            const el = this.createMessageElement(msg.role, msg.content, msg.commitHash, false, msg.agent);
+            if (el) { // Only append if element is valid
+                fragment.appendChild(el);
+            }
         });
 
         this.chatThread.prepend(fragment);
@@ -323,7 +681,139 @@ class ChatView {
 
         listContainer.innerHTML = '';
 
-        // Group by category
+        // --- GENERAL SETTINGS ---
+        const generalHeader = document.createElement('div');
+        generalHeader.className = 'settings-group-header';
+        generalHeader.textContent = 'General';
+        generalHeader.style.marginTop = '0';
+        listContainer.appendChild(generalHeader);
+
+        const generalSettings = [
+            { id: 'peak-auto-accept-list', label: 'Auto-accept List Directory', default: true },
+            { id: 'peak-auto-accept-read', label: 'Auto-accept Read File / URL', default: true },
+            { id: 'peak-auto-accept-create', label: 'Auto-accept Create File', default: false },
+            { id: 'peak-auto-accept-edit', label: 'Auto-accept Edit File', default: false },
+            { id: 'peak-auto-accept-run', label: 'Auto-accept Run Command', default: false },
+        ];
+
+        generalSettings.forEach(setting => {
+            const item = document.createElement('div');
+            item.className = 'settings-item';
+
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.id = setting.id;
+            checkbox.checked = localStorage.getItem(setting.id) === null ? setting.default : localStorage.getItem(setting.id) === 'true';
+
+            checkbox.addEventListener('change', (e) => {
+                localStorage.setItem(setting.id, e.target.checked);
+            });
+
+            const label = document.createElement('label');
+            label.htmlFor = setting.id;
+            label.style.cursor = 'pointer';
+            label.textContent = setting.label;
+
+            item.appendChild(checkbox);
+            item.appendChild(label);
+            listContainer.appendChild(item);
+        });
+
+        // --- AGENT SETTINGS ---
+        const agentHeader = document.createElement('div');
+        agentHeader.className = 'settings-group-header';
+        agentHeader.textContent = 'Agents';
+        listContainer.appendChild(agentHeader);
+
+        try {
+            this.renderAgentSettings(listContainer);
+        } catch (e) {
+            console.error('[ChatView] Error rendering agent settings:', e);
+            const errDiv = document.createElement('div');
+            errDiv.style.color = 'red';
+            errDiv.textContent = 'Error loading agent settings';
+            listContainer.appendChild(errDiv);
+        }
+
+        // --- PROJECT MEMORY SETTINGS ---
+        try {
+            console.log('[ChatView] Rendering Project Memory settings...');
+            const memoryHeader = document.createElement('div');
+            memoryHeader.className = 'settings-group-header';
+            memoryHeader.textContent = 'Project Memory (Global Context)';
+            listContainer.appendChild(memoryHeader);
+
+            const memoryContainer = document.createElement('div');
+            memoryContainer.className = 'settings-item';
+            memoryContainer.style.flexDirection = 'column';
+            memoryContainer.style.alignItems = 'flex-start';
+            memoryContainer.style.gap = '8px';
+
+            const memoryDesc = document.createElement('div');
+            memoryDesc.style.fontSize = '11px';
+            memoryDesc.style.color = 'var(--peak-secondary)';
+            memoryDesc.textContent = 'Persistent instructions or context for this project. The AI will see this in every message.';
+            memoryContainer.appendChild(memoryDesc);
+
+            const memoryTextarea = document.createElement('textarea');
+            memoryTextarea.style.width = '100%';
+            memoryTextarea.style.height = '100px';
+            memoryTextarea.style.background = 'var(--input-background-color)';
+            memoryTextarea.style.border = '1px solid var(--border-color)';
+            memoryTextarea.style.borderRadius = '4px';
+            memoryTextarea.style.color = 'var(--peak-primary)';
+            memoryTextarea.style.padding = '8px';
+            memoryTextarea.style.fontSize = '12px';
+            memoryTextarea.style.resize = 'vertical';
+
+            // Load current memory
+            const currentRoot = window.currentProjectRoot || (this.client && this.client.currentProjectRoot);
+            console.log('[ChatView] Current root for memory:', currentRoot);
+
+            if (currentRoot) {
+                if (this.client && typeof this.client.getProjectMemory === 'function') {
+                    memoryTextarea.value = this.client.getProjectMemory(currentRoot);
+                } else {
+                    console.error('[ChatView] client.getProjectMemory is not a function', this.client);
+                    memoryTextarea.value = 'Error: Client memory feature unavailable.';
+                }
+            } else {
+                memoryTextarea.placeholder = 'Open a project to set memory...';
+                memoryTextarea.disabled = true;
+            }
+
+            const saveBtn = document.createElement('button');
+            saveBtn.textContent = 'Save Memory';
+            saveBtn.style.padding = '4px 12px';
+            saveBtn.style.background = 'var(--peak-accent)';
+            saveBtn.style.color = 'white';
+            saveBtn.style.border = 'none';
+            saveBtn.style.borderRadius = '4px';
+            saveBtn.style.cursor = 'pointer';
+            saveBtn.style.fontSize = '11px';
+            saveBtn.style.alignSelf = 'flex-end';
+
+            saveBtn.onclick = () => {
+                if (currentRoot && this.client) {
+                    this.client.saveProjectMemory(currentRoot, memoryTextarea.value);
+                    const originalText = saveBtn.textContent;
+                    saveBtn.textContent = 'Saved!';
+                    setTimeout(() => saveBtn.textContent = originalText, 1500);
+                }
+            };
+
+            memoryContainer.appendChild(memoryTextarea);
+            memoryContainer.appendChild(saveBtn);
+            listContainer.appendChild(memoryContainer);
+        } catch (e) {
+            console.error('[ChatView] Error rendering project memory settings:', e);
+        }
+
+        // --- DOCS SETTINGS ---
+        const docsHeader = document.createElement('div');
+        docsHeader.className = 'settings-group-header';
+        docsHeader.textContent = 'Documentation';
+        listContainer.appendChild(docsHeader);
         const categories = {};
         DocsRegistry.forEach(doc => {
             if (!categories[doc.category]) categories[doc.category] = [];
@@ -369,6 +859,126 @@ class ChatView {
         });
 
         if (window.lucide) window.lucide.createIcons();
+    }
+
+    renderAgentSettings(container) {
+        const agents = AgentRegistry.getAgents();
+        // Load chain config
+        let chainConfig = [];
+        try {
+            chainConfig = JSON.parse(localStorage.getItem('peak-agent-chain-config') || '["planner", "code-expert", "code-reviewer"]');
+        } catch (e) {
+            chainConfig = ['planner', 'code-expert', 'code-reviewer'];
+        }
+
+        agents.forEach(agent => {
+            const item = document.createElement('div');
+            item.className = 'settings-item';
+            item.style.display = 'flex';
+            item.style.justifyContent = 'space-between';
+            item.style.alignItems = 'center';
+            item.style.padding = '8px 0';
+            item.style.borderBottom = '1px solid var(--border-color)';
+
+            // Left: Color + Name
+            const leftDiv = document.createElement('div');
+            leftDiv.style.display = 'flex';
+            leftDiv.style.alignItems = 'center';
+            leftDiv.style.gap = '10px';
+
+            // Color Picker
+            const colorInput = document.createElement('input');
+            colorInput.type = 'color';
+            colorInput.value = agent.color || '#666666';
+            colorInput.style.width = '24px';
+            colorInput.style.height = '24px';
+            colorInput.style.border = 'none';
+            colorInput.style.padding = '0';
+            colorInput.style.background = 'none';
+            colorInput.style.cursor = 'pointer';
+            colorInput.title = 'Change Agent Color';
+
+            colorInput.onchange = (e) => {
+                agent.color = e.target.value;
+                AgentRegistry.saveAgent(agent);
+                // Update UI if needed (re-render not strictly necessary for color but good)
+            };
+
+            const nameSpan = document.createElement('span');
+            nameSpan.textContent = agent.name;
+            nameSpan.style.fontWeight = '500';
+            nameSpan.style.fontSize = '13px';
+
+            leftDiv.appendChild(colorInput);
+            leftDiv.appendChild(nameSpan);
+
+            // Right: Chain Toggle + Delete
+            const rightDiv = document.createElement('div');
+            rightDiv.style.display = 'flex';
+            rightDiv.style.alignItems = 'center';
+            rightDiv.style.gap = '10px';
+
+            // Chain Toggle
+            const chainLabel = document.createElement('label');
+            chainLabel.style.display = 'flex';
+            chainLabel.style.alignItems = 'center';
+            chainLabel.style.gap = '4px';
+            chainLabel.style.fontSize = '11px';
+            chainLabel.style.color = 'var(--peak-secondary)';
+            chainLabel.style.cursor = 'pointer';
+            chainLabel.title = 'Include in Multi-Agent Chain';
+
+            const chainCheckbox = document.createElement('input');
+            chainCheckbox.type = 'checkbox';
+            chainCheckbox.checked = chainConfig.includes(agent.id);
+            chainCheckbox.onchange = (e) => {
+                if (e.target.checked) {
+                    if (!chainConfig.includes(agent.id)) chainConfig.push(agent.id);
+                } else {
+                    chainConfig = chainConfig.filter(id => id !== agent.id);
+                }
+                localStorage.setItem('peak-agent-chain-config', JSON.stringify(chainConfig));
+            };
+
+            chainLabel.appendChild(chainCheckbox);
+            chainLabel.appendChild(document.createTextNode('Chain'));
+            rightDiv.appendChild(chainLabel);
+
+            if (!agent.isSystem) {
+                const deleteBtn = document.createElement('button');
+                deleteBtn.innerHTML = '<i data-lucide="trash-2" style="width:14px; height:14px;"></i>';
+                deleteBtn.style.background = 'none';
+                deleteBtn.style.border = 'none';
+                deleteBtn.style.color = 'var(--peak-error-text, #dc2626)';
+                deleteBtn.style.cursor = 'pointer';
+                deleteBtn.style.opacity = '0.7';
+                deleteBtn.title = 'Delete Agent';
+                deleteBtn.onmouseover = () => deleteBtn.style.opacity = '1';
+                deleteBtn.onmouseout = () => deleteBtn.style.opacity = '0.7';
+
+                deleteBtn.onclick = () => {
+                    if (confirm(`Are you sure you want to delete agent "${agent.name}"?`)) {
+                        AgentRegistry.deleteAgent(agent.id);
+                        this.renderSettings(); // Re-render list
+                    }
+                };
+                rightDiv.appendChild(deleteBtn);
+            } else {
+                // Lock icon for system agents
+                const lockIcon = document.createElement('i');
+                lockIcon.dataset.lucide = 'lock';
+                lockIcon.style.width = '12px';
+                lockIcon.style.height = '12px';
+                lockIcon.style.color = 'var(--peak-secondary)';
+                lockIcon.style.opacity = '0.5';
+                lockIcon.title = 'System Agent (Cannot be deleted)';
+                rightDiv.appendChild(lockIcon);
+            }
+
+            item.appendChild(leftDiv);
+            item.appendChild(rightDiv);
+            container.appendChild(item);
+        });
     }
 
     saveActiveDocs() {
@@ -474,7 +1084,12 @@ class ChatView {
         if (window.lucide) window.lucide.createIcons();
     }
     async handleSubmit(valueOverride = null) {
+        const { ipcRenderer } = require('electron');
+        ipcRenderer.send('log', '[ChatView] handleSubmit called. valueOverride:', valueOverride);
+
         const prompt = valueOverride || this.inputBar.inputArea.value.trim();
+        ipcRenderer.send('log', '[ChatView] handleSubmit prompt:', prompt);
+
         if (!prompt) return;
         this.processUserMessage(prompt);
     }
@@ -483,8 +1098,7 @@ class ChatView {
         const { cmd, output } = e.detail;
 
         // Determine success (heuristic: exit code usually not available here, so assume success if output doesn't start with "Error:" or similar)
-        // For now, we'll just mark it as success unless we detect obvious failure patterns if needed.
-        // Actually, let's just show it.
+        // For now, we'll just show it.
 
         const blockHtml = renderTerminalCard(cmd, output, true);
 
@@ -517,72 +1131,88 @@ class ChatView {
         if (window.lucide) window.lucide.createIcons();
         this.scrollToBottom();
 
-        // Add Continue Button (Manual Confirmation)
-        const actionDiv = document.createElement('div');
-        actionDiv.style.marginTop = '8px';
-        actionDiv.style.display = 'flex';
-        actionDiv.style.justifyContent = 'flex-end';
+        // FIX: Add terminal output to chat history so AI can see the command results
+        // This matches the behavior of the tool-run-btn handler (lines 2014-2018)
+        const outputContent = `Command: ${cmd}\n\n[OUTPUT]\n\`\`\`\n${output}\n\`\`\``;
 
-        const continueBtn = document.createElement('button');
-        continueBtn.className = 'msg-action-btn';
-        continueBtn.style.cssText = 'background:var(--peak-accent); color:white; border:none; padding:6px 12px; border-radius:4px; cursor:pointer; display:flex; align-items:center; gap:6px; font-size:11px; font-weight:500; transition: opacity 0.2s;';
-        continueBtn.innerHTML = `<i data-lucide="arrow-right" style="width:12px; height:12px;"></i> Continue`;
+        this.client.history.push({
+            role: 'system',
+            content: `Command Execution Result:\n${outputContent}`
+        });
+        this.client.saveHistory();
 
-        continueBtn.onclick = async () => {
-            // Disable button
-            continueBtn.disabled = true;
-            continueBtn.style.opacity = '0.7';
-            continueBtn.innerHTML = `<i data-lucide="loader-2" style="width:12px; height:12px; animation:spin 1s linear infinite;"></i> Sending...`;
+        // Auto-continue: Send to AI automatically
+        this.processUserMessage('continue', true);
 
-            // Send to AI
-            const message = `Command executed: \`${cmd}\`\nOutput:\n\`\`\`\n${output}\n\`\`\`\n\n`;
+        // (Optional) Add Continue Button for manual override if auto-continue is disabled  
+        // const actionDiv = document.createElement('div');
+        // actionDiv.style.marginTop = '8px';
+        // actionDiv.style.display = 'flex';
+        // actionDiv.style.justifyContent = 'flex-end';
 
-            this.inputBar.setLoading(true);
-            this.createStreamingMessage();
+        // const continueBtn = document.createElement('button');
+        // continueBtn.className = 'msg-action-btn';
+        // continueBtn.style.cssText = 'background:var(--peak-accent); color:white; border:none; padding:6px 12px; border-radius:4px; cursor:pointer; display:flex; align-items:center; gap:6px; font-size:11px; font-weight:500; transition: opacity 0.2s;';
+        // continueBtn.innerHTML = `<i data-lucide="arrow-right" style="width:12px; height:12px;"></i> Continue`;
 
-            const agentSelect = document.getElementById('ai-assist-agent-select');
-            const agentId = agentSelect ? agentSelect.value : null;
+        // continueBtn.onclick = async () => {
+        //     // Disable button
+        //     continueBtn.disabled = true;
+        //     continueBtn.style.opacity = '0.7';
+        //     continueBtn.innerHTML = `<i data-lucide="loader-2" style="width:12px; height:12px; animation:spin 1s linear infinite;"></i> Sending...`;
 
-            const context = await this.getProjectContext([]);
-            const agent = AgentRegistry.getAgent(agentId);
-            const modelId = agent ? agent.modelId : null;
+        //     // Send to AI
+        //     const message = `Command executed: \`${cmd}\`\nOutput:\n\`\`\`\n${output}\n\`\`\`\n\n`;
 
-            try {
-                await this.client.sendMessage(message, context, modelId);
-                // Remove button after successful send to keep chat clean
-                actionDiv.remove();
-            } catch (err) {
-                console.error("Failed to send command output:", err);
-                continueBtn.disabled = false;
-                continueBtn.style.opacity = '1';
-                continueBtn.innerHTML = `<i data-lucide="alert-circle" style="width:12px; height:12px;"></i> Retry`;
-                this.appendMessage('system', `Error sending output: ${err.message}`);
-                this.inputBar.setLoading(false);
-            }
-        };
+        //     this.inputBar.setLoading(true);
+        //     this.createStreamingMessage();
 
-        actionDiv.appendChild(continueBtn);
-        msgDiv.appendChild(actionDiv);
+        //     const agentSelect = document.getElementById('ai-assist-agent-select');
+        //     const agentId = agentSelect ? agentSelect.value : null;
 
-        if (window.lucide) window.lucide.createIcons();
-        this.scrollToBottom();
+        //     const context = await this.getProjectContext([]);
+        //     const agent = AgentRegistry.getAgent(agentId);
+        //     const modelId = agent ? agent.modelId : null;
+
+        //     try {
+        //         await this.client.sendMessage(message, context, modelId);
+        //         // Remove button after successful send to keep chat clean
+        //         actionDiv.remove();
+        //     } catch (err) {
+        //         console.error("Failed to send command output:", err);
+        //         continueBtn.disabled = false;
+        //         continueBtn.style.opacity = '1';
+        //         continueBtn.innerHTML = `<i data-lucide="alert-circle" style="width:12px; height:12px;"></i> Retry`;
+        //         this.appendMessage('system', `Error sending output: ${err.message}`);
+        //         this.inputBar.setLoading(false);
+        //     }
+        // };
+
+        // actionDiv.appendChild(continueBtn);
+        // msgDiv.appendChild(actionDiv);
+
+        // if (window.lucide) window.lucide.createIcons();
+        // this.scrollToBottom();
     }
 
     async processUserMessage(prompt, isAuto = false) {
+        const { ipcRenderer } = require('electron');
+        ipcRenderer.send('log', '[ChatView] processUserMessage called. Prompt:', prompt);
+
         // Queueing Logic
         if (this.client.isStreaming) {
             console.log('[ChatView] Client is streaming, queueing message:', prompt);
             this.messageQueue.push({ prompt, isAuto });
-            // Update UI to show queued state?
-            // For now, just clear input and maybe show a small indicator or just let the user know it's queued implicitly
-            // The input bar clears in handleSubmit, so that's fine.
             return;
         }
 
+        // Get selected agent and mode from InputBar
+        const agentId = this.inputBar.agentSelect ? this.inputBar.agentSelect.value : 'planner';
+        const mode = this.inputBar.modeSelect ? this.inputBar.modeSelect.value : 'auto';
+
+        ipcRenderer.send('log', '[ChatView] processUserMessage - agentId:', agentId, 'mode:', mode);
+
         // Get selected agent (mode is now always 'auto')
-        const agentSelect = document.getElementById('ai-assist-agent-select');
-        const agentId = agentSelect ? agentSelect.value : null;
-        const mode = 'auto'; // Always use auto mode
         const agent = AgentRegistry.getAgent(agentId);
 
         // Ensure modelId is never null - fallback to openrouter/auto
@@ -596,7 +1226,7 @@ class ChatView {
 
         let systemPrompt = agent && agent.systemPrompt
             ? agent.systemPrompt
-            : getSystemPrompt(mode);
+            : await getSystemPrompt(mode);
 
         console.log('[ChatView] System prompt loaded. Length:', systemPrompt ? systemPrompt.length : 'NULL');
 
@@ -607,14 +1237,14 @@ class ChatView {
             // SAFETY NET: Ensure tool definitions are present
             if (!systemPrompt.includes('<tool_definition>') && !systemPrompt.includes('TOOLS AVAILABLE')) {
                 console.warn('[ChatView] System prompt missing tools. Injecting defaults.');
-                const tools = ToolRegistry.getSystemPromptTools();
+                const tools = await ToolRegistry.getSystemPromptTools();
                 systemPrompt += `\n\n# TOOLS AVAILABLE\n${tools}\n\n# MANDATORY RULES\n1. Use tools for all file operations.\n2. Do not output code blocks for files.`;
             }
 
             console.log('[ChatView] Project root injected:', projectRoot);
         } else {
             console.error('[ChatView] Invalid system prompt:', systemPrompt);
-            systemPrompt = getSystemPrompt('hybrid'); // Fallback to hybrid mode
+            systemPrompt = await getSystemPrompt('hybrid'); // Fallback to hybrid mode
             if (systemPrompt) {
                 systemPrompt = systemPrompt.replace(/\{\{PROJECT_ROOT\}\}/g, projectRoot);
             }
@@ -661,22 +1291,87 @@ class ChatView {
         // Log to agent logger
         AgentLogger.agent('User message sent', { prompt: prompt.substring(0, 100), mode, agentId });
 
-        // Create AI Placeholder
+        // Create AI Placeholder (only if not already streaming/continuing)
         this.inputBar.updateStatus('thinking', 'Processing request...');
-        this.createStreamingMessage();
+
+        // Check if agent switched - if so, always create new card
+        const agentSwitched = this.currentAgentId !== null && this.currentAgentId !== agentId;
+
+        // ALWAYS create a new card for each AI response to preserve history
+        // This ensures users can see the full conversation thread
+        if (agentSwitched) {
+            console.log(`[ChatView] Agent switched from ${this.currentAgentId} to ${agentId}, creating new card`);
+        }
+        // Create new streaming message for every turn
+        console.log('[ChatView] Creating new streaming message');
+        this.createStreamingMessage(agent);
+        this.currentAgentId = agentId; // Update tracked agent
 
         // Get Context
         const context = await this.getProjectContext(filesToSend, docsToSend);
 
         // Send to Client
-        await this.client.sendMessage(prompt, context, modelId, commitHash, systemPrompt); // Pass hash and system prompt
+        if (this.isAgentMode && !isAuto) {
+            // Trigger Multi-Agent Loop
+            const AgentOrchestrator = require('../core/AgentOrchestrator');
+
+            // Load chain config from Registry (respecting order and enabled state)
+            const agents = AgentRegistry.getAgents();
+
+            // For Hierarchical Mode, we start with ROOT agents that are enabled for chaining
+            // A "Root" agent is one with no parent (or invalid parent)
+            let rootAgents = agents.filter(a => a.isChainEnabled && (!a.parentId || !agents.find(p => p.id === a.parentId))).map(a => a.id);
+
+            // Ensure at least one agent (fallback to default if empty)
+            if (rootAgents.length === 0) {
+                // Fallback: If no chain-enabled agents, maybe just run the selected agent?
+                // Or fallback to default planner if nothing selected.
+                rootAgents = ['planner'];
+            }
+
+            await AgentOrchestrator.startLoop(prompt, context, rootAgents);
+        } else {
+            // Single Agent Mode
+            await this.client.sendMessage(prompt, context, modelId, commitHash, systemPrompt, agent);
+        }
     }
 
-    createMessageElement(role, content, commitHash = null, isAuto = false) {
-        const html = renderMessageCard(role, content, commitHash, true, isAuto);
+    createMessageElement(role, content, commitHash = null, isAuto = false, agent = null) {
+        // Resolve agent if it's a string (ID)
+        if (typeof agent === 'string') {
+            const resolved = AgentRegistry.getAgent(agent);
+            try { require('electron').ipcRenderer.send('log', '[ChatView] Resolved agent from string:', agent, '->', resolved ? resolved.name : 'null'); } catch (e) { }
+            agent = resolved;
+        }
+
+        console.log(`[ChatView] createMessageElement called. Role: ${role}, Content Length: ${content ? content.length : 0}`);
+
+        let displayContent = content;
+        let isHtml = false;
+
+        // If assistant message, parse it with StreamParser to restore tool cards
+        // We only do this for history rendering (where this method is used)
+        if (role === 'assistant' && this.client.parser) {
+            displayContent = this.client.parser.parse(content);
+            isHtml = true;
+        }
+
+        const html = renderMessageCard(role, displayContent, commitHash, true, isAuto, agent, isHtml);
+
+        // Handle hidden messages (e.g. "continue")
+        if (!html) {
+            console.log('[ChatView] renderMessageCard returned null (hidden message)');
+            return null;
+        }
+
         const temp = document.createElement('div');
         temp.innerHTML = html;
         const messageElement = temp.firstElementChild;
+
+        if (!messageElement) {
+            console.error('[ChatView] Failed to create message element from HTML');
+            return null;
+        }
 
         // Direct Listener for Revert Button (Backup for Delegation)
         const revertBtn = messageElement.querySelector('.revert-btn');
@@ -691,9 +1386,21 @@ class ChatView {
         return messageElement;
     }
 
-    appendMessage(role, content, commitHash = null, isAuto = false) {
-        const messageElement = this.createMessageElement(role, content, commitHash, isAuto);
-        this.chatThread.appendChild(messageElement);
+    appendMessage(role, content, commitHash = null, isAuto = false, agent = null) {
+        console.log(`[ChatView] appendMessage called. Role: ${role}, Content length: ${content ? content.length : 0}`);
+        // Clear Initial View if present
+        if (this.chatThread.querySelector('.initial-view-container')) {
+            this.chatThread.innerHTML = '';
+            this.chatThread.style.height = 'auto'; // Reset height
+        }
+
+        const messageElement = this.createMessageElement(role, content, commitHash, isAuto, agent);
+        if (messageElement) {
+            console.log('[ChatView] Appending message element to thread');
+            this.chatThread.appendChild(messageElement);
+        } else {
+            console.warn('[ChatView] createMessageElement returned null');
+        }
         if (window.lucide) window.lucide.createIcons();
         this.scrollToBottom();
     }
@@ -756,24 +1463,41 @@ class ChatView {
             }
         }
 
-        // Read Selected Docs
-        if (selectedDocs && selectedDocs.length > 0) {
+        // Merge explicitly selected docs with globally active docs
+        const allDocs = new Set([...(selectedDocs || []), ...this.activeDocs]);
+
+        if (allDocs.size > 0) {
             const fs = require('fs');
             const path = require('path');
             const docsDir = path.join(__dirname, '..', 'docs');
+            context.documentation = []; // New field for docs
 
-            for (const docName of selectedDocs) {
-                try {
-                    const docPath = path.join(docsDir, docName);
-                    if (fs.existsSync(docPath)) {
-                        const content = fs.readFileSync(docPath, 'utf8');
-                        context.selectedFiles.push({
-                            path: `docs/${docName}`,
-                            content: content
+            for (const docIdOrName of allDocs) {
+                // Resolve doc from Registry
+                const docDef = DocsRegistry.find(d => d.id === docIdOrName || d.filename === docIdOrName);
+
+                if (docDef) {
+                    if (docDef.type === 'local') {
+                        try {
+                            const docPath = path.join(docsDir, docDef.filename);
+                            if (fs.existsSync(docPath)) {
+                                const content = fs.readFileSync(docPath, 'utf8');
+                                context.documentation.push({
+                                    name: docDef.name,
+                                    type: 'content',
+                                    content: content
+                                });
+                            }
+                        } catch (e) {
+                            console.error("Failed to read doc:", docDef.name, e);
+                        }
+                    } else if (docDef.type === 'external') {
+                        context.documentation.push({
+                            name: docDef.name,
+                            type: 'url',
+                            url: docDef.url
                         });
                     }
-                } catch (e) {
-                    console.error("Failed to read doc:", docName, e);
                 }
             }
         }
@@ -815,29 +1539,93 @@ class ChatView {
 
 
 
-    createStreamingMessage() {
+    createStreamingMessage(agent = null) {
+        // Resolve agent if it's a string (ID)
+        if (typeof agent === 'string') {
+            agent = AgentRegistry.getAgent(agent);
+        }
+        this.streamingAgent = agent;
+        const html = renderMessageCard('assistant', '', null, false, false, agent);
+
         this.streamingMessageDiv = document.createElement('div');
-        this.streamingMessageDiv.className = 'term-chat-msg ai markdown-content';
+        // We don't need extra classes here because renderMessageCard returns the full wrapper
+        // But renderMessageCard returns a string.
+        // Wait, renderMessageCard returns the OUTER div with class "term-chat-msg".
+        // So we should just set innerHTML of a container, or create a temp div and get first child.
+
+        const temp = document.createElement('div');
+        temp.innerHTML = html;
+        this.streamingMessageDiv = temp.firstElementChild;
+
         this.chatThread.appendChild(this.streamingMessageDiv);
+
+        // Cache the content div for updates
+        this.streamingContentDiv = this.streamingMessageDiv.querySelector('.markdown-content');
+
         this.scrollToBottom();
     }
 
     updateStreamingMessage({ html }) {
-        if (this.streamingMessageDiv) {
+        // CRITICAL FIX: StreamParser returns BOTH markdown content AND tool cards (command cards, etc.)
+        // We need to insert into .message-content-minimal (the parent wrapper), not just .markdown-content
+        // Otherwise tool cards won't be visible!
+
+        console.log('[ChatView] updateStreamingMessage called. HTML length:', html?.length);
+        console.log('[ChatView] HTML preview:', html?.substring(0, 200));
+
+        const messageContentWrapper = this.streamingMessageDiv?.querySelector('.message-content-minimal');
+        console.log('[ChatView] messageContentWrapper found:', !!messageContentWrapper);
+
+        if (messageContentWrapper) {
+            // Insert all content (markdown + tool cards) into the wrapper
+            // Preserve the divider at the start
+            const divider = messageContentWrapper.querySelector('.message-divider');
+            messageContentWrapper.innerHTML = '';
+            if (divider) messageContentWrapper.appendChild(divider);
+
+            // Insert the parsed HTML content
+            messageContentWrapper.insertAdjacentHTML('beforeend', html);
+
+            if (window.lucide) window.lucide.createIcons();
+            this.scrollToBottom();
+        } else if (this.streamingContentDiv) {
+            console.log('[ChatView] Fallback to streamingContentDiv');
+            // Fallback to old behavior if new structure not found
+            this.streamingContentDiv.innerHTML = html;
+            if (window.lucide) window.lucide.createIcons();
+            this.scrollToBottom();
+        } else if (this.streamingMessageDiv) {
+            console.log('[ChatView] Fallback to streamingMessageDiv');
+            // Last resort fallback
             this.streamingMessageDiv.innerHTML = html;
             if (window.lucide) window.lucide.createIcons();
-
-            // Add Accept All button early (during streaming) - REMOVED
-            // this.addAcceptAllButton(this.streamingMessageDiv);
-
             this.scrollToBottom();
+        } else {
+            console.error('[ChatView] No target div found for streaming update');
         }
     }
 
     finalizeStreamingMessage({ html, error }) {
         console.log('[ChatView] finalizeStreamingMessage called', { hasDiv: !!this.streamingMessageDiv, error });
+        console.log('[ChatView] Final HTML length:', html?.length);
+        console.log('[ChatView] Final HTML preview:', html?.substring(0, 300));
+
         if (this.streamingMessageDiv) {
-            this.streamingMessageDiv.innerHTML = html;
+            // Re-render as complete message (collapsible)
+            // CRITICAL FIX: Pass isHtml=true (7th arg) because 'html' is already parsed HTML from StreamParser.
+            const finalHtml = renderMessageCard('assistant', html, null, true, false, this.activeStreamAgent || this.streamingAgent || this.currentAgent, true);
+
+            // Replace the streaming div with the final one
+            const temp = document.createElement('div');
+            temp.innerHTML = finalHtml;
+            const finalDiv = temp.firstElementChild;
+
+            this.streamingMessageDiv.replaceWith(finalDiv);
+            this.streamingMessageDiv = finalDiv; // Update reference for button logic below
+
+            // We don't need to set innerHTML again because renderMessageCard included the content
+            // But wait, the button logic below expects to find buttons in this.streamingMessageDiv
+            // which is now the finalDiv. That works.
 
             // NEW: Trigger Review Mode instead of Auto-Execute
             const buttons = this.streamingMessageDiv.querySelectorAll('.tool-create-btn, .tool-run-btn, .tool-view-btn, .tool-search-btn, .tool-delete-btn, .tool-delegate-btn, .file-action-btn-compact, .tool-action-btn-compact');
@@ -851,6 +1639,52 @@ class ChatView {
             console.log('[ChatView] Pending buttons (actionable):', pendingButtons.length);
 
             if (pendingButtons.length > 0) {
+                // --- AUTO-ACCEPT LOGIC ---
+                const settings = {
+                    list: localStorage.getItem('peak-auto-accept-list') !== 'false', // Default true
+                    read: localStorage.getItem('peak-auto-accept-read') !== 'false', // Default true
+                    create: localStorage.getItem('peak-auto-accept-create') === 'true', // Default false
+                    edit: localStorage.getItem('peak-auto-accept-edit') === 'true', // Default false
+                    run: localStorage.getItem('peak-auto-accept-run') === 'true' // Default false
+                };
+
+                const allAutoAccept = pendingButtons.every(btn => {
+                    // Helper to map button to setting
+                    if (btn.classList.contains('tool-list-dir-btn')) return settings.list;
+                    if (btn.classList.contains('tool-view-btn') || btn.classList.contains('tool-read-url-btn') || btn.classList.contains('tool-search-btn') || btn.classList.contains('tool-problems-btn')) return settings.read;
+                    if (btn.classList.contains('tool-create-btn') && btn.dataset.type === 'create') return settings.create;
+                    if (btn.classList.contains('file-action-btn-compact') && btn.dataset.type === 'create') return settings.create;
+                    if (btn.classList.contains('tool-create-btn') && btn.dataset.type === 'update') return settings.edit;
+                    if (btn.classList.contains('file-action-btn-compact') && btn.dataset.type === 'update') return settings.edit;
+                    if (btn.classList.contains('tool-run-btn')) return settings.run;
+                    if (btn.classList.contains('tool-delete-btn')) return false; // Never auto-accept delete for now
+                    return false;
+                });
+
+                if (allAutoAccept) {
+                    console.log('[ChatView] Auto-accepting actions based on settings');
+                    this.inputBar.updateStatus('thinking', 'Auto-executing...');
+
+                    // Execute immediately
+                    (async () => {
+                        for (const btn of pendingButtons) {
+                            console.log('[ChatView] Auto-executing button:', btn.dataset.type, btn.dataset.path);
+                            await this.executeToolAction(btn);
+                        }
+                        // Auto-Continue
+                        console.log('[ChatView] Auto-continuing after auto-accepted actions');
+                        this.processUserMessage('continue', true);
+                    })();
+
+                    // Close details if present
+                    if (this.streamingMessageDiv) {
+                        const details = this.streamingMessageDiv.querySelector('details');
+                        if (details) details.removeAttribute('open');
+                    }
+                    return; // Skip showing review controls
+                }
+                // -------------------------
+
                 console.log('[ChatView] Showing review controls for', pendingButtons.length, 'actions');
                 this.inputBar.updateStatus('ready', 'Waiting for review...');
                 this.inputBar.showReviewControls(
@@ -862,19 +1696,40 @@ class ChatView {
 
                         // Execute all actions sequentially
                         for (const btn of pendingButtons) {
+                            console.log('[ChatView] Executing button:', btn.dataset.type, btn.dataset.path);
                             await this.executeToolAction(btn);
                         }
 
                         this.inputBar.updateStatus('ready');
 
-                        // Auto-Continue
+                        // Close the current message card after acceptance
+                        if (this.streamingMessageDiv) {
+                            const details = this.streamingMessageDiv.querySelector('details');
+                            if (details) {
+                                details.removeAttribute('open');
+                            }
+                        }
+
+                        // Auto-Continue - reuses the same card for the next response
                         console.log('[ChatView] Auto-continuing after accepted actions');
+
+                        if (this.isAgentMode) {
+                            const AgentOrchestrator = require('../core/AgentOrchestrator');
+                            AgentOrchestrator.waitForContinue();
+                        }
+
                         this.processUserMessage('continue', true);
                     },
                     () => { // On Reject
                         console.log('[ChatView] User rejected changes');
                         this.inputBar.hideReviewControls();
                         this.appendMessage('system', 'Actions rejected by user.');
+
+                        if (this.isAgentMode) {
+                            const AgentOrchestrator = require('../core/AgentOrchestrator');
+                            AgentOrchestrator.stopLoop();
+                        }
+
                         // Optionally disable buttons visually
                         pendingButtons.forEach(btn => {
                             btn.disabled = true;
@@ -882,30 +1737,80 @@ class ChatView {
                         });
                         this.inputBar.updateStatus('ready');
 
-                        // Check queue even if rejected? Probably yes.
+                        // Clear streaming div reference since we're done
+                        this.streamingMessageDiv = null;
+
+                        // Check queue even if rejected
                         this.checkMessageQueue();
                     }
                 );
+                // Keep streamingMessageDiv alive for auto-continue to reuse the same parent card
             } else {
                 console.log('[ChatView] No pending actions found. Resetting status.');
                 // DEBUG: Log innerHTML to see what was rendered
                 console.log('[ChatView] Message HTML content:', this.streamingMessageDiv.innerHTML.substring(0, 500) + '...');
 
-                // No pending actions, just reset
+                // No pending actions, clear the reference
                 this.inputBar.setLoading(false);
                 this.inputBar.updateStatus('ready');
+                this.streamingMessageDiv = null;
 
                 // Check queue
                 this.checkMessageQueue();
             }
 
-            this.streamingMessageDiv = null;
         } else {
             console.warn('[ChatView] streamingMessageDiv is null in finalizeStreamingMessage');
         }
 
         if (error) {
-            this.appendMessage('system', `Error: ${error}`);
+            // Provide more helpful error messages
+            let errorMessage = error;
+            let isEmptyResponseError = error && error.includes('model output must contain');
+
+            if (isEmptyResponseError) {
+                errorMessage = `**AI Response Error**\n\nThe model returned an empty response. This usually happens when:\n- The context is too long (try with fewer files)\n- The model's safety filters blocked the response\n- The model encountered an internal error\n\n*Original Error:* ${error}`;
+            }
+
+            // Create error message with retry button
+            const errorDiv = document.createElement('div');
+            errorDiv.className = 'term-chat-msg system';
+            errorDiv.style.width = '100%';
+            errorDiv.innerHTML = `
+                <div class="response-card markdown-content" style="border-left:3px solid #dc2626; padding:12px; background:rgba(220,38,38,0.05);">
+                    <div style="color:#dc2626; font-weight:600; margin-bottom:8px; display:flex; align-items:center; gap:6px;">
+                        <i data-lucide="alert-circle" style="width:16px; height:16px;"></i>
+                        Error
+                    </div>
+                    <div style="font-size:12px; line-height:1.5; white-space:pre-wrap;">${errorMessage}</div>
+                    ${isEmptyResponseError ? `
+                    <button class="retry-request-btn" style="margin-top:12px; padding:6px 12px; background:var(--peak-accent); color:white; border:none; border-radius:4px; cursor:pointer; font-size:11px; display:flex; align-items:center; gap:4px;">
+                        <i data-lucide="refresh-cw" style="width:12px; height:12px;"></i>
+                        Retry with Fresh Context
+                    </button>
+                    ` : ''}
+                </div>
+            `;
+
+            this.chatThread.appendChild(errorDiv);
+
+            if (isEmptyResponseError) {
+                const retryBtn = errorDiv.querySelector('.retry-request-btn');
+                if (retryBtn) {
+                    retryBtn.onclick = () => {
+                        // Clear selected files to reduce context
+                        this.selectedFiles.clear();
+                        this.selectedDocs.clear();
+                        this.renderFileChips();
+
+                        // Retry with simple "continue"
+                        this.processUserMessage('Please try again with a simpler response', false);
+                    };
+                }
+            }
+
+            if (window.lucide) window.lucide.createIcons();
+
             this.inputBar.setLoading(false);
             this.inputBar.updateStatus('ready');
             this.checkMessageQueue();
@@ -941,51 +1846,6 @@ class ChatView {
         }
     }
 
-    renderHistory() {
-        const history = this.client.getHistory();
-        // Clear current (except if we want to keep welcome msg? No, full redraw)
-        this.chatThread.innerHTML = '';
-
-        history.forEach(msg => {
-            if (msg.role === 'user') {
-                this.appendMessage('user', msg.content, msg.commitHash);
-            } else if (msg.role === 'assistant') {
-                // Re-render the HTML (or use cached)
-                // We stored html in history in MCPClient
-                const div = document.createElement('div');
-                div.className = 'term-chat-msg ai markdown-content';
-                div.innerHTML = msg.html;
-                this.addAcceptAllButton(div); // Re-add button logic
-                this.chatThread.appendChild(div);
-            }
-        });
-
-        if (window.lucide) window.lucide.createIcons();
-        this.scrollToBottom();
-    }
-
-    addAcceptAllButton(container) {
-        // Count actions (both old and new compact styles)
-        const actions = container.querySelectorAll('.tool-create-btn, .tool-run-btn, .apply-msg-btn, .file-action-btn-compact, .tool-action-btn-compact');
-        if (actions.length > 1) {
-            // Check if already exists
-            if (container.querySelector('.accept-all-btn')) return;
-
-            const btnDiv = document.createElement('div');
-            btnDiv.style.marginTop = '12px';
-            btnDiv.style.display = 'flex';
-            btnDiv.style.justifyContent = 'flex-end';
-            btnDiv.innerHTML = `
-                <button class="msg-action-btn accept-all-btn" style="background:var(--peak-accent); color:white; border:none;">
-                    <i data-lucide="check-check" style="width:12px;"></i> Accept All (${actions.length})
-                </button>
-            `;
-            container.appendChild(btnDiv);
-
-            // Refresh lucide icons
-            if (window.lucide) window.lucide.createIcons();
-        }
-    }
 
     async triggerAutoReview(btn, agent) {
         this.appendMessage('system', `🛡️ **Auto-Review**: Validating changes with **Reviewer**...`);
@@ -1056,13 +1916,100 @@ If REJECTED, explain why and provide a corrected version if possible.
     }
 
     async executeToolAction(btn) {
+        if (!window.currentProjectRoot) {
+            this.appendMessage('system', '❌ **Error:** No active project found. Please open a project tab to use tools.');
+            return;
+        }
+
+        // --- NEW: Remote MCP Tool Handling ---
+        const serverId = btn.dataset.serverId;
+        if (serverId) {
+            const toolName = btn.dataset.tool;
+            console.log(`[ChatView] Executing Remote Tool: ${toolName} on Server: ${serverId}`);
+
+            try {
+                // Parse arguments
+                let args = {};
+                if (btn.dataset.args) {
+                    args = JSON.parse(decodeURIComponent(btn.dataset.args));
+                }
+
+                // Visual feedback
+                this.appendMessage('system', `Executing remote tool **${toolName}**...`);
+
+                // Execute via IPC
+                const result = await require('electron').ipcRenderer.invoke('mcp:execute-tool', serverId, toolName, args);
+
+                // Display Result
+                // Usually MCP tools return a content array. We'll just JSON stringify for now or extract text.
+                let outputText = '';
+                if (result && result.content && Array.isArray(result.content)) {
+                    outputText = result.content.map(c => c.text).join('\n');
+                } else {
+                    outputText = JSON.stringify(result, null, 2);
+                }
+
+                this.appendMessage('system', `Tool Output:\n\`\`\`\n${outputText}\n\`\`\``);
+                this.markButtonSuccess(btn, 'Executed');
+
+                // Add to history
+                this.client.history.push({
+                    role: 'system',
+                    content: `Tool Output (${toolName}):\n\`\`\`\n${outputText}\n\`\`\``
+                });
+                this.client.saveHistory();
+
+                // Auto-continue
+                this.processUserMessage('continue', true);
+
+            } catch (e) {
+                console.error("MCP Execution Failed", e);
+                this.appendMessage('system', `❌ Tool Execution Failed: ${e.message}`);
+            }
+            return;
+        }
+        // -------------------------------------
+
+        // FIX: Handle List Directory specifically
+        if (btn.classList.contains('tool-list-dir-btn')) {
+            const path = decodeURIComponent(btn.dataset.path);
+            const recursive = btn.dataset.recursive === 'true';
+            // Find the card to inject output into
+            const targetCard = btn.closest('.list-directory-card');
+
+            // Visual feedback
+            const originalText = btn.innerHTML;
+            btn.innerHTML = '<i data-lucide="loader-2" class="spin"></i> Running...';
+            btn.disabled = true;
+            if (window.lucide) window.lucide.createIcons();
+
+            await this.listDirectoryAndSendToAI(path, recursive, targetCard);
+
+            // Reset button state
+            btn.innerHTML = '<i data-lucide="check"></i> Done';
+            setTimeout(() => {
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+                if (window.lucide) window.lucide.createIcons();
+            }, 2000);
+            return;
+        }
+
         // File operations (both old tool-create-btn and new file-action-btn-compact)
         if (btn.classList.contains('tool-create-btn') || btn.classList.contains('file-action-btn-compact')) {
             const path = decodeURIComponent(btn.dataset.path);
-            const content = decodeURIComponent(btn.dataset.content);
+            // SAFEGUARD: Check if dataset.content exists AND is not the string "undefined"
+            let content = '';
+            if (btn.dataset.content && btn.dataset.content !== 'undefined') {
+                content = decodeURIComponent(btn.dataset.content);
+                if (content === 'undefined') content = ''; // Double check after decode
+            }
             const type = btn.dataset.type || 'create';
 
             console.log(`[ChatView] Handling file action: ${type} for ${path}`);
+            console.log(`[ChatView] Raw dataset content:`, btn.dataset.content);
+            console.log(`[ChatView] Decoded content length:`, content.length);
+            console.log(`[ChatView] Decoded content preview:`, content.slice(0, 100));
 
             if (type === 'reject') {
                 console.log('[ChatView] User rejected file action:', path);
@@ -1096,19 +2043,43 @@ If REJECTED, explain why and provide a corrected version if possible.
             // IPC IMPLEMENTATION: Use direct IPC to write file
             try {
                 const root = window.currentProjectRoot;
+                console.log(`[ChatView] executeToolAction - Root: ${root}, Path: ${path}`);
+
                 if (!root) {
+                    console.error('[ChatView] No project root found!');
                     throw new Error("No project root found.");
                 }
                 const fullPath = require('path').join(root, path);
 
                 console.log(`[ChatView] Writing file via IPC: ${fullPath}`);
+                console.log(`[ChatView] Content length to write: ${content.length}`);
 
                 // We use invoke to wait for completion
-                await require('electron').ipcRenderer.invoke('project:write-file', fullPath, content);
-                console.log('[ChatView] File write successful');
+                const writeResult = await require('electron').ipcRenderer.invoke('project:write-file', fullPath, content);
+                console.log('[ChatView] Write result:', writeResult);
+
+                if (writeResult && writeResult.error) {
+                    throw new Error(`Write failed: ${writeResult.error}`);
+                }
+
+                // VERIFICATION: Verify file exists and is readable immediately after write
+                // This prevents race conditions where the AI thinks it's done but the FS hasn't caught up
+                const verifyRead = await require('electron').ipcRenderer.invoke('project:read-file', fullPath);
+                if (verifyRead && verifyRead.error) {
+                    throw new Error(`Write verification failed: ${verifyRead.error}`);
+                }
+
+                console.log('[ChatView] File write successful and verified');
                 this.markButtonSuccess(btn, type === 'update' ? 'Applied' : 'Created');
                 // Refresh sidebar in main window
                 require('electron').ipcRenderer.send('project:refresh-sidebar');
+
+                // FIX: Force reload of the file in the editor if it's currently open
+                // This ensures the AI context (which reads from the editor/currentFileContent) is updated immediately
+                if (window.currentFilePath === fullPath) {
+                    console.log('[ChatView] Reloading active file to sync context:', path);
+                    window.dispatchEvent(new CustomEvent('peak-open-file', { detail: { path: path } }));
+                }
 
             } catch (err) {
                 console.error('[ChatView] File write failed:', err);
@@ -1130,26 +2101,85 @@ If REJECTED, explain why and provide a corrected version if possible.
                 const result = await require('electron').ipcRenderer.invoke('project:run-command', cmd, root);
 
                 console.log('[ChatView] Command result:', result);
+                console.log(`[ChatView] Output lengths - STDOUT: ${result.stdout?.length || 0}, STDERR: ${result.stderr?.length || 0}, ERROR: ${result.error ? 'YES' : 'NO'}`);
 
+                // Construct output message for AI context
                 // Construct output message for AI context
                 let outputContent = '';
                 if (result.error && !result.stdout && !result.stderr) {
-                    outputContent = `Error executing command: ${result.error}`;
+                    outputContent = `⚠️ COMMAND FAILED\nError executing command: ${result.error}`;
                 } else {
-                    outputContent = `Command: ${cmd}\nExit Code: ${result.exitCode}\n\nOutput:\n\`\`\`\n${result.stdout}\n${result.stderr}\n\`\`\``;
+                    const status = result.exitCode === 0 ? 'SUCCESS' : '⚠️ COMMAND FAILED';
+                    outputContent = `Command: ${cmd}\nExit Code: ${result.exitCode} (${status})\n\n`;
+
+                    if (result.stdout) {
+                        outputContent += `[STDOUT]\n\`\`\`\n${result.stdout}\n\`\`\`\n\n`;
+                    }
+
+                    if (result.stderr) {
+                        outputContent += `[STDERR]\n\`\`\`\n${result.stderr}\n\`\`\`\n\n`;
+                    }
+
+                    if (result.error) {
+                        outputContent += `[ERROR]\n${result.error}\n`;
+                    }
                 }
 
                 // Append to history so AI sees it in next turn
                 // We use 'tool' role if supported, or 'user' with explicit context
                 // Using 'user' role is safer for now as per system prompt patterns
                 this.client.history.push({
-                    role: 'user',
-                    content: `[System] Command Execution Result:\n${outputContent}`
+                    role: 'system',
+                    content: `Command Execution Result:\n${outputContent}`
                 });
                 this.client.saveHistory();
 
+                // Render the command output in the chat so it's visible
+                this.renderHistory();
+
+                // CRITICAL FIX: Auto-continue to send output to AI
+                // This ensures the AI receives the command results immediately
+                console.log('[ChatView] Auto-continuing after command execution');
+                this.processUserMessage('continue', true);
+
+                // Inject output into the card DOM for inline display
+                const card = btn.closest('.command-card');
+                if (card) {
+                    const outputDiv = card.querySelector('.command-output-compact');
+                    const collapsedDiv = card.querySelector('.file-code-collapsed');
+
+                    if (collapsedDiv) {
+                        collapsedDiv.style.display = 'block'; // Ensure container is visible
+
+                        // Create output div if it doesn't exist (it should based on template, but let's be safe)
+                        let targetDiv = outputDiv;
+                        if (!targetDiv) {
+                            targetDiv = document.createElement('div');
+                            targetDiv.className = 'command-output-compact';
+                            targetDiv.style.marginTop = '8px';
+                            targetDiv.style.paddingTop = '8px';
+                            targetDiv.style.borderTop = '1px solid var(--border-color)';
+                            targetDiv.innerHTML = `
+                                <div style="font-size:10px; font-weight:600; margin-bottom:4px; color:var(--peak-secondary);">Output:</div>
+                                <pre style="margin:0; white-space:pre-wrap; word-break:break-all; font-size:10px; color:var(--peak-secondary);"></pre>
+                            `;
+                            collapsedDiv.appendChild(targetDiv);
+                        }
+
+                        // Update content
+                        const pre = targetDiv.querySelector('pre');
+                        if (pre) {
+                            pre.textContent = result.stdout + (result.stderr ? '\n' + result.stderr : '');
+                            if (result.error) pre.textContent += '\nError: ' + result.error;
+                        }
+
+                        // Ensure output div is visible
+                        targetDiv.style.display = 'block';
+                    }
+                }
+
                 if (result.exitCode !== 0) {
-                    this.markButtonSuccess(btn, 'Failed (See Logs)');
+                    this.markButtonSuccess(btn, 'Failed');
                     btn.style.background = 'var(--peak-error-bg, #fee2e2)';
                     btn.style.color = 'var(--peak-error-text, #dc2626)';
                     btn.style.borderColor = 'var(--peak-error-border, #fca5a5)';
@@ -1160,6 +2190,51 @@ If REJECTED, explain why and provide a corrected version if possible.
             } catch (err) {
                 console.error('[ChatView] Command execution failed:', err);
                 this.markButtonSuccess(btn, 'Error');
+            }
+            return;
+        }
+
+        if (btn.classList.contains('tool-view-btn')) {
+            const path = decodeURIComponent(btn.dataset.path);
+            console.log('[ChatView] Viewing file:', path);
+            this.markButtonSuccess(btn, 'Reading...');
+
+            try {
+                const root = window.currentProjectRoot;
+                let content = '';
+
+                // Check if external
+                const isExternal = path.startsWith('/') && (!root || !path.startsWith(root));
+
+                if (isExternal) {
+                    console.log('[ChatView] Reading external file via MCP:', path);
+                    const result = await require('electron').ipcRenderer.invoke('mcp:execute-tool', 'filesystem', 'read_file', { path });
+                    if (result.content && result.content[0]) {
+                        content = result.content[0].text;
+                    } else {
+                        throw new Error('No content returned from MCP read_file');
+                    }
+                } else {
+                    const fullPath = require('path').isAbsolute(path) ? path : require('path').join(root, path);
+                    const result = await require('electron').ipcRenderer.invoke('project:read-file', fullPath);
+                    if (result && result.error) throw new Error(result.error);
+                    content = typeof result === 'string' ? result : result.content;
+                }
+
+                // Add to history
+                this.client.history.push({
+                    role: 'system',
+                    content: `File Content (${path}):\n\`\`\`\n${content}\n\`\`\``
+                });
+                this.client.saveHistory();
+
+                this.markButtonSuccess(btn, 'Read');
+                this.processUserMessage('continue', true);
+
+            } catch (e) {
+                console.error('[ChatView] View file failed:', e);
+                this.markButtonSuccess(btn, 'Error');
+                this.appendMessage('system', `Error reading file: ${e.message}`);
             }
             return;
         }
@@ -1200,29 +2275,55 @@ If REJECTED, explain why and provide a corrected version if possible.
             const path = decodeURIComponent(btn.dataset.path);
             window.dispatchEvent(new CustomEvent('peak-open-file', { detail: { path } }));
             this.markButtonSuccess(btn, 'Opened');
-            this.sendFileContentToAI(path);
+            await this.sendFileContentToAI(path, btn);
         } else if (btn.classList.contains('tool-problems-btn')) {
-            this.getProblemsAndSendToAI();
+            this.getProblemsAndSendToAI(btn);
             this.markButtonSuccess(btn, 'Checked');
         } else if (btn.classList.contains('tool-capture-live-btn')) {
-            this.captureLiveViewAndSendToAI();
+            this.captureLiveViewAndSendToAI(btn);
             this.markButtonSuccess(btn, 'Captured');
         } else if (btn.classList.contains('tool-read-url-btn')) {
             const url = decodeURIComponent(btn.dataset.url);
-            this.readUrlAndSendToAI(url);
-            this.markButtonSuccess(btn, 'Reading...');
+            this.readUrlAndSendToAI(url, btn);
+            this.markButtonSuccess(btn, 'Fetched');
         } else if (btn.classList.contains('tool-list-dir-btn')) {
             const path = decodeURIComponent(btn.dataset.path);
             const recursive = btn.dataset.recursive === 'true';
-            this.listDirectoryAndSendToAI(path, recursive);
+            // Find parent card
+            // FIX: Updated selector to include new class list-directory-card and file-edit-card-compact
+            let card = btn.closest('.tool-card-compact, .list-directory-card, .file-edit-card-compact');
+            console.log('[ChatView] Executing list_directory. Path:', path, 'Recursive:', recursive, 'Card found:', !!card);
+
+            if (!card) {
+                console.warn('[ChatView] Failed to find parent .tool-card-compact for list_directory button');
+                console.log('[ChatView] Button parent structure:', btn.parentElement, btn.parentElement?.parentElement);
+
+                // Fallback: Try to find the card by traversing up more aggressively or by ID if we had one
+                // For now, let's try to find ANY .tool-card-compact in the same message container
+                const msg = btn.closest('.term-chat-msg');
+                if (msg) {
+                    // This is risky if there are multiple list_directory cards in one message
+                    // But better than nothing for now
+                    const cards = msg.querySelectorAll('.tool-card-compact');
+                    // Try to find one that contains this button (which failed via closest??)
+                    // If closest failed, querySelectorAll won't help if the DOM is disconnected.
+                    // But maybe the class is missing?
+                    console.log('[ChatView] Checking message container for cards:', cards.length);
+                }
+            }
+            this.listDirectoryAndSendToAI(path, recursive, card);
             this.markButtonSuccess(btn, 'Listed');
         }
     }
 
     async handleToolAction(e) {
+        // DEBUG: Trace all clicks in the chat thread
+        // console.log('[ChatView] handleToolAction click target:', e.target);
+
         // Toggle Code (both old and new compact styles)
         const toggleBtn = e.target.closest('.toggle-code-btn, .toggle-code-btn-compact');
         if (toggleBtn) {
+            // ... (existing toggle logic) ...
             // Old style
             const oldCard = toggleBtn.closest('.file-edit-card');
             if (oldCard) {
@@ -1260,6 +2361,7 @@ If REJECTED, explain why and provide a corrected version if possible.
         // Command output toggle
         const outputToggle = e.target.closest('.tool-toggle-output-btn');
         if (outputToggle) {
+            // ... (existing output toggle logic) ...
             const card = outputToggle.closest('.tool-card-compact');
             if (card) {
                 const output = card.querySelector('.command-output-compact');
@@ -1278,8 +2380,9 @@ If REJECTED, explain why and provide a corrected version if possible.
 
         const acceptAllBtn = e.target.closest('.accept-all-btn');
         if (acceptAllBtn) {
+            console.log('[ChatView] Accept All clicked');
             const msgDiv = acceptAllBtn.closest('.term-chat-msg');
-            const allActions = msgDiv.querySelectorAll('.tool-create-btn, .tool-run-btn, .file-action-btn-compact, .tool-action-btn-compact');
+            const allActions = msgDiv.querySelectorAll('.tool-create-btn, .tool-run-btn, .file-action-btn-compact, .tool-action-btn-compact, .tool-list-dir-btn');
 
             // Use executeToolAction for each
             for (const btn of allActions) {
@@ -1290,17 +2393,32 @@ If REJECTED, explain why and provide a corrected version if possible.
             acceptAllBtn.disabled = true;
             if (window.lucide) window.lucide.createIcons();
 
-            // Auto-Continue
-            this.processUserMessage('continue', true);
+            // Check if we're in agent mode and should resume orchestrator
+            const AgentOrchestrator = require('../core/AgentOrchestrator');
+            if (AgentOrchestrator.isLoopActive) {
+                console.log('[ChatView] Resuming agent orchestrator after Accept All');
+                AgentOrchestrator.resumeLoop();
+            } else {
+                // Normal mode: auto-continue with new message
+                this.processUserMessage('continue', true);
+            }
             return;
         }
 
         // Handle both old and new button styles
         const btn = e.target.closest('.msg-action-btn, .file-action-btn-compact, .tool-action-btn-compact');
-        if (!btn || btn.disabled) return;
 
-        // Use extracted method
-        await this.executeToolAction(btn);
+        if (btn) {
+            console.log('[ChatView] Tool action button clicked:', btn.className);
+            if (btn.disabled) {
+                console.log('[ChatView] Button is disabled, ignoring.');
+                return;
+            }
+            // Use extracted method
+            await this.executeToolAction(btn);
+        } else {
+            // console.log('[ChatView] Click was not on a known tool action button');
+        }
 
         // --- User Message Actions (Revert / Expand) ---
         const revertBtn = e.target.closest('.revert-btn');
@@ -1341,7 +2459,7 @@ If REJECTED, explain why and provide a corrected version if possible.
         }
     }
 
-    async captureLiveViewAndSendToAI() {
+    async captureLiveViewAndSendToAI(triggerButton = null) {
         try {
             const webview = document.getElementById('inspector-live-view');
             if (!webview) {
@@ -1376,20 +2494,39 @@ If REJECTED, explain why and provide a corrected version if possible.
                 </details>
             `;
 
-            // Append to Chat
-            const msgDiv = document.createElement('div');
-            msgDiv.className = 'term-chat-msg system';
-            msgDiv.innerHTML = blockHtml;
-            this.chatThread.appendChild(msgDiv);
-            if (window.lucide) window.lucide.createIcons();
-            this.scrollToBottom();
+            // If we have a trigger button, insert the analysis card right after it
+            if (triggerButton) {
+                const analysisDiv = document.createElement('div');
+                analysisDiv.innerHTML = blockHtml;
+                // Insert after the button's parent card
+                const cardParent = triggerButton.closest('.tool-card-minimal, .file-action-card-compact');
+                if (cardParent && cardParent.parentNode) {
+                    cardParent.parentNode.insertBefore(analysisDiv.firstElementChild, cardParent.nextSibling);
+                    if (window.lucide) window.lucide.createIcons();
+                    this.scrollToBottom();
+                }
+            } else {
+                // Original behavior: Create streaming message FIRST, then append analysis card into it
+                const agentSelect = document.getElementById('ai-assist-agent-select');
+                const agentId = agentSelect ? agentSelect.value : null;
+                const agent = AgentRegistry.getAgent(agentId);
+
+                this.createStreamingMessage(agent);
+
+                // Append analysis card INTO the streaming message's content div
+                if (this.streamingContentDiv) {
+                    this.streamingContentDiv.innerHTML = blockHtml;
+                    if (window.lucide) window.lucide.createIcons();
+                    this.scrollToBottom();
+                }
+            }
 
             // Send to AI via History Push + Auto-Continue
             const messageContent = `Live View Snapshot (${url}):\n\`\`\`html\n${html}\n\`\`\``;
 
             this.client.history.push({
-                role: 'user',
-                content: `[System] ${messageContent}`
+                role: 'system',
+                content: messageContent
             });
             this.client.saveHistory();
 
@@ -1402,7 +2539,7 @@ If REJECTED, explain why and provide a corrected version if possible.
         }
     }
 
-    async readUrlAndSendToAI(url) {
+    async readUrlAndSendToAI(url, triggerButton = null) {
         try {
             // Use Electron's net module or fetch if available in renderer (usually is)
             // We'll use a simple fetch here. If CORS is an issue, we might need IPC to main process.
@@ -1448,20 +2585,39 @@ If REJECTED, explain why and provide a corrected version if possible.
                 </details>
             `;
 
-            // Append to Chat
-            const msgDiv = document.createElement('div');
-            msgDiv.className = 'term-chat-msg system';
-            msgDiv.innerHTML = blockHtml;
-            this.chatThread.appendChild(msgDiv);
-            if (window.lucide) window.lucide.createIcons();
-            this.scrollToBottom();
+            // If we have a trigger button, insert the analysis card right after it
+            if (triggerButton) {
+                const analysisDiv = document.createElement('div');
+                analysisDiv.innerHTML = blockHtml;
+                // Insert after the button's parent card
+                const cardParent = triggerButton.closest('.tool-card-minimal, .file-action-card-compact');
+                if (cardParent && cardParent.parentNode) {
+                    cardParent.parentNode.insertBefore(analysisDiv.firstElementChild, cardParent.nextSibling);
+                    if (window.lucide) window.lucide.createIcons();
+                    this.scrollToBottom();
+                }
+            } else {
+                // Original behavior: Create streaming message FIRST, then append analysis card into it
+                const agentSelect = document.getElementById('ai-assist-agent-select');
+                const agentId = agentSelect ? agentSelect.value : null;
+                const agent = AgentRegistry.getAgent(agentId);
+
+                this.createStreamingMessage(agent);
+
+                // Append analysis card INTO the streaming message's content div
+                if (this.streamingContentDiv) {
+                    this.streamingContentDiv.innerHTML = blockHtml;
+                    if (window.lucide) window.lucide.createIcons();
+                    this.scrollToBottom();
+                }
+            }
 
             // Send to AI via History Push + Auto-Continue
             const messageContent = `Content of ${url}:\n\`\`\`text\n${content.slice(0, 20000)}\n\`\`\``;
 
             this.client.history.push({
-                role: 'user',
-                content: `[System] ${messageContent}`
+                role: 'system',
+                content: messageContent
             });
             this.client.saveHistory();
 
@@ -1474,10 +2630,11 @@ If REJECTED, explain why and provide a corrected version if possible.
         }
     }
 
-    async getProblemsAndSendToAI() {
+    async getProblemsAndSendToAI(triggerButton = null) {
         try {
             if (window.peakGetDiagnostics) {
                 const diags = window.peakGetDiagnostics();
+                console.log('[ChatView] Diagnostics retrieved:', diags);
                 let message = '';
                 let displayHtml = '';
 
@@ -1513,21 +2670,34 @@ If REJECTED, explain why and provide a corrected version if possible.
                         </div>
                     `;
 
-                    // Append to Chat (Left Side / System)
-                    const msgDiv = document.createElement('div');
-                    msgDiv.className = 'term-chat-msg system';
-                    msgDiv.innerHTML = displayHtml;
-                    this.chatThread.appendChild(msgDiv);
-                    if (window.lucide) window.lucide.createIcons();
-                    this.scrollToBottom();
+                    // If we have a trigger button, insert the analysis card right after it
+                    if (triggerButton) {
+                        const analysisDiv = document.createElement('div');
+                        analysisDiv.innerHTML = displayHtml;
+                        // Insert after the button's parent card
+                        const cardParent = triggerButton.closest('.tool-card-minimal, .file-action-card-compact');
+                        if (cardParent && cardParent.parentNode) {
+                            cardParent.parentNode.insertBefore(analysisDiv.firstElementChild, cardParent.nextSibling);
+                            if (window.lucide) window.lucide.createIcons();
+                            this.scrollToBottom();
+                        }
+                    } else {
+                        // Append to Chat (Left Side / System)
+                        const msgDiv = document.createElement('div');
+                        msgDiv.className = 'term-chat-msg system';
+                        msgDiv.innerHTML = displayHtml;
+                        this.chatThread.appendChild(msgDiv);
+                        if (window.lucide) window.lucide.createIcons();
+                        this.scrollToBottom();
+                    }
                 }
 
                 const fullMessage = `Problems Check Result:\n\`\`\`\n${message}\n\`\`\``;
 
                 // Send to AI via History Push + Auto-Continue
                 this.client.history.push({
-                    role: 'user',
-                    content: `[System] ${fullMessage}`
+                    role: 'system',
+                    content: fullMessage
                 });
                 this.client.saveHistory();
 
@@ -1542,11 +2712,15 @@ If REJECTED, explain why and provide a corrected version if possible.
         }
     }
 
-    async sendFileContentToAI(relPath) {
+    async sendFileContentToAI(relPath, triggerButton = null) {
+        if (!window.currentProjectRoot) {
+            this.appendMessage('system', '❌ **Error:** No active project found. Please open a project tab.');
+            return;
+        }
+
         try {
             const root = window.currentProjectRoot;
-            if (!root) return;
-            const fullPath = path.join(root, relPath);
+            const fullPath = require('path').isAbsolute(relPath) ? relPath : require('path').join(root, relPath);
             const content = await require('electron').ipcRenderer.invoke('project:read-file', fullPath);
 
             // Create Analysis Block HTML (minimalistic)
@@ -1568,59 +2742,93 @@ If REJECTED, explain why and provide a corrected version if possible.
                 </details>
             `;
 
+            // If we have a trigger button, insert the analysis card right after it
+            if (triggerButton) {
+                const analysisDiv = document.createElement('div');
+                analysisDiv.innerHTML = analysisHtml;
+                // Insert after the button's parent card
+                const cardParent = triggerButton.closest('.tool-card-minimal, .file-action-card-compact');
+                if (cardParent && cardParent.parentNode) {
+                    cardParent.parentNode.insertBefore(analysisDiv.firstElementChild, cardParent.nextSibling);
+                    if (window.lucide) window.lucide.createIcons();
+                    this.scrollToBottom();
+                }
+            }
 
-            // Append to Chat
-            const msgDiv = document.createElement('div');
-            msgDiv.className = 'term-chat-msg system';
-            msgDiv.innerHTML = analysisHtml;
-            this.chatThread.appendChild(msgDiv);
-            if (window.lucide) window.lucide.createIcons();
-            this.scrollToBottom();
+            // Send to AI via history (not streaming)
+            // When triggered from a button, we don't create a new streaming message
+            // The analysis card is already inserted inline, and the AI will see this in history
+            const message = `File Content: \`${relPath}\`\n\`\`\`\n${typeof content === 'string' ? content : 'Error reading file'}\n\`\`\``;
 
-            // Send to AI (Hidden from UI, but actual prompt)
-            const message = `File Content: \`${relPath}\`\n\`\`\`\n${typeof content === 'string' ? content : 'Error reading file'}\n\`\`\`\n\n(Proceeding automatically. Please continue with the next step.)`;
+            this.client.history.push({
+                role: 'system',
+                content: message
+            });
+            this.client.saveHistory();
 
-            // Manual Send
-            this.inputBar.setLoading(true);
-            this.createStreamingMessage();
-
-            const agentSelect = document.getElementById('ai-assist-agent-select');
-            const agentId = agentSelect ? agentSelect.value : null;
-            const agent = AgentRegistry.getAgent(agentId);
-            const modelId = agent ? agent.modelId : null;
-
-            const context = await this.getProjectContext([]); // No extra selected files
-            await this.client.sendMessage(message, context, modelId);
+            // Trigger Auto-Continue to ensure AI sees the content and proceeds
+            this.processUserMessage('continue', true);
 
         } catch (e) {
             console.error("Failed to send file content to AI:", e);
         }
     }
 
-    async listDirectoryAndSendToAI(relPath, recursive) {
+    async listDirectoryAndSendToAI(relPath, recursive, targetCard = null) {
+        if (!window.currentProjectRoot) {
+            this.appendMessage('system', '❌ **Error:** No active project found. Please open a project tab.');
+            return;
+        }
+
         try {
             const root = window.currentProjectRoot;
-            if (!root) {
-                this.appendMessage('system', 'Error: No project root found.');
-                return;
-            }
+            console.log(`[ChatView] listDirectoryAndSendToAI called for path: ${relPath}, recursive: ${recursive}`);
+            const targetPath = require('path').isAbsolute(relPath) ? relPath : require('path').join(root, relPath === '.' ? '' : relPath);
+            console.log(`[ChatView] Resolved target path: ${targetPath}`);
 
-            const targetPath = path.join(root, relPath === '.' ? '' : relPath);
+            // Check if external
+            const isExternal = targetPath.startsWith('/') && (!root || !targetPath.startsWith(root));
+            let treeOutput = '';
 
-            // Invoke Backend IPC
-            const tree = await require('electron').ipcRenderer.invoke('project:get-file-tree', targetPath);
+            if (isExternal) {
+                console.log('[ChatView] Listing external directory via MCP:', targetPath);
+                try {
+                    const result = await require('electron').ipcRenderer.invoke('mcp:execute-tool', 'filesystem', 'list_directory', { path: targetPath });
+                    if (result.content && result.content[0]) {
+                        // MCP list_directory usually returns a JSON string or text listing
+                        // We'll use it directly
+                        treeOutput = result.content[0].text;
+                    } else {
+                        treeOutput = '(Empty Directory or Error)';
+                    }
+                } catch (e) {
+                    treeOutput = `Error listing directory via MCP: ${e.message}`;
+                }
+            } else {
+                // Invoke Backend IPC
+                const tree = await require('electron').ipcRenderer.invoke('project:get-file-tree', targetPath);
 
-            if (tree.error) {
-                this.appendMessage('system', `Error listing directory: ${tree.error}`);
-                return;
+                if (tree.error) {
+                    console.error(`[ChatView] Error listing directory: ${tree.error}`);
+                    this.appendMessage('system', `Error listing directory: ${tree.error}`);
+                    return;
+                }
+
+                // Format Tree Output
+                treeOutput = formatTree(tree);
             }
 
             // Format Tree Output
             function formatTree(item, prefix = '') {
                 let output = '';
                 if (item.children) {
-                    item.children.forEach((child, index) => {
-                        const isLast = index === item.children.length - 1;
+                    // Filter out noise directories
+                    const filteredChildren = item.children.filter(child =>
+                        !['node_modules', '.git', '.DS_Store', 'dist', 'build', '.next', '.idea', '.vscode'].includes(child.name)
+                    );
+
+                    filteredChildren.forEach((child, index) => {
+                        const isLast = index === filteredChildren.length - 1;
                         const connector = isLast ? '└── ' : '├── ';
                         const childPrefix = isLast ? '    ' : '│   ';
                         output += `${prefix}${connector}${child.name}${child.type === 'directory' ? '/' : ''}\n`;
@@ -1632,46 +2840,39 @@ If REJECTED, explain why and provide a corrected version if possible.
                 return output;
             }
 
-            const treeOutput = formatTree(tree);
             const displayOutput = treeOutput || '(Empty Directory)';
 
-            // Create Output Block HTML (Using TerminalCard for consistency)
-            const blockHtml = renderTerminalCard(`ls -R ${relPath}`, displayOutput, true);
-
-            // Append to Chat UI
-            const msgDiv = document.createElement('div');
-            msgDiv.className = 'term-chat-msg system';
-            msgDiv.style.width = '100%';
-            msgDiv.innerHTML = blockHtml;
-            this.chatThread.appendChild(msgDiv);
-
-            // Add toggle listener
-            const toggleBtn = msgDiv.querySelector('.toggle-terminal-btn');
-            if (toggleBtn) {
-                toggleBtn.addEventListener('click', (e) => {
-                    const card = e.target.closest('.terminal-card');
-                    const outputBlock = card.querySelector('.terminal-output-block');
-                    const icon = toggleBtn.querySelector('[data-lucide]');
-
-                    if (outputBlock) {
-                        const isHidden = outputBlock.style.display === 'none';
-                        outputBlock.style.display = isHidden ? 'block' : 'none';
-                        icon.style.transform = isHidden ? 'rotate(0deg)' : 'rotate(-90deg)';
-                        icon.style.transition = 'transform 0.2s';
+            // Inject into Target Card if available
+            // Inject into Target Card if available
+            let injected = false;
+            if (targetCard) {
+                console.log('[ChatView] Injecting list_directory output into target card');
+                const outputDiv = targetCard.querySelector('.list-dir-output');
+                if (outputDiv) {
+                    const pre = outputDiv.querySelector('pre');
+                    if (pre) {
+                        pre.textContent = displayOutput;
                     }
-                });
+                    outputDiv.style.display = 'block';
+                    injected = true;
+                } else {
+                    console.warn('[ChatView] Output div not found in target card');
+                }
             }
 
-            if (window.lucide) window.lucide.createIcons();
-            this.scrollToBottom();
+            if (!injected) {
+                console.log('[ChatView] Target card not found or injection failed. Showing fallback output.');
+                this.appendMessage('system', `**Directory Listing:** \`${targetPath}\`\n\`\`\`\n${displayOutput}\n\`\`\``);
+            }
+
 
             // Send to AI via History Push + Auto-Continue
             // This ensures the context is preserved and the AI sees the result immediately
             const messageContent = `Directory Listing for \`${relPath}\`:\n\`\`\`text\n${displayOutput}\n\`\`\``;
 
             this.client.history.push({
-                role: 'user',
-                content: `[System] ${messageContent}`
+                role: 'system',
+                content: messageContent
             });
             this.client.saveHistory();
 
@@ -1764,8 +2965,8 @@ If REJECTED, explain why and provide a corrected version if possible.
 
             // Append to history so AI sees it in next turn
             this.client.history.push({
-                role: 'user',
-                content: `[System] ${outputContent}`
+                role: 'system',
+                content: outputContent
             });
             this.client.saveHistory();
 
@@ -1784,12 +2985,17 @@ If REJECTED, explain why and provide a corrected version if possible.
     }
 
     destroy() {
+        console.log('[ChatView] Destroying instance');
+
         // Remove Window Listeners
-        window.removeEventListener('mcp:stream-update', this.handleStreamUpdateBound);
-        window.removeEventListener('mcp:stream-complete', this.handleStreamCompleteBound);
-        window.removeEventListener('peak-terminal-response', this.handleTerminalResponseBound);
+        if (this.handleStreamUpdateBound) window.removeEventListener('mcp:stream-update', this.handleStreamUpdateBound);
+        if (this.handleStreamCompleteBound) window.removeEventListener('mcp:stream-complete', this.handleStreamCompleteBound);
+        if (this.handleTerminalResponseBound) window.removeEventListener('peak-terminal-response', this.handleTerminalResponseBound);
         if (this.handleToggleSettingsBound) {
             document.removeEventListener('peak-toggle-ai-settings', this.handleToggleSettingsBound);
+        }
+        if (this.handleProjectRootUpdateBound) {
+            window.removeEventListener('peak-project-root-updated', this.handleProjectRootUpdateBound);
         }
         window.peakToggleAISettings = null;
 
@@ -1799,25 +3005,27 @@ If REJECTED, explain why and provide a corrected version if possible.
             // this.client.destroy(); // If client had listeners
         }
     }
-    destroy() {
-        console.log('[ChatView] Destroying instance');
 
-        // Remove Window Listeners
-        if (this.handleStreamUpdateBound) window.removeEventListener('mcp:stream-update', this.handleStreamUpdateBound);
-        if (this.handleStreamCompleteBound) window.removeEventListener('mcp:stream-complete', this.handleStreamCompleteBound);
-        if (this.handleTerminalResponseBound) window.removeEventListener('peak-terminal-response', this.handleTerminalResponseBound);
-        if (this.handleToggleSettingsBound) document.removeEventListener('peak-toggle-ai-settings', this.handleToggleSettingsBound);
+    handleProjectRootUpdate(e) {
+        const root = e.detail.root;
+        const { ipcRenderer } = require('electron');
+        ipcRenderer.send('log', '[ChatView] Project root updated event received:', root);
 
-        // Remove Session Listeners (Need to store bound functions if we want to remove them properly, 
-        // but for now let's assume we need to bind them in init or just leave them if they are anonymous 
-        // (anonymous listeners can't be removed easily without reference).
-        // FIX: We should bind these in init/attachListeners to be able to remove them.
-
-        // For now, let's just log. 
-        // Ideally, we should refactor attachListeners to store references.
+        // Prevent infinite loop: only update if root has actually changed AND we're not already processing
+        if (root && root !== this.client.currentProjectRoot && !this._switchingProject) {
+            this._switchingProject = true; // Guard against re-entry
+            try {
+                this.client.switchProject(root);
+                this.renderHistory();
+            } finally {
+                this._switchingProject = false;
+            }
+        }
     }
+
     async handleDelegation(args) {
         const { agent_id, instruction } = args;
+        const AgentRegistry = require('../core/AgentRegistry');
         const agent = AgentRegistry.getAgent(agent_id);
 
         if (!agent) {
@@ -1828,19 +3036,6 @@ If REJECTED, explain why and provide a corrected version if possible.
         // Visual Indicator
         this.appendMessage('system', `🔄 Delegating to **${agent.name}**...`);
 
-        // We need to send a new message to the AI with the specific agent's context
-        // But we want to keep it in the same thread?
-        // Or do we want to "switch" agents?
-        // The instruction implies the current agent is asking another agent.
-        // So we should run a "sub-task".
-
-        // For now, let's implement it as a "Switch & Execute"
-        // 1. Switch the active agent context (temporarily or permanently?)
-        // 2. Send the instruction as a user message (or system injection?)
-
-        // Let's treat it as: The current agent "calls" the other agent.
-        // We will send the instruction to the LLM using the NEW agent's system prompt.
-
         const context = await this.getProjectContext([]);
         const modelId = agent.modelId;
         const systemPrompt = agent.systemPrompt;
@@ -1849,6 +3044,35 @@ If REJECTED, explain why and provide a corrected version if possible.
         const delegationPrompt = `[System: You have been delegated a task by another agent.]\n\nTASK: ${instruction}`;
 
         await this.client.sendMessage(delegationPrompt, context, modelId, null, systemPrompt);
+    }
+
+    renderInputBar() {
+        const { ipcRenderer } = require('electron');
+        ipcRenderer.send('log', '[ChatView] renderInputBar called');
+
+        // 1. Generate new HTML
+        const isFileContextUsable = window.currentProjectRoot ? true : false;
+        const selectedAgentId = localStorage.getItem('peak-ai-agent');
+        const html = this.inputBar.render(isFileContextUsable, selectedAgentId, this.isAgentMode);
+
+        // 2. Find existing input container
+        const existingInput = this.container.querySelector('.inspector-input-container');
+
+        if (existingInput) {
+            // Replace
+            existingInput.outerHTML = html;
+        } else {
+            // Append if missing (shouldn't happen if structure is correct)
+            this.container.insertAdjacentHTML('beforeend', html);
+        }
+
+        // 3. Re-attach listeners
+        if (this.inputBarCallbacks) {
+            ipcRenderer.send('log', '[ChatView] Re-attaching InputBar listeners');
+            this.inputBar.attachListeners(this.container, this.inputBarCallbacks);
+        } else {
+            ipcRenderer.send('log', '[ChatView] renderInputBar called but inputBarCallbacks is undefined (expected during init)');
+        }
     }
 }
 

@@ -50,29 +50,8 @@ function getAIAssistHTML(currentFileContent, currentFilePath, currentFileContent
             </div>
         `;
     } else {
-        const title = projectTitle;
-        const subtitle = 'Ask me anything about your project, or select files for specific context.';
-
-        initialHTML = `
-            <div class="welcome-container">
-                <div class="welcome-header">
-                    <h2>${escapeHTML(title)}</h2>
-                    <p>${escapeHTML(subtitle)}</p>
-                </div>
-                
-                <div class="suggestion-chips">
-                    <button class="suggestion-chip" onclick="document.getElementById('ai-assist-input-textarea').value='Explain this file'; document.getElementById('ai-assist-input-textarea').focus();">
-                        <i data-lucide="book-open"></i> Explain
-                    </button>
-                    <button class="suggestion-chip" onclick="document.getElementById('ai-assist-input-textarea').value='Refactor this code'; document.getElementById('ai-assist-input-textarea').focus();">
-                        <i data-lucide="hammer"></i> Refactor
-                    </button>
-                    <button class="suggestion-chip" onclick="document.getElementById('ai-assist-input-textarea').value='Find bugs in this file'; document.getElementById('ai-assist-input-textarea').focus();">
-                        <i data-lucide="bug"></i> Debug
-                    </button>
-                </div>
-            </div>
-        `;
+        // ChatView will handle the initial view
+        initialHTML = '';
     }
 
     // REFINED COMPACT CSS (VS Code Sidebar Look)
@@ -88,22 +67,26 @@ function getAIAssistHTML(currentFileContent, currentFilePath, currentFileContent
                 background: var(--peak-accent); 
                 color: white; 
                 border-radius: 12px; 
-                border-bottom-right-radius: 12px;
-                margin-left: 0; 
-                max-width: 100%; 
-                width: 100%;
+                border-bottom-right-radius: 0;
+                margin-left: auto; 
+                margin-right: 0;
+                max-width: 90%; 
+                width: auto;
                 font-weight: 500;
                 font-size: 12px; 
                 margin-bottom: 10px;
                 text-align: left;
                 position: relative;
+                box-sizing: border-box;
+                align-self: flex-end;
             }
             .term-chat-msg.ai { 
-                padding: 4px 0; 
-                background: transparent; 
+                padding: 0; /* Match style.css - no padding */
+                margin: 0; /* Explicit margin to match user bubble */
+                background: transparent;
                 color: var(--peak-primary); 
+                width: 100%; /* CRITICAL: Must match user bubble */
                 max-width: 100%; 
-                width: 100%;
                 text-align: left;
             }
             
@@ -120,25 +103,141 @@ function getAIAssistHTML(currentFileContent, currentFilePath, currentFileContent
             .term-chat-msg.ai > blockquote,
             .term-chat-msg.ai > table,
             .term-chat-msg.ai > img {
-                padding-left: 12px;
-                padding-right: 12px;
+                padding-left: 0;
+                padding-right: 0;
+            }
+
+            /* Minimal Message Content Wrapper - Match style.css */
+            .message-content-minimal {
+                padding: 0; /* No padding here - applied to .markdown-content instead */
+                margin: 0;
+                width: 100%;
+                box-sizing: border-box;
+                background: transparent;
+            }
+            }
+            
+            .message-divider {
+                display: none;
+            }
+
+            /* Details Element Reset */
+            details.message-card-minimal {
+                width: 100%;
+                margin: 0;
+                padding: 0;
+                box-sizing: border-box;
+                background: var(--window-background-color) !important;
+                border: 1px solid var(--border-color) !important;
+                border-radius: 12px;
+                border-bottom-left-radius: 0; /* Mirror user bubble */
+                overflow: hidden;
+            }
+            summary.message-summary-minimal {
+                margin: 0;
+                padding: 6px 10px; /* Ultra compact padding */
+                box-sizing: border-box;
+                display: block;
+                cursor: pointer;
+                background: transparent !important;
+                font-size: 11px;
+                font-weight: 600;
+            }
+            .summary-header-row {
+                display: flex;
+                align-items: center;
+                gap: 6px;
+                margin-bottom: 0; /* Remove bottom margin for compactness */
+            }
+            .summary-content-wrapper {
+                padding-left: 20px;
+                margin-top: 2px;
+            }
+            
+            /* Ultra Minimal Summaries */
+            .summaries-card-minimal {
+                font-size: 11px;
+                color: var(--peak-secondary);
+                padding: 0;
+            }
+            .key-points-list.minimal {
+                list-style: none;
+                padding: 0;
+                margin: 0;
+            }
+            .key-points-list.minimal li {
+                margin-bottom: 2px;
+                position: relative;
+                padding-left: 10px;
+                line-height: 1.4;
+            }
+            .key-points-list.minimal li::before {
+                content: "•";
+                position: absolute;
+                left: 0;
+                color: var(--peak-accent);
+                opacity: 0.7;
+            }
+            .summaries-meta.minimal {
+                margin-top: 2px;
+                display: flex;
+                gap: 6px;
+                flex-wrap: wrap;
+                opacity: 0.7;
             }
             
             /* Tool & Block Styles - Full Bleed */
-            .tool-block, .file-edit-card, .section-card, .terminal-output-block, .thinking-block, .chat-code-block {
-                margin: 12px 0; /* Removed negative margins */
-                width: 100%; /* Full width of content area */
+            /* Cards inside .markdown-content within .message-content-minimal */
+            .message-content-minimal .markdown-content .tool-block,
+            .message-content-minimal .markdown-content .file-edit-card,
+            .message-content-minimal .markdown-content .file-edit-card-compact,
+            .message-content-minimal .markdown-content .section-card,
+            .message-content-minimal .markdown-content .terminal-output-block,
+            .message-content-minimal .markdown-content .thinking-block,
+            .message-content-minimal .markdown-content .chat-code-block,
+            .message-content-minimal .markdown-content .tool-card-compact,
+            .message-content-minimal .markdown-content .command-result-card,
+            .message-content-minimal .markdown-content .summaries-card {
+                margin: 6px 0; /* Tighter spacing */
+                width: 100%;
                 border: 1px solid var(--border-color)!important;
-                /* border-left: none !important; */
-                /* border-right: none !important; */
-                border-radius: 12px !important;
+                border-radius: 6px !important; /* Restore radius for children */
                 overflow: hidden;
                 background: var(--window-background-color);
+                box-sizing: border-box;
+            }
+            
+            /* Fallback for cards not inside message-content-minimal */
+            .tool-block, .file-edit-card, .file-edit-card-compact, .section-card, .terminal-output-block, .thinking-block, .chat-code-block, .tool-card-compact, .command-result-card, .summaries-card {
+                margin: 6px 0;
+                width: 100%;
+                border: 1px solid var(--border-color)!important;
+                border-radius: 6px !important;
+                overflow: hidden;
+                background: var(--window-background-color);
+                box-sizing: border-box;
+            }
+
+            /* Specific override for minimal summary card to ensure no borders */
+            .summaries-card-minimal {
+                width: 100%;
+                margin: 0;
+                border: none !important;
+                background: transparent !important;
+                box-sizing: border-box;
             }
             
             /* Markdown Content Refinements */
-            .markdown-content p { margin-bottom: 8px; }
-            .markdown-content ul, .markdown-content ol { margin-bottom: 8px; padding-left: 20px; }
+            .markdown-content {
+                width: 100%;
+                margin: 0;
+                padding: 0; /* No padding on container */
+                box-sizing: border-box;
+                background: transparent;
+            }
+            /* Padding only on text elements, not cards */
+            .markdown-content p { margin-bottom: 8px; padding-left: 12px; padding-right: 12px; }
+            .markdown-content ul, .markdown-content ol { margin-bottom: 8px; padding-left: 32px; padding-right: 12px; }
             .markdown-content li { margin-bottom: 4px; }
             .markdown-content code { 
                 font-family: 'GeistMono', monospace; 
@@ -525,18 +624,20 @@ function getAIAssistHTML(currentFileContent, currentFilePath, currentFileContent
                 background: var(--window-background-color);
                 text-align: left;
                 margin-left: 0;
+                width: 100%;
+                box-sizing: border-box;
             }
 
             /* Minimalistic Thinking Bubble */
             .thinking-block-minimal {
-                margin: 8px 0;
+                margin: 4px 0; /* Reduced margin */
                 border: none;
                 background: transparent;
             }
             .thinking-summary-minimal {
                 list-style: none;
                 cursor: pointer;
-                padding: 6px 8px;
+                padding: 4px 8px; /* Compact padding */
                 display: flex;
                 align-items: center;
                 gap: 6px;
@@ -565,7 +666,7 @@ function getAIAssistHTML(currentFileContent, currentFilePath, currentFileContent
                 font-weight: 400;
             }
             .thinking-content-minimal {
-                padding: 8px 12px 8px 26px;
+                padding: 4px 0 4px 12px; /* Indented content */
                 font-size: 10px;
                 line-height: 1.5;
                 color: var(--peak-secondary);
@@ -574,18 +675,20 @@ function getAIAssistHTML(currentFileContent, currentFilePath, currentFileContent
                 opacity: 0.7;
                 max-height: 300px;
                 overflow-y: auto;
+                width: 100%;
+                box-sizing: border-box;
             }
 
             /* Minimalistic Analysis Block (same style as thinking) */
             .analysis-block-minimal {
-                margin: 8px 0;
+                margin: 4px 0;
                 border: none;
                 background: transparent;
             }
             .analysis-summary-minimal {
                 list-style: none;
                 cursor: pointer;
-                padding: 6px 8px;
+                padding: 4px 8px;
                 display: flex;
                 align-items: center;
                 gap: 6px;
@@ -614,7 +717,7 @@ function getAIAssistHTML(currentFileContent, currentFilePath, currentFileContent
                 font-weight: 400;
             }
             .analysis-content-minimal {
-                padding: 8px 12px 8px 26px;
+                padding: 4px 0 4px 12px; /* Indented content */
                 font-size: 10px;
                 line-height: 1.5;
                 color: var(--peak-secondary);
@@ -623,6 +726,8 @@ function getAIAssistHTML(currentFileContent, currentFilePath, currentFileContent
                 opacity: 0.7;
                 max-height: 300px;
                 overflow-y: auto;
+                width: 100%;
+                box-sizing: border-box;
             }
             .analysis-content-minimal pre {
                 margin: 0;
@@ -634,11 +739,7 @@ function getAIAssistHTML(currentFileContent, currentFilePath, currentFileContent
             }
 
             /* Minimalistic Message Card (for assistant responses) */
-            .message-card-minimal {
-                margin: 0;
-                border: none;
-                background: transparent;
-            }
+            /* Removed conflicting definition - using the one from lines 124-134 instead */
             .message-summary-minimal {
                 list-style: none;
                 cursor: pointer;
@@ -671,7 +772,9 @@ function getAIAssistHTML(currentFileContent, currentFilePath, currentFileContent
                 font-weight: 400;
             }
             .message-content-minimal {
-                padding: 8px 12px 8px 26px;
+                padding: 8px 0;
+                width: 100%;
+                box-sizing: border-box;
             }
             .message-content-minimal p,
             .message-content-minimal ul,
@@ -762,7 +865,7 @@ function getAIAssistHTML(currentFileContent, currentFilePath, currentFileContent
 
 
             /* Headers */
-            .tool-block .header, .file-edit-header, .section-card summary {
+            .tool-block .header, .file-edit-header, .section-card summary, .summaries-header {
                 padding: 8px 12px;
                 font-size: 11px;
                 font-weight: 600;
@@ -786,7 +889,7 @@ function getAIAssistHTML(currentFileContent, currentFilePath, currentFileContent
             .icon-wrapper.create { color: var(--peak-accent); }
 
             /* Content Areas */
-            .tool-block .content, .file-edit-content pre, .section-card .section-content {
+            .tool-block .content, .file-edit-content pre, .section-card .section-content, .summaries-content {
                 padding: 8px; /* Reduced from 12px to match user bubble tightness */
                 font-size: 11px;
                 font-family: 'GeistMono', 'Menlo', 'Monaco', monospace;
@@ -947,6 +1050,104 @@ function getAIAssistHTML(currentFileContent, currentFilePath, currentFileContent
             
             .welcome-container.error .welcome-icon { color: var(--error-color); margin-bottom: 12px; width: 24px; height: 24px; }
             .welcome-container.error h3 { color: var(--error-color); margin: 0 0 6px 0; font-size: 14px; }
+
+            /* Compact Card Styles */
+            .file-edit-card-compact, .tool-card-compact {
+                background: transparent;
+                padding: 0; /* No padding on container - let parent handle spacing */
+                box-sizing: border-box;
+                width: 100%;
+            }
+            
+            .file-edit-line {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                padding: 8px 12px; /* Padding on content line instead of container */
+                font-size: 11px;
+                color: var(--peak-primary);
+                width: 100%;
+                box-sizing: border-box;
+            }
+            
+            .file-path-compact {
+                font-family: 'GeistMono', monospace;
+                font-size: 10px;
+                color: var(--peak-primary);
+                flex: 1;
+                min-width: 0;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
+            
+            .file-meta-compact {
+                font-size: 9px;
+                color: var(--peak-secondary);
+                opacity: 0.6;
+                margin-left: auto;
+            }
+            
+            .toggle-code-btn-compact {
+                background: transparent;
+                border: 1px solid var(--border-color);
+                border-radius: 4px;
+                padding: 4px;
+                cursor: pointer;
+                color: var(--peak-secondary);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                transition: all 0.2s;
+            }
+            
+            .toggle-code-btn-compact:hover {
+                background: var(--control-background-color);
+                color: var(--peak-primary);
+                border-color: var(--peak-accent);
+            }
+            
+            .file-action-btn-compact, .tool-action-btn-compact {
+                font-size: 9px;
+                padding: 4px 8px;
+                border-radius: 4px;
+                border: 1px solid var(--border-color);
+                background: var(--control-background-color);
+                color: var(--peak-primary);
+                cursor: pointer;
+                display: flex;
+                align-items: center;
+                gap: 4px;
+                font-weight: 500;
+                transition: all 0.2s;
+            }
+            
+            .file-action-btn-compact:hover, .tool-action-btn-compact:hover {
+                background: var(--peak-accent);
+                border-color: var(--peak-accent);
+                color: white;
+            }
+            
+            .file-action-btn-compact:disabled, .tool-action-btn-compact:disabled {
+                opacity: 0.5;
+                cursor: not-allowed;
+            }
+            
+            .file-code-collapsed, .file-edit-content {
+                margin: 12px 0; /* Standard vertical spacing */
+                width: 100%; /* Natural width */
+                background: var(--window-background-color);
+                border: none; /* Parent already has borders */
+                border-radius: 0;
+                overflow-x: auto;
+            }
+            
+            .file-code-collapsed pre, .file-edit-content pre {
+                margin: 0;
+                padding: 0;
+                font-size: 10px;
+                line-height: 1.4;
+            }
         </style>
     `;
 
@@ -955,21 +1156,21 @@ function getAIAssistHTML(currentFileContent, currentFilePath, currentFileContent
         <div class="inspector-tabs-header">
             <button class="tab-btn active" data-target="ai">Chat</button>
             <button class="tab-btn" data-target="tasks">Tasks</button>
-            <button class="tab-btn" data-target="logs">Logs</button>
+            <button class="tab-btn" data-target="mcp">MCP</button>
             <button class="tab-btn" data-target="docs">Docs</button>
             <button class="tab-btn" data-target="live">Live</button>
         </div>
 
         <div id="ai-assist-content" class="inspector-content-inner" style="height: 100%; display: flex; flex-direction: column; position: relative;">
             <div id="panel-ai" class="term-panel active" style="display:flex; flex-direction:column; height:100%; overflow: hidden;">
-                <div class="term-chat-history" id="ai-assist-scroller" style="flex: 1; overflow-y: auto; padding: 16px 12px;">
-                    <div class="term-chat-msg ai markdown-content" style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+                <div class="term-chat-history" id="ai-assist-scroller" style="flex: 1; overflow-y: auto; padding: 16px 12px; display: flex; flex-direction: column;">
+                    ${initialHTML ? `<div class="term-chat-msg ai markdown-content" style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
                         ${initialHTML}
-                    </div>
-                    <div id="ai-assist-chat-thread"></div>
+                    </div>` : ''}
+                    <div id="ai-assist-chat-thread" style="display: flex; flex-direction: column; width: 100%;"></div>
                     <div id="streaming-message-container-assist"></div>
                 </div>
-                ${new InputBar().render(isFileContextUsable, localStorage.getItem('peak-ai-agent'))}
+                ${new InputBar().render(isFileContextUsable, localStorage.getItem('peak-ai-agent'), localStorage.getItem('peak-agent-mode') === 'true')}
             </div>
 
             <div id="panel-tasks" class="term-panel" style="display:none; height:100%; flex-direction: column;">
@@ -985,20 +1186,17 @@ function getAIAssistHTML(currentFileContent, currentFilePath, currentFileContent
                 </div>
             </div>
 
-            <div id="panel-logs" class="term-panel" style="display:none; height:100%; flex-direction: column;">
-                <div style="padding: 8px 12px; background: var(--control-background-color); border-bottom: 1px solid var(--border-color); display: flex; gap: 8px; align-items: center;">
-                    <div style="flex: 1; display: flex; gap: 4px;">
-                        <button class="log-filter-btn active" data-filter="all" style="padding: 4px 8px; font-size: 10px; border: 1px solid var(--border-color); background: var(--peak-accent); color: white; border-radius: 4px; cursor: pointer;">All</button>
-                        <button class="log-filter-btn" data-filter="agent" style="padding: 4px 8px; font-size: 10px; border: 1px solid var(--border-color); background: var(--control-background-color); color: var(--peak-secondary); border-radius: 4px; cursor: pointer;">Agent</button>
-                        <button class="log-filter-btn" data-filter="tools" style="padding: 4px 8px; font-size: 10px; border: 1px solid var(--border-color); background: var(--control-background-color); color: var(--peak-secondary); border-radius: 4px; cursor: pointer;">Tools</button>
-                        <button class="log-filter-btn" data-filter="errors" style="padding: 4px 8px; font-size: 10px; border: 1px solid var(--border-color); background: var(--control-background-color); color: var(--peak-secondary); border-radius: 4px; cursor: pointer;">Errors</button>
-                    </div>
-                    <button id="btn-clear-logs" class="icon-btn" style="padding: 4px;" title="Clear Logs"><i data-lucide="trash-2" style="width: 14px; height: 14px;"></i></button>
+            <div id="panel-mcp" class="term-panel" style="display: none; flex-direction: column;">
+                <div class="logs-header" style="padding: 8px; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center;">
+                    <div style="font-size: 11px; font-weight: 600; color: var(--peak-secondary);">MCP SERVERS</div>
+                    <button id="btn-refresh-mcp" class="icon-btn" title="Refresh"><i data-lucide="refresh-cw"></i></button>
                 </div>
-                <div id="logs-stream" style="flex: 1; overflow-y: auto; padding: 8px; font-family: 'GeistMono', monospace; font-size: 10px; line-height: 1.4; background: var(--text-background-color);">
-                    <div style="color: var(--peak-secondary); text-align: center; padding: 20px;">No logs yet. Logs will appear here as the agent executes.</div>
+                <div id="mcp-server-list" style="flex: 1; overflow-y: auto; padding: 0;">
+                    <!-- MCP Servers will be rendered here -->
                 </div>
             </div>
+
+
 
             <div id="panel-docs" class="term-panel" style="display:none; height:100%; flex-direction: column;">
                 <webview id="inspector-docs-view" src="${docsUrl}" style="flex: 1; width: 100%; height: 100%; border: none;" webpreferences="contextIsolation=true"></webview>
@@ -1020,8 +1218,8 @@ function getSettingsHTML() {
     return `
         <div class="inspector-content-inner" style="height: 100%; display: flex; flex-direction: column; background: var(--peak-background);">
             <div style="padding: 16px; border-bottom: 1px solid var(--border-color);">
-                <h2 style="margin: 0; font-size: 16px; font-weight: 600; color: var(--peak-primary);">Documentation Settings</h2>
-                <p style="margin: 4px 0 0; font-size: 12px; color: var(--peak-secondary);">Select which documentation sources appear in the AI Assistant menu.</p>
+                <h2 style="margin: 0; font-size: 16px; font-weight: 600; color: var(--peak-primary);">AI Assistant Settings</h2>
+                <p style="margin: 4px 0 0; font-size: 12px; color: var(--peak-secondary);">Configure agents, auto-accept rules, and documentation sources.</p>
             </div>
             <div id="ai-assist-settings-content" style="flex: 1; overflow-y: auto; padding: 16px;">
                 <!-- Settings list will be rendered here by SettingsController -->

@@ -42,10 +42,10 @@ class AgentLogger {
         const logEntry = {
             id: Date.now() + Math.random(),
             timestamp: new Date().toISOString(),
-            time: new Date().toLocaleTimeString(),
+            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
             type, // 'agent', 'tool', 'error', 'system'
             message,
-            data
+            data: data || {}
         };
 
         this.logs.push(logEntry);

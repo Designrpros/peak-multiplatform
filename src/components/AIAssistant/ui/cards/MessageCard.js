@@ -1,56 +1,110 @@
 const { renderSummariesCard } = require('./SummariesCard');
 
-function renderMessageCard(role, content, commitHash = null, isComplete = true, isAuto = false) {
-    // Render Markdown
+function renderMessageCard(role, content, commitHash = null, isComplete = true, isAuto = false, agent = null, isHtml = false) {
+    // ASSISTANT / SYSTEM MESSAGES
     if (role === 'assistant' || role === 'system') {
-        const renderedContent = window.markdown ? window.markdown.render(content) : content;
+        const renderedContent = isHtml ? content : (window.markdown ? window.markdown.render(content) : content);
 
-        // Only make complete messages collapsible with summaries
+        // Agent Info
+        let agentColor = 'var(--peak-accent)';
+        let agentName = 'AI Response';
+
+        if (agent) {
+            agentColor = agent.color || agentColor;
+            agentName = agent.name || agentName;
+        }
+
+        const roleClass = role === 'assistant' ? 'ai' : role;
+
+        // COMPLETE MESSAGE - with summaries and collapsible
         if (isComplete) {
             // Generate summaries card
             const summariesHtml = renderSummariesCard(content);
 
             return `
-                <div class="term-chat-msg ${role}">
-                    <details class="message-card-minimal">
+                <div class="term-chat-msg ${roleClass}">
+                    <details class="message-card-minimal" open>
                         <summary class="message-summary-minimal">
-                            <i data-lucide="chevron-right" class="message-chevron" style="width:12px; height:12px;"></i>
-                            <i data-lucide="bot" style="width:12px; height:12px; color: var(--peak-accent);"></i>
-                            <span class="message-summary-text">AI Response</span>
+                            <div class="summary-header-row">
+                                <i data-lucide="chevron-right" class="message-chevron" style="width:12px; height:12px;"></i>
+                                <i data-lucide="bot" style="width:12px; height:12px; color: ${agentColor};"></i>
+                                <span class="message-summary-text" style="color: ${agentColor};">${agentName}</span>
+                            </div>
+                            <div class="summary-content-wrapper">
+                                ${summariesHtml}
+                            </div>
                         </summary>
                         <div class="message-content-minimal">
-                            ${summariesHtml}
                             <div class="message-divider"></div>
-                            <div class="markdown-content">
-                                ${renderedContent}
-                            </div>
+                            ${isHtml ? renderedContent : `<div class="markdown-content">${renderedContent}</div>`}
                         </div>
                     </details>
                 </div>
             `;
         } else {
-            // Streaming message - show normally without collapse
-            return `<div class="term-chat-msg ${role} markdown-content">${renderedContent}</div>`;
-        }
-    } else {
-        // User message
-
-        // AUTO-CONTINUE / SYSTEM ACTION STYLE
-        if (isAuto) {
+            // STREAMING MESSAGE - same structure but with loading indicator
             return `
-                <div class="term-chat-msg system-action" style="display:flex; justify-content:center; margin: 8px 0; opacity: 0.8;">
-                    <div style="background:var(--peak-bg-secondary); color:var(--peak-secondary); padding: 4px 12px; border-radius: 12px; font-size: 11px; display:flex; align-items:center; gap:6px; border:1px solid var(--peak-border);">
-                        <i data-lucide="fast-forward" style="width:10px; height:10px;"></i>
-                        <span>${content === 'continue' ? 'Auto-Continuing...' : content}</span>
-                    </div>
+                <div class="term-chat-msg ${roleClass}">
+                    <details class="message-card-minimal" open>
+                        <summary class="message-summary-minimal">
+                            <div class="summary-header-row">
+                                <i data-lucide="loader-2" class="spin" style="width:12px; height:12px; animation: spin 1s linear infinite; color: ${agentColor};"></i>
+                                <span class="message-summary-text" style="color: ${agentColor};">${agentName}</span>
+                            </div>
+                            <!-- No summaries yet for streaming -->
+                        </summary>
+                        <div class="message-content-minimal">
+                            <div class="message-divider"></div>
+                            ${isHtml ? renderedContent : `<div class="markdown-content">${renderedContent}</div>`}
+                        </div>
+                    </details>
                 </div>
             `;
+        }
+    }
+
+    // SYSTEM MESSAGES (Tool Outputs, Logs)
+    if (role === 'system') {
+        const renderedContent = isHtml ? content : (window.markdown ? window.markdown.render(content) : content);
+
+        return `
+            <div class="term-chat-msg system">
+                <details class="message-card-minimal" open>
+                    <summary class="message-summary-minimal" style="border-left-color: var(--peak-secondary);">
+                        <div class="summary-header-row">
+                            <i data-lucide="chevron-right" class="message-chevron" style="width:12px; height:12px;"></i>
+                            <i data-lucide="terminal-square" style="width:12px; height:12px; color: var(--peak-secondary);"></i>
+                            <span class="message-summary-text" style="color: var(--peak-secondary);">System Output</span>
+                        </div>
+                    </summary>
+                    <div class="message-content-minimal">
+                        <div class="message-divider"></div>
+                        <div class="markdown-content system-content">
+                            ${renderedContent}
+                        </div>
+                    </div>
+                </details>
+            </div>
+        `;
+    }
+
+    // USER MESSAGES
+    if (role === 'user') {
+        // AUTO-CONTINUE / SYSTEM ACTION STYLE
+        if (isAuto) {
+            // User requested to hide auto-continue messages
+            return '';
         }
 
         // STANDARD USER MESSAGE
         let displayContent = content;
         if (content.includes('USER QUESTION:')) {
             displayContent = content.split('USER QUESTION:').pop().trim();
+        }
+
+        // Hide "continue" messages (often from auto-run or continue button)
+        if (displayContent.toLowerCase() === 'continue') {
+            return '';
         }
 
         const isLongMessage = displayContent.length > 300;
@@ -80,6 +134,10 @@ function renderMessageCard(role, content, commitHash = null, isComplete = true, 
             </div>
         `;
     }
+
+    // Fallback for other roles
+    return '';
 }
+
 
 module.exports = { renderMessageCard };

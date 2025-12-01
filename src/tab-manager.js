@@ -219,6 +219,12 @@ async function renderContentOnly() {
         if (type === 'project') {
             window.dispatchEvent(new CustomEvent('project-tab-shown', { detail: { id: activeTab.id } }));
             return;
+        } else {
+            // Clear project root for non-project tabs to avoid AI context confusion
+            if (window.currentProjectRoot) {
+                window.currentProjectRoot = null;
+                window.dispatchEvent(new CustomEvent('peak-project-root-updated', { detail: { root: null } }));
+            }
         }
 
         if (type === 'terminal') {

@@ -42,8 +42,19 @@ const AvailableModels = [
     { id: "x-ai/grok-code-fast-1", name: "Grok Code Fast 1", isPremium: true, supportsReasoning: true }
 ];
 
+const AgentColors = {
+    GENERAL: '#8b5cf6',      // Purple
+    PLANNER: '#3b82f6',      // Blue
+    CODE_EXPERT: '#10b981',  // Emerald
+    CODE_REVIEWER: '#f59e0b',// Amber
+    DECISION_REVIEWER: '#ec4899', // Pink
+    DEBUGGER: '#ef4444',     // Red
+    AESTHETICS: '#8b5cf6'    // Violet (same as general for now, or maybe a nice teal?)
+};
+
 module.exports = {
     InputMode,
     SearchEngine,
-    AvailableModels
+    AvailableModels,
+    AgentColors
 };

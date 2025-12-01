@@ -20,16 +20,15 @@ const DocsRegistry = [
     { id: 'doc-electron', name: 'Electron', url: 'https://www.electronjs.org/docs/latest/', type: 'external', category: 'Frameworks', icon: 'monitor' },
 
     // --- MCP Servers (Local Docs) ---
-    { id: 'mcp-all', name: 'All MCP Servers', filename: 'all-mcp-servers.md', type: 'local', category: 'MCP Servers', icon: 'server' },
-    { id: 'mcp-filesystem', name: 'Filesystem', filename: 'mcp-filesystem.md', type: 'local', category: 'MCP Servers', icon: 'hard-drive' },
-    { id: 'mcp-git', name: 'Git', filename: 'mcp-git.md', type: 'local', category: 'MCP Servers', icon: 'git-branch' },
-    { id: 'mcp-memory', name: 'Memory', filename: 'mcp-memory.md', type: 'local', category: 'MCP Servers', icon: 'brain' },
-    { id: 'mcp-postgres', name: 'PostgreSQL', filename: 'mcp-postgres.md', type: 'local', category: 'MCP Servers', icon: 'database' },
-    { id: 'mcp-github', name: 'GitHub', filename: 'mcp-github.md', type: 'local', category: 'MCP Servers', icon: 'github' },
+    // { id: 'mcp-all', name: 'All MCP Servers', filename: 'all-mcp-servers.md', type: 'local', category: 'MCP Servers', icon: 'server' },
+    // Note: MCP Server docs are now handled dynamically via the MCP Store.
+    // We can add them back here if we want to support local markdown files for them.
 
     // --- General ---
     { id: 'doc-devdocs', name: 'DevDocs', url: 'https://devdocs.io', type: 'external', category: 'General', icon: 'book' },
     { id: 'doc-mcp-repo', name: 'MCP Servers Repo', url: 'https://github.com/modelcontextprotocol/servers', type: 'external', category: 'General', icon: 'github' }
+
+    // Note: External docs require the 'puppeteer' MCP server (or similar) to be enabled for the AI to read them.
 ];
 
 module.exports = DocsRegistry;

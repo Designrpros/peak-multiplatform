@@ -195,7 +195,10 @@ function renderInspector(type) {
                         <div class="inspector-item-title">${session.title || 'New Chat'}</div>
                         <div class="inspector-item-subtitle">${dateStr} • ${session.history.length} msgs</div>
                     </div>
-                    ${isActive ? '<div style="font-size:10px; opacity:0.5;">Active</div>' : ''}
+                    <div style="display:flex; align-items:center; gap:4px;">
+                        ${isActive ? '<div style="font-size:10px; opacity:0.5; margin-right:4px;">Active</div>' : ''}
+                        <button class="icon-btn delete-session-btn" onclick="event.stopPropagation(); window.deleteChatSession('${session.id}')" title="Delete Chat" style="padding:4px; color:var(--peak-secondary);"><i data-lucide="trash-2" style="width:14px; height:14px;"></i></button>
+                    </div>
                 </div>
             `;
         }).join('');
@@ -398,6 +401,18 @@ window.startNewChatSession = () => {
     if (window.peakMCPClient) {
         window.peakMCPClient.startNewSession();
         open('ai-assist');
+    }
+};
+
+window.deleteChatSession = (id) => {
+    if (confirm('Are you sure you want to delete this chat session?')) {
+        if (window.peakMCPClient) {
+            window.peakMCPClient.deleteSession(id);
+            // Refresh the list if we are still in chat-history mode
+            if (currentMode === 'chat-history') {
+                open('chat-history');
+            }
+        }
     }
 };
 

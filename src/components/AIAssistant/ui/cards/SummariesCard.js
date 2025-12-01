@@ -31,22 +31,16 @@ function renderSummariesCard(content) {
         : '';
 
     return `
-        <div class="summaries-card">
-            <div class="summaries-header">
-                <i data-lucide="list-checks" style="width:14px; height:14px; color: var(--peak-accent);"></i>
-                <span class="summaries-title">Summary</span>
-            </div>
-            <div class="summaries-content">
-                <ul class="key-points-list">
-                    ${keyPointsHtml}
-                </ul>
-                ${actionsHtml || statsHtml ? `
-                    <div class="summaries-meta">
-                        ${actionsHtml}
-                        ${statsHtml}
-                    </div>
-                ` : ''}
-            </div>
+        <div class="summaries-card-minimal">
+            <ul class="key-points-list minimal">
+                ${keyPointsHtml}
+            </ul>
+            ${actionsHtml || statsHtml ? `
+                <div class="summaries-meta minimal">
+                    ${actionsHtml}
+                    ${statsHtml}
+                </div>
+            ` : ''}
         </div>
     `;
 }

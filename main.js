@@ -8,6 +8,7 @@ const { pathToFileURL } = require('url');
 const { ESLint } = require('eslint');
 const mime = require('mime-types');
 const Store = require('electron-store');
+const { exec } = require('child_process');
 
 dotenv.config();
 
@@ -28,6 +29,7 @@ try { pty = require('node-pty'); } catch (e) { console.error("[Main] Node-pty fa
 const ptyProcesses = {};
 
 const openrouterService = require('./src/openrouter-service');
+const mcpHost = require('./src/services/MCPHost');
 
 let tray, mainWindow, settingsWindow;
 const WINDOW_WIDTH = 1024;
@@ -172,6 +174,79 @@ async function recursiveSearch(dir, query, matchedFiles = [], expandedDirs = new
 }
 
 function setupIpcHandlers() {
+    // --- MCP HANDLERS ---
+    ipcMain.handle('mcp:connect-dynamic', async (event, config) => {
+        try {
+            const results = {};
+            const catalog = require('./src/components/AIAssistant/data/mcp-catalog');
+            console.log('[Main] MCP Catalog:', JSON.stringify(catalog.map(s => s.id)));
+
+            for (const server of catalog) {
+                const serverConfig = config[server.id];
+
+                // Always connect filesystem by default if not specified, otherwise check enabled
+                // Actually, let's make filesystem mandatory for now to avoid breaking things, 
+                // or default to enabled if config is empty.
+                const isEnabled = serverConfig ? serverConfig.enabled : (server.id === 'filesystem');
+
+                if (isEnabled) {
+                    try {
+                        const env = { ...process.env };
+                        if (server.requiresKey && serverConfig.key) {
+                            env[server.keyName] = serverConfig.key;
+                        }
+
+                        // Construct Args
+                        let args = [];
+                        if (server.binary) {
+                            // If explicit binary name is provided (e.g. mcp-server-puppeteer)
+                            args = ['-y', '--package', server.npm, server.binary];
+                        } else {
+                            // Default: assume binary name matches package or is default
+                            args = ['-y', server.npm];
+                        }
+                        if (server.args) {
+                            server.args.forEach(arg => {
+                                if (arg === '[homedir]') args.push(os.homedir());
+                                else args.push(arg);
+                            });
+                        }
+
+                        await mcpHost.connectToServer(server.id, 'npx', args, env);
+                        results[server.id] = true;
+                    } catch (e) {
+                        console.error(`Failed to connect to ${server.id}:`, e);
+                        results[server.id] = e.message;
+                    }
+                } else {
+                    // If disabled, ensure it's disconnected (if we had disconnect logic)
+                    // For now, we just don't connect.
+                }
+            }
+
+            return { success: true, results };
+        } catch (e) {
+            console.error("MCP Dynamic Connect Error:", e);
+            return { error: e.message };
+        }
+    });
+
+
+
+    ipcMain.handle('mcp:get-server-status', () => {
+        return mcpHost.getServerStatus();
+    });
+
+    ipcMain.handle('mcp:get-tools', async () => {
+        return await mcpHost.getAllTools();
+    });
+
+    ipcMain.handle('mcp:execute-tool', async (e, serverId, toolName, args) => {
+        const result = await mcpHost.callTool(serverId, toolName, args);
+        return result;
+    });
+    // --------------------
+
     ipcMain.handle('app:get-home-path', () => os.homedir());
     ipcMain.handle('app:open-path', async (event, targetPath) => shell.openPath(targetPath));
     ipcMain.handle('project:reveal-in-finder', async (event, targetPath) => { if (targetPath) shell.showItemInFolder(targetPath); });
@@ -183,7 +258,8 @@ function setupIpcHandlers() {
         return { matches: matchedFiles, expanded: Array.from(expandedDirs) };
     });
 
-    // --- FIXED FILE CREATION LOGIC ---
+
+
     ipcMain.handle('project:create-file', async (e, p, force = false) => {
         try {
             if (fs.existsSync(p)) {
@@ -435,7 +511,6 @@ function setupIpcHandlers() {
     });
 
     // --- GIT CHECKPOINT HANDLERS ---
-    const { exec } = require('child_process');
 
     ipcMain.handle('git:create-checkpoint', async (event, rootPath, messageId) => {
         return new Promise((resolve) => {
@@ -586,14 +661,28 @@ function setupIpcHandlers() {
             console.log(`[Main] Starting stream for model: ${mId}`);
             const stream = await openrouterService.streamChatCompletion(mId, msgs, apiKey, 'peak', 'Peak');
 
+            let buffer = '';
             stream.on('data', c => {
                 const chunkStr = c.toString();
-                // console.log('[Main] Raw Chunk:', chunkStr); // Uncomment for verbose debug
+                buffer += chunkStr;
 
-                const lines = chunkStr.split('\n').filter(l => l.trim() !== '');
+                const lines = buffer.split('\n');
+                // Keep the last line in the buffer if it's incomplete (doesn't end with newline)
+                // But wait, SSE data lines are usually separated by newlines.
+                // If a line is split, the next chunk will complete it.
+                // However, 'buffer.split' will give us the last partial line as the last element.
+
+                // Correct approach for SSE buffering:
+                // 1. Split by newline
+                // 2. Process all complete lines
+                // 3. Store the last partial line back in buffer
+
+                buffer = lines.pop(); // The last element is potentially incomplete
 
                 for (const line of lines) {
+                    if (line.trim() === '') continue;
                     if (line.startsWith(':')) continue; // Ignore OpenRouter keep-alive/status messages
+
                     const msg = line.replace(/^data: /, '');
                     if (msg === '[DONE]') {
                         console.log('[Main] Stream received [DONE]');
@@ -604,10 +693,14 @@ function setupIpcHandlers() {
                         const p = JSON.parse(msg);
                         const content = p.choices[0]?.delta?.content || '';
                         if (content) {
-                            // console.log('[Main] Content:', content);
                             event.sender.send('llm-stream-data', sId, { type: 'data', content: content });
                         }
                     } catch (e) {
+                        // If it fails to parse, it might be a truly malformed line or we messed up buffering.
+                        // But usually SSE lines are complete JSONs.
+                        // The previous error "Expected ',' or '}'" suggests the JSON itself was truncated IN THE MIDDLE of a line.
+                        // This happens if the 'data' event gives us half a line.
+                        // Our buffering strategy (buffer += chunk, split \n, pop last) handles this.
                         console.error('[Main] JSON Parse Error:', e.message, 'Line:', line);
                     }
                 }

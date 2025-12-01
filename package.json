@@ -10,6 +10,7 @@
     "start": "ELECTRON_DISABLE_SECURITY_WARNINGS=true electron . 2>&1 | grep -v 'CoreText note'",
     "rebuild": "electron-rebuild",
     "postinstall": "electron-builder install-app-deps",
+    "build": "electron-builder",
     "dist": "electron-builder",
     "dist:mac": "electron-builder --mac --x64 --arm64",
     "dist:win": "electron-builder --win --x64 --arm64",
@@ -36,6 +37,8 @@
     "@codemirror/state": "latest",
     "@codemirror/theme-one-dark": "^6.1.2",
     "@codemirror/view": "latest",
+    "@modelcontextprotocol/sdk": "^1.23.0",
+    "@modelcontextprotocol/server-puppeteer": "^2025.5.12",
     "@uiw/codemirror-theme-vscode": "latest",
     "@xterm/addon-clipboard": "latest",
     "@xterm/addon-fit": "latest",
@@ -50,7 +53,8 @@
     "highlight.js": "^11.11.1",
     "marked": "^12.0.2",
     "node-pty": "latest",
-    "vscode-icons-js": "latest"
+    "vscode-icons-js": "latest",
+    "zod": "^4.1.13"
   },
   "devDependencies": {
     "@electron/rebuild": "^4.0.1",

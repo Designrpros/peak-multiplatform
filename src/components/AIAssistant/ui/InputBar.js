@@ -5,9 +5,14 @@ class InputBar {
     constructor() {
         this.container = null;
         this.callbacks = {};
+        this.isPopoverVisible = false;
+        this.popoverIndex = 0;
+        this.filteredItems = [];
+        this.triggerChar = null; // '@' or '/'
+        this.triggerIndex = -1;
     }
 
-    render(isFileContextUsable, selectedAgentId) {
+    render(isFileContextUsable, selectedAgentId, isAgentMode = false) {
         const agents = AgentRegistry.getAgents();
         const defaultAgent = agents.find(a => a.isDefault) || agents[0];
         const currentAgentId = selectedAgentId || defaultAgent.id;
@@ -17,22 +22,29 @@ class InputBar {
                 <!-- Top Toolbar -->
                 <div class="input-toolbar" style="display:flex; justify-content:space-between; align-items:center; padding: 2px 6px; margin-bottom: 4px;">
                     <div class="left-tools" style="display:flex; gap:3px; align-items:center;">
-                         <button id="ai-assist-tools-btn" class="icon-btn" title="Tools" style="padding:3px;">
-                            <i data-lucide="sliders-horizontal" style="width:12px; height:12px;"></i>
+                         <!-- AI Mode (Sparkles) -->
+                         <div class="agent-mode-toggle" style="display:flex; align-items:center; gap:4px; padding-right:4px; border-right:1px solid var(--border-color); margin-right: 4px;">
+                            <button id="ai-assist-agent-mode-btn" class="icon-btn ${isAgentMode ? 'active' : ''}" title="Toggle Agent Mode" style="padding:3px; color: ${isAgentMode ? 'var(--peak-accent)' : 'var(--peak-secondary)'};">
+                                <i data-lucide="sparkles" style="width:14px; height:14px;"></i>
+                            </button>
+                         </div>
+
+                         <!-- Workflows (Flow/GitBranch) -->
+                         <button id="ai-assist-tools-btn" class="icon-btn" title="Workflows & Commands (/)" style="padding:3px;">
+                            <i data-lucide="workflow" style="width:14px; height:14px;"></i>
                          </button>
-                         <button id="ai-assist-docs-btn" class="icon-btn" title="Documentation" style="padding:3px;">
-                            <i data-lucide="book" style="width:12px; height:12px;"></i>
+
+                         <!-- References (Link/FileText) -->
+                         <button id="ai-assist-docs-btn" class="icon-btn" title="References (@)" style="padding:3px;">
+                            <i data-lucide="link" style="width:14px; height:14px;"></i>
                          </button>
+
                          <button id="ai-assist-add-file-btn" class="icon-btn" title="Add File Context" style="padding:3px;">
-                            <i data-lucide="plus" style="width:12px; height:12px;"></i>
+                            <i data-lucide="plus" style="width:14px; height:14px;"></i>
                          </button>
                          <button id="ai-assist-add-active-file-btn" class="icon-btn" title="Add Active File Context" style="padding:3px; display:none;">
-                            <i data-lucide="file-code" style="width:12px; height:12px;"></i>
+                            <i data-lucide="file-code" style="width:14px; height:14px;"></i>
                          </button>
-                         <div style="width:8px;"></div>
-                         <button id="ai-assist-continue-btn" class="icon-btn" title="Continue" style="padding:3px 6px; font-size:10px; font-weight:500; color:var(--peak-secondary); border:none; background:transparent; display:flex; align-items:center; gap:3px;">
-                            Continue
-                        </button>
                     </div>
                     <div class="right-tools" style="display:flex; align-items:center;">
                         <span id="ai-status-indicator" style="font-size:9px; font-weight:600; color:var(--peak-secondary); display:flex; align-items:center; gap:3px;">
@@ -45,17 +57,20 @@ class InputBar {
                     </div>
                 </div>
 
-                <!-- Tools Menu Dropdown -->
+                <!-- Suggestion Popover -->
+                <div id="ai-suggestion-popover" class="suggestion-popover" style="display:none;"></div>
+
+                <!-- Tools Menu Dropdown (Legacy/Fallback) -->
                 <div id="ai-assist-tools-menu" class="tools-menu">
                     <div class="menu-section-header">Tools</div>
-                    ${ToolRegistry.getTools().map(tool => `
+                    ${ToolRegistry.getCachedTools().map(tool => `
                         <div class="menu-item" data-action="insert-tool" data-tool="${tool.name}">
                             <i data-lucide="terminal-square"></i> ${tool.name}
                         </div>
                     `).join('')}
                 </div>
 
-                <!-- Docs Menu Dropdown -->
+                <!-- Docs Menu Dropdown (Legacy/Fallback) -->
                 <div id="ai-assist-docs-menu" class="tools-menu">
                     <!-- Populated by ChatView.js -->
                 </div>
@@ -63,15 +78,14 @@ class InputBar {
                 <div class="inspector-input-box">
                     <div id="ai-assist-file-chips" class="file-chips-container"></div>
                     <textarea class="chat-textarea" id="ai-assist-input-textarea" 
-                        placeholder="Ask anything..." 
+                        placeholder="Ask anything... Type @ for refs, / for commands" 
                         rows="1"></textarea>
                     
                     <div class="chat-controls" style="margin-top: 4px;">
                         <div class="left-controls">
-                             <div class="model-selector-wrapper" style="position:relative; display:flex; gap:6px;">
+                             <div class="model-selector-wrapper" style="position:relative; display:flex; gap:6px; align-items:center;">
                                 <select id="ai-assist-agent-select" class="model-select" title="Select Agent">
                                     ${agents.map(agent => `<option value="${agent.id}" ${agent.id === currentAgentId ? 'selected' : ''}>${agent.name}</option>`).join('')}
-                                    <option value="manage-agents" style="font-style:italic; border-top:1px solid #ccc;">Manage Agents...</option>
                                 </select>
                              </div>
                         </div>
@@ -90,6 +104,9 @@ class InputBar {
     }
 
     attachListeners(container, callbacks) {
+        const { ipcRenderer } = require('electron');
+        ipcRenderer.send('log', '[InputBar] attachListeners called');
+
         this.container = container;
         this.callbacks = callbacks || {};
 
@@ -97,32 +114,37 @@ class InputBar {
         this.submitBtn = container.querySelector('#ai-assist-submit-btn');
         this.stopBtn = container.querySelector('#ai-assist-stop-btn');
         this.agentSelect = container.querySelector('#ai-assist-agent-select');
-        this.modeSelect = container.querySelector('#ai-assist-mode-select');
         this.toolsBtn = container.querySelector('#ai-assist-tools-btn');
         this.toolsMenu = container.querySelector('#ai-assist-tools-menu');
         this.docsBtn = container.querySelector('#ai-assist-docs-btn');
         this.docsMenu = container.querySelector('#ai-assist-docs-menu');
         this.addFileBtn = container.querySelector('#ai-assist-add-file-btn');
         this.addActiveFileBtn = container.querySelector('#ai-assist-add-active-file-btn');
-        this.continueBtn = container.querySelector('#ai-assist-continue-btn');
+        this.agentModeBtn = container.querySelector('#ai-assist-agent-mode-btn');
+        this.popover = container.querySelector('#ai-suggestion-popover');
 
-        // Debug Review Controls
-        const reviewControls = container.querySelector('#ai-review-controls');
-        console.log('[InputBar] attachListeners: Review controls found?', !!reviewControls);
+        // Agent Mode Toggle
+        if (this.agentModeBtn) {
+            this.agentModeBtn.addEventListener('click', () => {
+                const isActive = this.agentModeBtn.classList.toggle('active');
+                this.agentModeBtn.style.color = isActive ? 'var(--peak-accent)' : 'var(--peak-secondary)';
+                if (this.callbacks.onAgentModeToggle) {
+                    this.callbacks.onAgentModeToggle(isActive);
+                }
+            });
+        }
 
         // Submit
         if (this.submitBtn) {
-            this.submitBtn.addEventListener('click', () => this.handleSubmit());
+            this.submitBtn.addEventListener('click', () => {
+                this.handleSubmit();
+            });
         }
 
-        // Enter Key
+        // Input & Keydown
         if (this.inputArea) {
-            this.inputArea.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    this.handleSubmit();
-                }
-            });
+            this.inputArea.addEventListener('keydown', (e) => this.handleKeyDown(e));
+            this.inputArea.addEventListener('input', (e) => this.handleInput(e));
 
             // Auto-resize
             this.inputArea.addEventListener('input', () => {
@@ -144,91 +166,258 @@ class InputBar {
             });
         }
 
-        // Agent Select
-        if (this.agentSelect) {
-            this.agentSelect.addEventListener('change', (e) => {
-                if (this.callbacks.onAgentChange) this.callbacks.onAgentChange(e.target.value);
+        // Manual Triggers (Buttons)
+        if (this.toolsBtn) {
+            this.toolsBtn.addEventListener('click', () => {
+                this.insertText('/');
+                this.handleInput({ target: this.inputArea }); // Trigger logic
             });
         }
 
-        // Mode Select
-        if (this.modeSelect) {
-            this.modeSelect.addEventListener('change', (e) => {
-                if (this.callbacks.onModeChange) this.callbacks.onModeChange(e.target.value);
+        if (this.docsBtn) {
+            this.docsBtn.addEventListener('click', () => {
+                this.insertText('@');
+                this.handleInput({ target: this.inputArea }); // Trigger logic
             });
         }
 
-        // Tools Menu
-        if (this.toolsBtn && this.toolsMenu) {
-            this.toolsBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                if (this.docsMenu) this.docsMenu.classList.remove('visible');
-                this.toolsMenu.classList.toggle('visible');
-            });
-
-            this.toolsMenu.addEventListener('click', (e) => {
-                const item = e.target.closest('.menu-item');
-                if (!item) return;
-                const action = item.dataset.action;
-                if (action === 'insert-tool') {
-                    const toolName = item.dataset.tool;
-                    this.insertText(`Use ${toolName} to `);
-                    this.toolsMenu.classList.remove('visible');
-                }
-            });
-        }
-
-        // Docs Menu
-        if (this.docsBtn && this.docsMenu) {
-            this.docsBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                if (this.toolsMenu) this.toolsMenu.classList.remove('visible');
-                if (this.callbacks.onDocsMenuToggle) this.callbacks.onDocsMenuToggle(this.docsMenu);
-                this.docsMenu.classList.toggle('visible');
-            });
-
-            // Docs menu clicks are handled by ChatView usually because it renders the content dynamically
-            // But we can delegate or let ChatView attach its own listener to the menu if it wants
-            // Or we can forward the click
-            this.docsMenu.addEventListener('click', (e) => {
-                if (this.callbacks.onDocsMenuClick) this.callbacks.onDocsMenuClick(e);
-            });
-        }
-
-        // Add File
+        // Add File Button (Legacy/Direct)
         if (this.addFileBtn) {
             this.addFileBtn.addEventListener('click', () => {
                 if (this.callbacks.onAddFile) this.callbacks.onAddFile();
             });
         }
+    }
 
-        // Add Active File
-        if (this.addActiveFileBtn) {
-            this.addActiveFileBtn.addEventListener('click', () => {
-                if (this.callbacks.onAddActiveFile) this.callbacks.onAddActiveFile();
-            });
-        }
+    handleInput(e) {
+        const val = this.inputArea.value;
+        const cursorPos = this.inputArea.selectionStart;
 
-        // Continue
-        if (this.continueBtn) {
-            this.continueBtn.addEventListener('click', () => {
-                if (this.callbacks.onContinue) this.callbacks.onContinue();
-            });
-        }
+        // Check for triggers near cursor
+        // Look backwards from cursor for @ or /
+        const textBeforeCursor = val.slice(0, cursorPos);
+        const lastAt = textBeforeCursor.lastIndexOf('@');
+        const lastSlash = textBeforeCursor.lastIndexOf('/');
 
-        // Close menus on outside click
-        document.addEventListener('click', (e) => {
-            if (this.toolsMenu && !this.toolsMenu.contains(e.target) && !this.toolsBtn.contains(e.target)) {
-                this.toolsMenu.classList.remove('visible');
+        // Determine which trigger is active and closer
+        let trigger = null;
+        let index = -1;
+
+        if (lastAt > -1 && (lastAt >= lastSlash || lastSlash === -1)) {
+            // Check if it's a valid trigger (start of line or preceded by space)
+            if (lastAt === 0 || /\s/.test(textBeforeCursor[lastAt - 1])) {
+                trigger = '@';
+                index = lastAt;
             }
-            if (this.docsMenu && !this.docsMenu.contains(e.target) && !this.docsBtn.contains(e.target)) {
-                this.docsMenu.classList.remove('visible');
+        } else if (lastSlash > -1 && (lastSlash >= lastAt || lastAt === -1)) {
+            if (lastSlash === 0 || /\s/.test(textBeforeCursor[lastSlash - 1])) {
+                trigger = '/';
+                index = lastSlash;
+            }
+        }
+
+        if (trigger) {
+            const query = textBeforeCursor.slice(index + 1);
+            // If query contains space, we might assume the user finished typing the ref
+            // But for multi-word files, we might want to keep it open. 
+            // For now, let's close if there's a newline or maybe just keep it simple.
+            if (query.includes('\n')) {
+                this.hidePopover();
+                return;
+            }
+
+            this.triggerChar = trigger;
+            this.triggerIndex = index;
+            this.showPopover(trigger, query);
+        } else {
+            this.hidePopover();
+        }
+    }
+
+    handleKeyDown(e) {
+        if (this.isPopoverVisible) {
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                this.navigatePopover(1);
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                this.navigatePopover(-1);
+            } else if (e.key === 'Enter' || e.key === 'Tab') {
+                e.preventDefault();
+                this.selectPopoverItem();
+            } else if (e.key === 'Escape') {
+                e.preventDefault();
+                this.hidePopover();
+            }
+            return;
+        }
+
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            this.handleSubmit();
+        }
+    }
+
+    async showPopover(trigger, query) {
+        this.isPopoverVisible = true;
+
+        // Get items based on trigger
+        let items = [];
+        if (trigger === '@') {
+            items = await this.getReferences(query);
+        } else if (trigger === '/') {
+            items = await this.getCommands(query);
+        }
+
+        this.filteredItems = items;
+        this.popoverIndex = 0;
+
+        if (items.length === 0) {
+            this.hidePopover();
+            return;
+        }
+
+        this.renderPopoverItems(items);
+        // No positioning needed for full-width static layout
+    }
+
+    renderPopoverItems(items) {
+        if (!this.popover) return;
+
+        this.popover.innerHTML = items.map((item, i) => `
+            <div class="popover-item ${i === 0 ? 'active' : ''}" data-index="${i}">
+                <i data-lucide="${item.icon}" style="width:14px; height:14px;"></i>
+                <div class="popover-item-content">
+                    <div class="popover-item-title">${item.label}</div>
+                    ${item.desc ? `<div class="popover-item-desc">${item.desc}</div>` : ''}
+                </div>
+            </div>
+        `).join('');
+
+        this.popover.style.display = 'flex';
+        if (window.lucide) window.lucide.createIcons();
+    }
+
+    navigatePopover(dir) {
+        if (!this.filteredItems.length) return;
+
+        this.popoverIndex = (this.popoverIndex + dir + this.filteredItems.length) % this.filteredItems.length;
+
+        const items = this.popover.querySelectorAll('.popover-item');
+        items.forEach((el, i) => {
+            if (i === this.popoverIndex) {
+                el.classList.add('active');
+                el.scrollIntoView({ block: 'nearest' });
+            } else {
+                el.classList.remove('active');
             }
         });
     }
 
+    selectPopoverItem() {
+        const item = this.filteredItems[this.popoverIndex];
+        if (!item) return;
+
+        const val = this.inputArea.value;
+        const before = val.slice(0, this.triggerIndex);
+        const after = val.slice(this.inputArea.selectionStart);
+
+        // Insert format: @[label](value) or just value?
+        // System seems to use @[path] or just text.
+        // Let's use a clean text representation.
+        const insertion = `${this.triggerChar}[${item.value}] `;
+
+        this.inputArea.value = before + insertion + after;
+
+        // Move cursor
+        const newCursorPos = before.length + insertion.length;
+        this.inputArea.setSelectionRange(newCursorPos, newCursorPos);
+
+        this.hidePopover();
+        this.adjustHeight();
+        this.updateSubmitButton();
+    }
+
+    hidePopover() {
+        this.isPopoverVisible = false;
+        this.triggerChar = null;
+        this.triggerIndex = -1;
+        if (this.popover) this.popover.style.display = 'none';
+    }
+
+    // --- Data Providers ---
+
+    async getReferences(query) {
+        let currentFileValue = 'current_file';
+        let currentFileDesc = 'Add active file';
+
+        // Try to get actual active file
+        if (window.getProjectFileContext) {
+            const ctx = window.getProjectFileContext();
+            if (ctx && ctx.currentFilePath) {
+                currentFileValue = ctx.currentFilePath;
+                currentFileDesc = ctx.currentFilePath; // Show path in desc
+            }
+        }
+
+        const defaults = [
+            { label: 'Current File', value: currentFileValue, icon: 'file', desc: currentFileDesc },
+            { label: 'All Open Files', value: 'open_files', icon: 'files', desc: 'Add all open files' },
+        ];
+
+        let results = defaults.filter(i => i.label.toLowerCase().includes(query.toLowerCase()));
+
+        // If we have a query and a project root, search for files
+        if (query && query.length > 1 && window.currentProjectRoot) {
+            try {
+                const { ipcRenderer } = require('electron');
+                const path = require('path');
+                const searchResult = await ipcRenderer.invoke('project:search', window.currentProjectRoot, query);
+
+                if (searchResult && searchResult.matches) {
+                    const fileItems = searchResult.matches.map(fullPath => ({
+                        label: path.basename(fullPath),
+                        value: fullPath,
+                        icon: 'file-code',
+                        desc: path.relative(window.currentProjectRoot, fullPath)
+                    }));
+
+                    // Add file results to the list
+                    results = [...results, ...fileItems];
+                }
+            } catch (e) {
+                console.error('[InputBar] File search failed:', e);
+            }
+        }
+
+        return results.slice(0, 20); // Limit total results
+    }
+
+    async getCommands(query) {
+        const tools = ToolRegistry.getCachedTools();
+        const commands = tools.map(t => ({
+            label: t.name,
+            value: t.name,
+            icon: 'terminal-square',
+            desc: t.description ? t.description.slice(0, 30) + '...' : 'Tool'
+        }));
+
+        const workflows = [
+            { label: 'Explain Code', value: 'explain', icon: 'book-open', desc: 'Explain selected code' },
+            { label: 'Refactor', value: 'refactor', icon: 'hammer', desc: 'Refactor selected code' },
+            { label: 'Find Bugs', value: 'debug', icon: 'bug', desc: 'Analyze for bugs' },
+        ];
+
+        const all = [...workflows, ...commands];
+        return all.filter(i => i.label.toLowerCase().includes(query.toLowerCase()));
+    }
+
+    // --- Existing Methods (Preserved) ---
+
     handleSubmit() {
+        const { ipcRenderer } = require('electron');
         const value = this.inputArea.value.trim();
+
         if (value && this.callbacks.onSubmit) {
             this.callbacks.onSubmit(value);
             this.inputArea.value = '';
@@ -265,26 +454,13 @@ class InputBar {
     }
 
     setLoading(isLoading) {
-        // Allow typing while loading for queueing
-        // if (this.inputArea) this.inputArea.disabled = isLoading; 
-
         if (this.submitBtn) {
-            // Change submit button to "Queue" or just keep it active?
-            // If we keep it active, user can click it.
-            // Let's keep it active but maybe change icon?
-            // For now, just keep it active.
             this.submitBtn.style.display = 'flex';
             this.submitBtn.style.opacity = isLoading ? '0.7' : '1';
         }
 
         if (this.stopBtn) this.stopBtn.style.display = isLoading ? 'flex' : 'none';
 
-        // If loading, hide submit button? No, we want to allow queueing.
-        // But we also want to show Stop button.
-        // So show BOTH? Or just Stop?
-        // If we show Stop, we can't show Submit in the same spot if they overlap.
-        // In the HTML, they are siblings.
-        // Let's show both if loading.
         if (isLoading) {
             this.submitBtn.style.display = 'flex';
             this.stopBtn.style.display = 'flex';
@@ -298,7 +474,6 @@ class InputBar {
         const indicator = this.container.querySelector('#ai-status-indicator');
         if (!indicator) return;
 
-        // If custom message is provided, show it with pulse animation
         if (customMessage) {
             indicator.innerHTML = `
                 <span style="width:6px; height:6px; border-radius:50%; background:var(--peak-accent); animation: pulse 1s infinite;"></span> ${customMessage}
@@ -318,18 +493,10 @@ class InputBar {
     }
 
     showReviewControls(count, onAccept, onReject) {
-        console.log('[InputBar] showReviewControls called', { count });
         const indicator = this.container.querySelector('#ai-status-indicator');
         const controls = this.container.querySelector('#ai-review-controls');
         const acceptBtn = this.container.querySelector('#ai-review-accept-btn');
         const rejectBtn = this.container.querySelector('#ai-review-reject-btn');
-
-        console.log('[InputBar] Controls found:', {
-            indicator: !!indicator,
-            controls: !!controls,
-            acceptBtn: !!acceptBtn,
-            rejectBtn: !!rejectBtn
-        });
 
         if (indicator) indicator.style.display = 'none';
         if (controls) controls.style.display = 'flex';

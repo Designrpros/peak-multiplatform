@@ -3,6 +3,7 @@ const hljs = require('highlight.js');
 
 // Import Card Components
 const { renderThinkingCard } = require('../ui/cards/ThinkingCard');
+const { renderCodeThinkingCard } = require('../ui/cards/CodeThinkingCard');
 const { renderFileEditCard, renderGeneratingFileCard } = require('../ui/cards/FileEditCard');
 const { renderCommandCard } = require('../ui/cards/CommandCard');
 const { renderDeleteCard } = require('../ui/cards/DeleteCard');
@@ -16,6 +17,9 @@ const { renderTodoCard } = require('../ui/cards/TodoCard');
 const { renderListDirectoryCard } = require('../ui/cards/ListDirectoryCard');
 const { renderAgentCard } = require('../ui/cards/AgentCard');
 const { renderClarificationCard } = require('../ui/cards/ClarificationCard');
+const { renderWebviewCard } = require('../ui/cards/WebviewCard');
+const { renderGenericToolCard } = require('../ui/cards/GenericToolCard');
+const ToolRegistry = require('../tools/ToolRegistry');
 
 class StreamParser {
     constructor() {
@@ -88,6 +92,14 @@ class StreamParser {
                 if (!part.trim()) return '';
                 const unescaped = this.unescapeHTML(part);
                 const rendered = renderMarkdown(unescaped);
+
+                // Check if rendered content is effectively empty (e.g. just <p></p> or whitespace)
+                const tempDiv = document.createElement('div');
+                tempDiv.innerHTML = rendered;
+                if (!tempDiv.textContent.trim() && !tempDiv.querySelector('img') && !tempDiv.querySelector('hr')) {
+                    return '';
+                }
+
                 return `<div class="response-card markdown-content">${rendered}</div>`;
             }
         }).join('');
@@ -130,6 +142,7 @@ class StreamParser {
         // Incomplete
         const incompleteThinkingRegex = /(?:&lt;thinking&gt;|<thinking>|&lt;think&gt;|<think>)([\s\S]*)$/;
         html = html.replace(incompleteThinkingRegex, (match, content) => {
+            if (!content || !content.trim()) return match; // Don't create placeholder for empty thinking
             return this.createPlaceholder(renderThinkingCard(content.trim(), false));
         });
 
@@ -148,22 +161,37 @@ class StreamParser {
         // Normalize tool tags
         let processed = html
             .replace(/&lt;tool/g, '<tool')
-            .replace(/&lt;\/tool&gt;/g, '</tool>')
+            .replace(/&lt;\/tool>/g, '</tool>')
             .replace(/&lt;\/tool/g, '</tool>')
             .replace(/&gt;/g, '>')
             // Shorthand normalization
             .replace(/&lt;create_file/g, '<create_file')
-            .replace(/&lt;\/create_file&gt;/g, '</create_file>')
+            .replace(/&lt;\/create_file>/g, '</create_file>')
             .replace(/&lt;run_command/g, '<run_command')
-            .replace(/&lt;\/run_command&gt;/g, '</run_command>')
+            .replace(/&lt;\/run_command>/g, '</run_command>')
             .replace(/&lt;delete_file/g, '<delete_file')
-            .replace(/&lt;\/delete_file&gt;/g, '</delete_file>')
+            .replace(/&lt;\/delete_file>/g, '</delete_file>')
             .replace(/&lt;search_project/g, '<search_project')
-            .replace(/&lt;\/search_project&gt;/g, '</search_project>');
+            .replace(/&lt;\/search_project>/g, '</search_project>');
+        // Move > replacement to end to avoid breaking regexes expecting &gt;
+        // .replace(/&gt;/g, '>') 
+        ;
+
+        console.log('[StreamParser] Processed HTML (normalized):', processed.substring(0, 500));
 
         // Clean up attributes
         processed = processed.replace(/<(tool|create_file|run_command|delete_file|search_project|list_directory)\s+([^>]+)>/g, (match, tag, attrs) => {
             const unescapedAttrs = attrs.replace(/&quot;/g, '"').replace(/&#34;/g, '"').replace(/\\"/g, '"');
+
+            // Log Tool Intent
+            try {
+                const AgentLogger = require('../core/AgentLogger');
+                AgentLogger.tool(`Tool Proposed: ${tag}`, {
+                    tool: tag,
+                    attributes: unescapedAttrs
+                });
+            } catch (e) { console.error('Logger error:', e); }
+
             return `<${tag} ${unescapedAttrs}>`;
         });
 
@@ -171,8 +199,8 @@ class StreamParser {
 
         // Create File
         // Robust regex: Match tool with name="create_file", then extract path
-        processed = processed.replace(/<tool\s+([^>]*name="create_file"[^>]*)>([\s\S]*?)<\/tool>/g, (match, attrs, content) => {
-            const pathMatch = attrs.match(/path="([^"]+)"/);
+        processed = processed.replace(/\u003ctool\s+([^\u003e]*name\s*=\s*["']create_file["'][^\u003e]*)\u003e([\s\S]*?)\u003c\/tool\u003e/g, (match, attrs, content) => {
+            const pathMatch = attrs.match(/path=["']([^"']+)["']/);
             const path = pathMatch ? pathMatch[1] : null;
 
             console.log('[StreamParser] Matched create_file (robust). Path:', path);
@@ -182,19 +210,15 @@ class StreamParser {
                 return match; // Return original if no path
             }
 
-            const rawContent = this.unescapeHTML(content.trim());
-            // Skip if no content
-            if (!rawContent) {
-                console.warn('[StreamParser] Skipping create_file with empty content:', path);
-                return '';
-            }
-            return this.createPlaceholder(renderFileEditCard(path, rawContent, 'create'));
+            // Use code thinking card WITH the code content so it can be expanded
+            // FIX: Unescape HTML content before passing to card, as parse() escapes it globally first
+            return this.createPlaceholder(renderCodeThinkingCard('create_file', path, this.unescapeHTML(content.trim()), true));
         });
 
         // Update File Standard (Moved Up)
         // Robust regex: Match tool with name="update_file" (allowing spaces), then extract path
-        processed = processed.replace(/<tool\s+([^>]*name\s*=\s*"update_file"[^>]*)>([\s\S]*?)<\/tool>/g, (match, attrs, content) => {
-            const pathMatch = attrs.match(/path="([^"]+)"/);
+        processed = processed.replace(/\u003ctool\s+([^\u003e]*name\s*=\s*["']update_file["'][^\u003e]*)\u003e([\s\S]*?)\u003c\/tool\u003e/g, (match, attrs, content) => {
+            const pathMatch = attrs.match(/path=["']([^"']+)["']/);
             const path = pathMatch ? pathMatch[1] : null;
 
             console.log('[StreamParser] Matched update_file (robust). Path:', path);
@@ -204,19 +228,38 @@ class StreamParser {
                 return match;
             }
 
-            const rawContent = this.unescapeHTML(content.trim());
-            // Skip if no content
-            if (!rawContent) {
-                console.warn('[StreamParser] Skipping update_file with empty content:', path);
-                return '';
-            }
-            return this.createPlaceholder(renderFileEditCard(path, rawContent, 'update'));
+            // Use code thinking card WITH the code content so it can be expanded
+            // FIX: Unescape HTML content before passing to card
+            return this.createPlaceholder(renderCodeThinkingCard('update_file', path, this.unescapeHTML(content.trim()), true));
         });
 
-        // Run Command
-        processed = processed.replace(/<tool\s+name="run_command"[^>]*>([\s\S]*?)<\/tool>/g, (match, cmd) => {
-            console.log('[StreamParser] Matched run_command');
-            return this.createPlaceholder(renderCommandCard(cmd.trim()));
+        // Unified Run Command Parsing (Standard + Shorthand)
+        // Matches <tool name="run_command">...</tool> OR <run_command>...</run_command>
+        const runCommandUnifiedRegex = /(?:<tool\s+[^>]*name=["']run_command["'][^>]*>|<run_command\s*[^>]*>)([\s\S]*?)(?:<\/tool>|<\/run_command>)/gi;
+
+        processed = processed.replace(runCommandUnifiedRegex, (match, content) => {
+            console.log('[StreamParser] Matched run_command (Unified). Content length:', content?.length);
+
+            let cmd = content ? content.trim() : '';
+
+            // If content is empty, check if it was passed as an attribute in the opening tag (rare but possible)
+            if (!cmd) {
+                const cmdAttrMatch = match.match(/cmd=["']([^"']+)["']/) || match.match(/command=["']([^"']+)["']/);
+                if (cmdAttrMatch) {
+                    cmd = cmdAttrMatch[1];
+                }
+            }
+
+            if (!cmd) {
+                console.warn('[StreamParser] Skipping run_command without command content');
+                return match; // Return original if no command found
+            }
+
+            // Decode HTML entities in the command (e.g. &amp; -> &)
+            cmd = this.unescapeHTML(cmd);
+
+            console.log('[StreamParser] Rendering CommandCard for:', cmd.substring(0, 50));
+            return this.createPlaceholder(renderCommandCard(cmd));
         });
 
         // Delete File
@@ -233,6 +276,10 @@ class StreamParser {
         // Get Problems
         processed = processed.replace(/<tool name="get_problems">([\s\S]*?)<\/tool>/g, (match) => {
             return this.createPlaceholder(renderGetProblemsCard());
+        });
+        // Delete File Shorthand
+        processed = processed.replace(/<delete_file\s+path="([^"]+)"[^>]*>([\s\S]*?)<\/delete_file>/g, (match, path) => {
+            return this.createPlaceholder(renderDeleteCard(path));
         });
 
         // Delegate Task
@@ -259,29 +306,24 @@ class StreamParser {
             return this.createPlaceholder(renderClarificationCard(content.trim()));
         });
 
+        // Preview URL (Webview)
+        processed = processed.replace(/<preview_url\s+url="([^"]+)"\s*\/>/g, (match, url) => {
+            return this.createPlaceholder(renderWebviewCard(url));
+        });
+        // Handle self-closing or full tag
+        processed = processed.replace(/<preview_url\s+url="([^"]+)">([\s\S]*?)<\/preview_url>/g, (match, url) => {
+            return this.createPlaceholder(renderWebviewCard(url));
+        });
+
         // --- Shorthand Tools ---
 
         // Create File Shorthand
-        const fileShorthandRegex = /<create_file\s+path="([^"]+)"[^>]*>([\s\S]*?)<\/create_file>/g;
+        const fileShorthandRegex = /\u003ccreate_file\s+path="([^"]+)"[^\u003e]*\u003e([\s\S]*?)\u003c\/create_file\u003e/g;
         processed = processed.replace(fileShorthandRegex, (match, path, content) => {
             console.log('[StreamParser] Matched create_file (shorthand):', path);
-            const rawContent = this.unescapeHTML(content.trim());
-            // Skip if no content
-            if (!rawContent) {
-                console.warn('[StreamParser] Skipping create_file (shorthand) with empty content:', path);
-                return '';
-            }
-            return this.createPlaceholder(renderFileEditCard(path, rawContent, 'create'));
-        });
-
-        // Run Command Shorthand
-        processed = processed.replace(/<run_command>([\s\S]*?)<\/run_command>/g, (match, cmd) => {
-            return this.createPlaceholder(renderCommandCard(cmd.trim()));
-        });
-
-        // Delete File Shorthand
-        processed = processed.replace(/<delete_file\s+path="([^"]+)"[^>]*>([\s\S]*?)<\/delete_file>/g, (match, path) => {
-            return this.createPlaceholder(renderDeleteCard(path));
+            // Use code thinking card instead of showing full content
+            // FIX: Pass actual unescaped content instead of 'true'
+            return this.createPlaceholder(renderCodeThinkingCard('create_file', path, this.unescapeHTML(content.trim()), true));
         });
 
         // Search Project Shorthand
@@ -296,8 +338,8 @@ class StreamParser {
 
         // List Directory Shorthand
         processed = processed.replace(/<list_directory([^>]*)>([\s\S]*?)<\/list_directory>/g, (match, attrs, content) => {
-            const pathMatch = attrs.match(/path="([^"]+)"/);
-            const recursiveMatch = attrs.match(/recursive="([^"]+)"/);
+            const pathMatch = attrs.match(/path=["']([^"']+)["']/);
+            const recursiveMatch = attrs.match(/recursive=["']([^"']+)["']/);
             const path = pathMatch ? pathMatch[1] : '.';
             const recursive = recursiveMatch ? recursiveMatch[1] : 'false';
             return this.createPlaceholder(renderListDirectoryCard(path, recursive));
@@ -306,40 +348,54 @@ class StreamParser {
         // --- Incomplete Tools ---
 
         // Incomplete Create File (Standard)
-        const incompleteFileRegex = /<tool\s+(?:name="create_file"\s+path="([^"]+)"|path="([^"]+)"\s+name="create_file")[^>]*>([\s\S]*)$/;
+        const incompleteFileRegex = /\u003ctool\s+(?:name="create_file"\s+path="([^"]+)"|path="([^"]+)"\s+name="create_file")[^\u003e]*\u003e([\s\S]*)$/;
         processed = processed.replace(incompleteFileRegex, (match, p1, p2, content) => {
             const path = p1 || p2;
             console.log('[StreamParser] Matched incomplete create_file:', path);
-            const rawContent = this.unescapeHTML(content);
-            // Allow empty content for generating cards to show immediately
-            return this.createPlaceholder(renderGeneratingFileCard(path, rawContent));
+            // Only show generating card if we have a path
+            if (!path) return match;
+            // FIX: Pass empty content and false for isComplete
+            return this.createPlaceholder(renderCodeThinkingCard('create_file', path, '', false));
         });
 
         // Incomplete Create File (Shorthand)
-        const incompleteFileShorthandRegex = /<create_file\s+path="([^"]+)"[^>]*>([\s\S]*)$/;
+        const incompleteFileShorthandRegex = /\u003ccreate_file\s+path="([^"]+)"[^\u003e]*\u003e([\s\S]*)$/;
         processed = processed.replace(incompleteFileShorthandRegex, (match, path, content) => {
             console.log('[StreamParser] Matched incomplete create_file (shorthand):', path);
-            const rawContent = this.unescapeHTML(content);
-            // Allow empty content for generating cards to show immediately
-            return this.createPlaceholder(renderGeneratingFileCard(path, rawContent));
+            // FIX: Pass empty content and false for isComplete
+            return this.createPlaceholder(renderCodeThinkingCard('create_file', path, '', false));
         });
 
         // Incomplete Update File (Shorthand)
-        const incompleteUpdateShorthandRegex = /<update_file\s+path="([^"]+)"[^>]*>([\s\S]*)$/;
+        const incompleteUpdateShorthandRegex = /\u003cupdate_file\s+path="([^"]+)"[^\u003e]*\u003e([\s\S]*)$/;
         processed = processed.replace(incompleteUpdateShorthandRegex, (match, path, content) => {
             console.log('[StreamParser] Matched incomplete update_file (shorthand):', path);
-            const rawContent = this.unescapeHTML(content);
-            // Allow empty content for generating cards to show immediately
-            return this.createPlaceholder(renderGeneratingFileCard(path, rawContent));
+            // FIX: Pass empty content and false for isComplete
+            return this.createPlaceholder(renderCodeThinkingCard('update_file', path, '', false));
         });
 
         // Incomplete Update File (Standard)
-        const incompleteUpdateRegex = /<tool\s+name="update_file"\s+path="([^"]+)"[^>]*>([\s\S]*)$/;
+        const incompleteUpdateRegex = /\u003ctool\s+name="update_file"\s+path="([^"]+)"[^\u003e]*\u003e([\s\S]*)$/;
         processed = processed.replace(incompleteUpdateRegex, (match, path, content) => {
             console.log('[StreamParser] Matched incomplete update_file:', path);
-            const rawContent = this.unescapeHTML(content);
-            // Allow empty content for generating cards to show immediately
-            return this.createPlaceholder(renderGeneratingFileCard(path, rawContent));
+            // FIX: Pass empty content and false for isComplete
+            return this.createPlaceholder(renderCodeThinkingCard('update_file', path, '', false));
+        });
+
+        // Incomplete Run Command (Shorthand)
+        const incompleteRunCommandRegex = /<run_command>([\s\S]*)$/;
+        processed = processed.replace(incompleteRunCommandRegex, (match, content) => {
+            console.log('[StreamParser] Matched incomplete run_command:', content);
+            // Render command card with partial content
+            return this.createPlaceholder(renderCommandCard(content.trim()));
+        });
+
+        // Incomplete Run Command (Standard)
+        const incompleteStandardRunCommandRegex = /<tool\s+[^>]*name="run_command"[^>]*>([\s\S]*)$/;
+        processed = processed.replace(incompleteStandardRunCommandRegex, (match, content) => {
+            console.log('[StreamParser] Matched incomplete standard run_command:', content);
+            // Render command card with partial content
+            return this.createPlaceholder(renderCommandCard(content.trim()));
         });
 
         // View File Shorthand
@@ -364,7 +420,71 @@ class StreamParser {
             return this.createPlaceholder(renderFileEditCard(path, rawContent, 'update'));
         });
 
+        // Command Execution Result (System Message)
+        // Format: [System] Command Execution Result:\nCommand: ...\nExit Code: ...\n\nOutput:\n```\n...\n```
+        const commandResultRegex = /\[System\] Command Execution Result:\nCommand: (.*?)\nExit Code: (\d+)\n\nOutput:\n```\n([\s\S]*?)\n```/g;
+        processed = processed.replace(commandResultRegex, (match, cmd, exitCode, output) => {
+            console.log('[StreamParser] Matched Command Execution Result:', cmd);
+            // Use renderCommandCard but with output pre-filled
+            // We might need to adjust renderCommandCard to accept output as a second arg if it doesn't already
+            // Checking CommandCard.js... yes, it accepts (cmd, output)
+            return this.createPlaceholder(renderCommandCard(cmd.trim(), output));
+        });
 
+        // Generic MCP Tool Parser (Catch-all for unknown tools)
+        // Matches <tool name="foo" arg1="bar">...</tool>
+        processed = processed.replace(/<tool\s+name="([^"]+)"([^>]*)>([\s\S]*?)<\/tool>/g, (match, toolName, attrs, content) => {
+            // Check if this tool was already handled by specific parsers
+            // We do this by checking if the match was already replaced by a placeholder
+            // But since we are iterating, we can't easily check that.
+            // Instead, we rely on the order. Specific parsers run first.
+            // However, regexes run on the *current* string.
+            // If specific parsers replaced the tag with a placeholder, this regex won't match it.
+            // BUT, specific parsers use specific regexes (e.g. name="create_file").
+            // This regex matches ANY name. So it WILL match "create_file" if it wasn't replaced.
+            // Wait, specific parsers replace with placeholders (IDs).
+            // So if create_file was replaced, it's now ___BLOCK_PLACEHOLDER_X___.
+            // This regex won't match that.
+            // So we are safe to catch remaining tools here.
+
+            console.log(`[StreamParser] Matched generic tool: ${toolName}`);
+
+            // Parse attributes into args object
+            const args = {};
+            const attrRegex = /(\w+)="([^"]*)"/g;
+            let attrMatch;
+            while ((attrMatch = attrRegex.exec(attrs)) !== null) {
+                args[attrMatch[1]] = this.unescapeHTML(attrMatch[2]);
+            }
+
+            // If content exists, it might be an argument too (like 'content' or 'code')
+            // But usually MCP tools put args in attributes.
+            // If content is non-empty, we might want to treat it as a specific arg if we knew the schema.
+            // For now, we ignore content for args unless it's explicitly mapped?
+            // Or maybe we put it in a 'content' arg if not present?
+            if (content && content.trim()) {
+                // Heuristic: if 'content' arg is missing, use the body
+                if (!args.content && !args.code) {
+                    args.content = this.unescapeHTML(content.trim());
+                }
+            }
+
+            // Look up Server ID
+            const cachedTools = ToolRegistry.getCachedTools();
+            const toolDef = cachedTools.find(t => t.name === toolName);
+            const serverId = toolDef ? toolDef.serverId : null;
+
+            if (serverId) {
+                return this.createPlaceholder(renderGenericToolCard(toolName, args, serverId));
+            } else {
+                // If no server ID found, it might be a local tool that wasn't handled specifically?
+                // Or an unknown tool.
+                // We render it as a generic card anyway, maybe with 'unknown' server?
+                // Or fallback to text?
+                // Let's render it, maybe user knows what to do.
+                return this.createPlaceholder(renderGenericToolCard(toolName, args, 'unknown'));
+            }
+        });
 
         return processed;
     }

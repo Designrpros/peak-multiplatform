@@ -722,3 +722,82 @@
 .chat-view-container .apply-btn {
     display: none;
 }
+
+/* --- SUGGESTION POPOVER --- */
+.suggestion-popover {
+    /* Static positioning within the flex container */
+    position: relative;
+    width: 100%;
+    background: var(--window-background-color);
+    border-bottom: 1px solid var(--border-color);
+    /* Remove shadow as it's now part of the block */
+    /* box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2); */
+    z-index: 10;
+    min-width: 0;
+    max-width: none;
+    max-height: 150px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    padding: 0;
+    gap: 0;
+    margin-bottom: 0;
+}
+
+.popover-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border-color);
+    cursor: pointer;
+    transition: background 0.1s;
+}
+
+.popover-item:last-child {
+    border-bottom: none;
+}
+
+.popover-item.active,
+.popover-item:hover {
+    background: var(--peak-accent);
+    color: white;
+}
+
+.popover-item i {
+    color: var(--peak-secondary);
+    flex-shrink: 0;
+}
+
+.popover-item.active i,
+.popover-item:hover i {
+    color: white;
+}
+
+.popover-item-content {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.popover-item-title {
+    font-size: 12px;
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.popover-item-desc {
+    font-size: 10px;
+    color: var(--peak-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    opacity: 0.8;
+}
+
+.popover-item.active .popover-item-desc,
+.popover-item:hover .popover-item-desc {
+    color: rgba(255, 255, 255, 0.8);
+}

@@ -12,7 +12,7 @@ const ViewFile = require('./ViewFile');
 const UpdateFile = require('./UpdateFile');
 const GetProblems = require('./GetProblems');
 const CaptureLiveView = require('./CaptureLiveView');
-const ReadURL = require('./ReadURL');
+// const ReadURL = require('./ReadURL');
 const ListDirectory = require('./ListDirectory');
 const DelegateTask = require('./DelegateTask');
 
@@ -26,17 +26,58 @@ const tools = [
     ListDirectory,
     GetProblems,
     CaptureLiveView,
-    ReadURL,
+    // ReadURL, // Replaced by MCP Puppeteer Server
+    ListDirectory,
     DelegateTask
 ];
 
+const { ipcRenderer } = require('electron');
+
 class ToolRegistry {
-    static getTools() {
-        return tools;
+    // Cache for tools (initialized with local tools)
+    static cachedTools = [...tools];
+
+    static getCachedTools() {
+        return this.cachedTools;
     }
 
-    static getSystemPromptTools() {
-        return tools.map(tool => {
+    static async getTools() {
+        // 1. Get Local Tools
+        let allTools = [...tools];
+
+        // 2. Get Remote MCP Tools via IPC
+        try {
+            const remoteTools = await ipcRenderer.invoke('mcp:get-tools');
+
+            const formattedRemote = remoteTools.map(t => ({
+                name: t.name,
+                description: t.description,
+                serverId: t.serverId, // Important for routing
+                usage: this.generateXmlUsage(t) // Helper to create XML example
+            }));
+
+            allTools = [...allTools, ...formattedRemote];
+        } catch (e) {
+            console.error("Failed to fetch MCP tools", e);
+        }
+
+        // Update cache
+        this.cachedTools = allTools;
+
+        return allTools;
+    }
+
+    static generateXmlUsage(tool) {
+        // Auto-generate XML usage example from JSON Schema
+        const args = Object.keys(tool.inputSchema.properties || {})
+            .map(key => `${key}="..."`)
+            .join(' ');
+        return `<tool name="${tool.name}" ${args}>\n</tool>`;
+    }
+
+    static async getSystemPromptTools() {
+        const allTools = await this.getTools();
+        return allTools.map(tool => {
             return `
 <tool_definition>
 <name>${tool.name}</name>

@@ -242,14 +242,18 @@
 }
 
 .term-chat-msg.ai {
-    padding: 4px 0;
-    /* Removed side padding to allow full-bleed cards */
+    display: block;
+    /* Block layout for container */
+    position: relative;
+    padding: 0;
+    margin: 0 0 16px 0 !important;
     background: transparent !important;
     border: none !important;
     color: var(--peak-primary);
-    align-self: flex-start;
-    width: 100%;
-    max-width: 100%;
+    width: 100% !important;
+    max-width: none !important;
+    /* Ensure no constraint */
+    box-sizing: border-box;
 }
 
 /* Apply padding to text elements inside AI message */
@@ -455,9 +459,12 @@
     /* Ultra minimal radius */
     padding: 8px 10px;
     /* Tighter padding */
-    width: 100%;
-    max-width: 100%;
-    margin: 0;
+    width: auto;
+    /* Auto width for user bubbles */
+    max-width: 90%;
+    /* Limit max width */
+    margin: 0 0 16px auto;
+    /* Push to right */
     position: relative;
     display: flex;
     flex-direction: column;
@@ -466,6 +473,9 @@
     text-align: left;
     font-size: 11px;
     /* Smaller font */
+    float: right;
+    /* Ensure float right behavior if flex fails */
+    clear: both;
 }
 
 
@@ -474,6 +484,12 @@
     transition: max-height 0.3s ease;
     max-height: none;
     /* Default to expanded or handled by JS */
+    word-break: break-word;
+}
+
+.user-msg-content span {
+    white-space: pre-wrap;
+    /* Preserve formatting for command output */
     word-break: break-word;
 }
 
@@ -1098,3 +1114,261 @@
     .term-panel.active {
         display: block;
     }
+}
+
+/* --- ULTRA COMPACT AI CARDS (Refined) --- */
+
+/* Main Card Wrapper - Full width matching user bubble */
+details.message-card-minimal {
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0;
+    box-sizing: border-box;
+    background: var(--window-background-color) !important;
+    border: 1px solid var(--border-color) !important;
+    border-radius: 12px;
+    border-bottom-left-radius: 0;
+    /* Mirror user bubble */
+    overflow: hidden;
+}
+
+/* Summary Header */
+summary.message-summary-minimal {
+    margin: 0;
+    padding: 6px 10px;
+    /* Ultra compact padding */
+    box-sizing: border-box;
+    display: block;
+    cursor: pointer;
+    background: transparent !important;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.summary-header-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 0;
+    width: 100%;
+    /* Ensure full width */
+}
+
+.message-summary-text {
+    flex: 1;
+    /* Take available space */
+    min-width: 0;
+    /* Allow text to shrink if needed */
+}
+
+.summary-content-wrapper {
+    padding-left: 20px;
+    margin-top: 2px;
+}
+
+/* Content Wrapper - Removed padding, will apply to children instead */
+.message-content-minimal {
+    padding: 0;
+    margin: 0;
+    width: 100%;
+    box-sizing: border-box;
+    background: transparent;
+}
+
+.message-divider {
+    display: none;
+}
+
+/* Markdown Content - Apply padding HERE so ALL content has breathing room */
+.message-content-minimal .markdown-content {
+    width: 100%;
+    margin: 0;
+    padding: 12px 16px;
+    /* Padding applied to content wrapper */
+    background: transparent;
+    box-sizing: border-box;
+}
+
+/* Also apply padding to text elements for consistency */
+.message-content-minimal .markdown-content>p,
+.message-content-minimal .markdown-content>ul,
+.message-content-minimal .markdown-content>ol,
+.message-content-minimal .markdown-content>h1,
+.message-content-minimal .markdown-content>h2,
+.message-content-minimal .markdown-content>h3,
+.message-content-minimal .markdown-content>h4,
+.message-content-minimal .markdown-content>h5,
+.message-content-minimal .markdown-content>h6,
+.message-content-minimal .markdown-content>blockquote {
+    margin-left: 8px;
+    margin-right: 8px;
+}
+
+/* Nested Card Styles - Now inherit padding from parent */
+.message-content-minimal .markdown-content .tool-block,
+.message-content-minimal .markdown-content .file-edit-card,
+.message-content-minimal .markdown-content .file-edit-card-compact,
+.message-content-minimal .markdown-content .section-card,
+.message-content-minimal .markdown-content .terminal-output-block,
+.message-content-minimal .markdown-content .thinking-block,
+.message-content-minimal .markdown-content .thinking-block-minimal,
+.message-content-minimal .markdown-content .chat-code-block,
+.message-content-minimal .markdown-content .tool-card-compact,
+.message-content-minimal .markdown-content .command-result-card,
+.message-content-minimal .markdown-content .summaries-card {
+    margin: 8px 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    border: none !important;
+    /* Removed border for integration */
+    border-radius: 6px !important;
+    overflow: hidden;
+    background: transparent !important;
+    /* Transparent background */
+    box-sizing: border-box !important;
+    opacity: 1 !important;
+    /* Override style.css opacity */
+}
+
+/* Specific override for minimal summary card to ensure no borders */
+.summaries-card-minimal {
+    width: 100%;
+    margin: 0;
+    border: none !important;
+    background: transparent !important;
+    box-sizing: border-box;
+    display: block !important;
+    /* Ensure visibility */
+    opacity: 1 !important;
+}
+
+.key-points-list.minimal {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    font-size: 11px;
+    color: var(--peak-primary);
+    opacity: 0.9;
+}
+
+.key-points-list.minimal li {
+    margin-bottom: 4px;
+    padding-left: 12px;
+    position: relative;
+}
+
+.key-points-list.minimal li::before {
+    content: "•";
+    position: absolute;
+    left: 0;
+    color: var(--peak-accent);
+}
+
+.key-points-list.minimal li.no-points {
+    color: var(--peak-secondary);
+    opacity: 0.6;
+    font-style: italic;
+}
+
+.key-points-list.minimal li.no-points::before {
+    display: none;
+}
+
+/* Thinking Block Minimal */
+.thinking-block-minimal {
+    margin: 4px 0;
+    border: none;
+    background: transparent;
+}
+
+.thinking-summary-minimal {
+    list-style: none;
+    cursor: pointer;
+    padding: 4px 8px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: var(--peak-secondary);
+    border-radius: 4px;
+    transition: background 0.15s;
+}
+
+.thinking-summary-minimal:hover {
+    background: var(--control-background-color);
+    color: var(--peak-primary);
+}
+
+.thinking-summary-minimal::-webkit-details-marker {
+    display: none;
+}
+
+.thinking-content-minimal {
+    padding: 4px 0 4px 12px;
+    /* Indented content */
+    font-size: 10px;
+    line-height: 1.5;
+    color: var(--peak-secondary);
+    white-space: pre-wrap;
+    font-family: 'GeistMono', 'Menlo', monospace;
+    opacity: 0.7;
+    max-height: 300px;
+    overflow-y: auto;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.thinking-chevron {
+    transition: transform 0.2s;
+    flex-shrink: 0;
+}
+
+.thinking-block-minimal[open] .thinking-chevron {
+    transform: rotate(90deg);
+}
+
+/* Code Thinking Card - Shows file operations without code content */
+.code-thinking-block {
+    margin: 4px 0;
+    border: none;
+    background: transparent;
+}
+
+.code-thinking-summary {
+    list-style: none;
+    cursor: pointer;
+    padding: 6px 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--peak-accent);
+    border-radius: 4px;
+    border: 1px solid var(--border-color);
+    transition: all 0.15s;
+    background: var(--control-background-color);
+}
+
+.code-thinking-summary:hover {
+    background: var(--window-background-color);
+    border-color: var(--peak-accent);
+}
+
+.code-thinking-summary::-webkit-details-marker {
+    display: none;
+}
+
+.code-thinking-text {
+    font-family: 'GeistMono', 'Menlo', monospace;
+    font-size: 10px;
+}
+
+.code-thinking-hint {
+    padding: 8px 12px;
+    font-size: 9px;
+    color: var(--peak-secondary);
+    font-style: italic;
+    text-align: center;
+    opacity: 0.6;
+}

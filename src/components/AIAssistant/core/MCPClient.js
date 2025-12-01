@@ -12,7 +12,7 @@ const AgentRegistry = require('./AgentRegistry');
 class MCPClient {
     constructor() {
         this.parser = new StreamParser();
-        this.sessionId = -999; // Fixed ID for now (will be dynamic with sessions)
+        this.currentRequestId = null; // Dynamic ID for each request
         this.isStreaming = false;
         this.currentStreamMessage = null;
         this.history = [];
@@ -37,17 +37,27 @@ class MCPClient {
 
     loadLastSession() {
         try {
-            const lastId = localStorage.getItem('peak-last-session-id');
-            if (lastId) {
-                this.loadSession(lastId);
+            // Use sessionStorage to persist only for the duration of the app run (and reloads)
+            // This ensures a fresh start on app quit/restart.
+            const activeId = sessionStorage.getItem('peak-active-session-id');
+            if (activeId) {
+                this.loadSession(activeId);
             } else {
-                // Migrate old history if exists
-                const oldHistory = localStorage.getItem('peak-chat-history');
-                if (oldHistory) {
-                    this.startNewSession();
-                    this.history = JSON.parse(oldHistory);
-                    this.saveSession();
-                    localStorage.removeItem('peak-chat-history');
+                // Check if there is a recent empty session we can reuse
+                const sessions = this.getSessions();
+                // Sort by lastModified descending
+                sessions.sort((a, b) => (b.lastModified || 0) - (a.lastModified || 0));
+
+                console.log('[MCPClient] Checking for empty sessions. Total sessions:', sessions.length);
+                const emptySession = sessions.find(s => {
+                    const isEmpty = !s.history || s.history.length === 0;
+                    console.log(`[MCPClient] Session ${s.id} history length: ${s.history ? s.history.length : 0}, isEmpty: ${isEmpty}`);
+                    return isEmpty;
+                });
+
+                if (emptySession) {
+                    console.log('[MCPClient] Reusing existing empty session:', emptySession.id);
+                    this.loadSession(emptySession.id);
                 } else {
                     this.startNewSession();
                 }
@@ -59,10 +69,11 @@ class MCPClient {
     }
 
     startNewSession() {
+        console.log('[MCPClient] startNewSession called');
         this.currentSessionId = Date.now().toString();
         this.history = [];
         this.saveSession();
-        localStorage.setItem('peak-last-session-id', this.currentSessionId);
+        sessionStorage.setItem('peak-active-session-id', this.currentSessionId);
         window.peakChatHistory = this.history;
 
         // Notify UI
@@ -70,6 +81,7 @@ class MCPClient {
     }
 
     loadSession(id) {
+        console.log('[MCPClient] loadSession called with ID:', id);
         try {
             const sessions = this.getSessions();
             const session = sessions.find(s => s.id === id);
@@ -77,7 +89,7 @@ class MCPClient {
                 this.currentSessionId = id;
                 this.history = session.history || [];
                 window.peakChatHistory = this.history;
-                localStorage.setItem('peak-last-session-id', id);
+                sessionStorage.setItem('peak-active-session-id', id);
                 window.dispatchEvent(new CustomEvent('peak-session-changed', { detail: { id } }));
             } else {
                 this.startNewSession();
@@ -132,26 +144,60 @@ class MCPClient {
         }
     }
 
+    deleteSession(id) {
+        try {
+            let sessions = this.getSessions();
+            sessions = sessions.filter(s => s.id !== id);
+            localStorage.setItem('peak-chat-sessions', JSON.stringify(sessions));
+
+            // If we deleted the current session, start a new one
+            if (this.currentSessionId === id) {
+                this.startNewSession();
+            }
+        } catch (e) {
+            console.error('Failed to delete session:', e);
+        }
+    }
+
+    getProjectMemory(projectRoot) {
+        if (!projectRoot) return '';
+        const key = `peak-project-memory-${this.hashProjectPath(projectRoot)}`;
+        return localStorage.getItem(key) || '';
+    }
+
+    saveProjectMemory(projectRoot, memory) {
+        if (!projectRoot) return;
+        const key = `peak-project-memory-${this.hashProjectPath(projectRoot)}`;
+        localStorage.setItem(key, memory);
+    }
+
     /**
      * Sends a prompt to the AI.
      * @param {string} prompt - The user's message.
      * @param {object} context - Project context (files, root, etc).
      * @param {string} model - The model ID to use.
      */
-    async sendMessage(prompt, context, model = 'openrouter/auto', commitHash = null, systemPromptOverride = null) {
+    async sendMessage(prompt, context, model = 'openrouter/auto', commitHash = null, systemPromptOverride = null, agent = null) {
         if (this.isStreaming) return;
 
         this.isStreaming = true;
+        this.currentRequestId = Date.now().toString() + '-' + Math.random().toString(36).substr(2, 9);
         this.currentStreamMessage = { content: '', fullContent: '' };
+        this.currentStreamAgent = agent; // Store agent for history
 
         // 1. Prepare System Prompt with Context
         const projectTitle = context.projectTitle || 'Untitled Project';
         const root = context.root || 'Current Directory';
 
         // PROJECT-SCOPED HISTORY: Switch history when project changes
-        if (this.currentProjectRoot !== root) {
+        // Only switch if we have a previous root (prevent wiping history on initial load)
+        if (this.currentProjectRoot && this.currentProjectRoot !== root) {
             console.log(`[MCPClient] Project changed from "${this.currentProjectRoot}" to "${root}". Loading project-specific history.`);
             this.switchProject(root);
+        } else if (!this.currentProjectRoot) {
+            // First time setting root, just adopt it without wiping history
+            console.log(`[MCPClient] Initializing project root: "${root}"`);
+            this.currentProjectRoot = root;
         }
 
         // Use override if provided, otherwise default template
@@ -162,9 +208,10 @@ class MCPClient {
             if (typeof SYSTEM_PROMPT_TEMPLATE === 'string') {
                 systemPrompt = SYSTEM_PROMPT_TEMPLATE;
             } else if (SYSTEM_PROMPT_TEMPLATE.default) {
-                systemPrompt = SYSTEM_PROMPT_TEMPLATE.default;
+                // Handle promise if default is a promise (which it is now)
+                systemPrompt = await SYSTEM_PROMPT_TEMPLATE.default;
             } else if (SYSTEM_PROMPT_TEMPLATE.getSystemPrompt) {
-                systemPrompt = SYSTEM_PROMPT_TEMPLATE.getSystemPrompt('auto');
+                systemPrompt = await SYSTEM_PROMPT_TEMPLATE.getSystemPrompt('auto');
             }
         }
 
@@ -183,14 +230,31 @@ class MCPClient {
         }
 
         // 2. Prepare Context Message
-        let contextMsg = '';
+        let contextMsg = `Current Project: ${projectTitle}\nRoot: ${root}\n\n`;
 
+        // Inject Project Memory if available
+        const projectMemory = this.getProjectMemory(root);
+        if (projectMemory && projectMemory.trim()) {
+            contextMsg += `## PROJECT MEMORY (Global Context)\n${projectMemory}\n\n`;
+        }
         // Explicitly Selected Files (Priority)
         if (context.selectedFiles && context.selectedFiles.length > 0) {
             contextMsg += '### Selected Context Files:\n';
             context.selectedFiles.forEach(file => {
                 contextMsg += `File: "${file.path}"\n\`\`\`\n${file.content}\n\`\`\`\n\n`;
             });
+        }
+        // Documentation Context
+        if (context.documentation && context.documentation.length > 0) {
+            contextMsg += '### Documentation Context:\n';
+            context.documentation.forEach(doc => {
+                if (doc.type === 'content') {
+                    contextMsg += `Documentation: "${doc.name}"\n\`\`\`markdown\n${doc.content}\n\`\`\`\n\n`;
+                } else if (doc.type === 'url') {
+                    contextMsg += `Documentation Reference: "${doc.name}" - URL: ${doc.url}\n`;
+                }
+            });
+            contextMsg += '\n';
         }
         // Fallback to Active File if no explicit selection (but still available as "Active")
         else if (context.activeFile) {
@@ -204,10 +268,29 @@ class MCPClient {
 
         // 3. Construct Messages Array
         // Filter history to only include role and content to avoid sending extra props like 'html'
-        const cleanHistory = this.history.map(msg => ({
-            role: msg.role,
-            content: msg.content
-        }));
+        const cleanHistory = this.history.map(msg => {
+            if (msg.role === 'system') {
+                return {
+                    role: 'user',
+                    content: `[System Output]\n${msg.content}`
+                };
+            }
+            return {
+                role: msg.role,
+                content: msg.content
+            };
+        });
+
+        // DEBUG: Log command outputs in history
+        const commandOutputs = cleanHistory.filter(msg =>
+            msg.content && msg.content.includes('[System] Command Execution Result:')
+        );
+        if (commandOutputs.length > 0) {
+            console.log('[MCPClient] 🔍 Command outputs in history:', commandOutputs.length);
+            commandOutputs.forEach((output, i) => {
+                console.log(`[MCPClient] Command Output ${i + 1}:`, output.content.substring(0, 200) + '...');
+            });
+        }
 
         const messages = [
             { role: 'system', content: systemPrompt },
@@ -231,15 +314,28 @@ class MCPClient {
         // Log to terminal for AI Agent visibility
         ipcRenderer.send('log:info', 'LLM REQUEST:', JSON.stringify(this.debugData.lastRequest, null, 2));
 
+        // Log to agent logger
+        const agentId = this.debugData.lastRequest?.model || 'unknown';
+        require('./AgentLogger').agent(`Agent Started: ${agentId}`, {
+            model: agentId,
+            contextFiles: context.selectedFiles ? context.selectedFiles.length : 0,
+            promptLength: prompt.length
+        });
+
         // 4. Send Request
-        ipcRenderer.send('llm-stream-request', this.sessionId, model, messages);
+        console.log(`[MCPClient] Sending request with ID: ${this.currentRequestId}`);
+        ipcRenderer.send('llm-stream-request', this.currentRequestId, model, messages);
 
         // Listen for stream events
         ipcRenderer.on('llm-stream-data', this.handleStreamData);
     }
 
     handleStreamData(event, id, data) {
-        if (id !== this.sessionId) return;
+        // Ignore events from previous requests
+        if (id !== this.currentRequestId) {
+            console.warn(`[MCPClient] Received stream data for old request ID: ${id}. Current: ${this.currentRequestId}`);
+            return;
+        }
 
         if (data.type === 'data') {
             this.currentStreamMessage.fullContent += data.content;
@@ -306,10 +402,13 @@ class MCPClient {
         // So we just save history here.
 
         // Save to history (using sanitized content)
+        // CRITICAL FIX: We must save the RAW content (sanitized), not the parsed HTML.
+        // The ChatView will parse it again when rendering history.
+        // If we save HTML, markdown.render will try to render it and fail (showing raw code).
         this.history.push({
             role: 'assistant',
-            content: sanitizedContent,
-            html: finalHtml
+            content: sanitizedContent
+            // html: finalHtml // Do NOT save HTML to history
         });
         this.saveHistory();
         window.peakChatHistory = this.history;
@@ -339,6 +438,13 @@ class MCPClient {
             }
         }));
 
+        // Log completion
+        require('./AgentLogger').agent('Agent Finished', {
+            duration: 'N/A', // Could calculate if we stored start time
+            responseLength: sanitizedContent.length,
+            error: error
+        });
+
         this.currentStreamMessage = null;
     }
 
@@ -365,10 +471,11 @@ class MCPClient {
         // Save to project-specific storage if we have a currentProjectRoot
         if (this.currentProjectRoot) {
             this.saveProjectHistory(this.currentProjectRoot, this.history);
-        } else {
-            // Fallback to session storage if no project root set yet
-            this.saveSession();
         }
+
+        // ALWAYS save to session storage to ensure it appears in the "Recent Conversations" list
+        // and to handle auto-naming.
+        this.saveSession();
     }
 
     clearHistory() {
@@ -382,17 +489,58 @@ class MCPClient {
      * @param {string} projectRoot - The root path of the project
      */
     switchProject(projectRoot) {
+        console.log('[MCPClient] switchProject called with root:', projectRoot);
+
+        // If we are already on this project, DO NOT reset the session
+        if (this.currentProjectRoot === projectRoot) {
+            console.log('[MCPClient] Already on project:', projectRoot, 'Keeping session.');
+            return;
+        }
+
         // Save current project's history before switching
         if (this.currentProjectRoot) {
             this.saveProjectHistory(this.currentProjectRoot, this.history);
         }
 
-        // Load new project's history
+        // Start a FRESH session for the new project (or reuse empty)
         this.currentProjectRoot = projectRoot;
-        this.history = this.loadProjectHistory(projectRoot);
+
+        // Check for reusable empty session first
+        const sessions = this.getSessions();
+        sessions.sort((a, b) => (b.lastModified || 0) - (a.lastModified || 0));
+
+        console.log('[MCPClient] switchProject: Checking for empty sessions. Total:', sessions.length);
+        console.log('[MCPClient] switchProject: Checking for empty sessions. Total:', sessions.length);
+        const emptySession = sessions.find(s => {
+            if (!s.history || s.history.length === 0) return true;
+
+            // Also consider "effectively empty" sessions (only hidden messages or system prompts)
+            const hasVisibleContent = s.history.some(msg => {
+                if (msg.role === 'system') return false;
+                if (msg.content && msg.content.toLowerCase() === 'continue') return false;
+                return true;
+            });
+
+            return !hasVisibleContent;
+        });
+
+        if (emptySession) {
+            console.log('[MCPClient] switchProject: Reusing existing empty session:', emptySession.id);
+            this.loadSession(emptySession.id);
+        } else {
+            console.log('[MCPClient] switchProject: No empty session found. Starting new.');
+            this.startNewSession(); // This clears history and sets a new ID
+        }
+
+        // We do NOT load the last history automatically anymore.
+        // The user can load it from the "Recent Conversations" list if they want.
+
+        // However, we might want to ensure the "Recent Conversations" list is populated?
+        // getSessions() reads from localStorage, so it should be fine.
+
         window.peakChatHistory = this.history;
 
-        console.log(`[MCPClient] Loaded ${this.history.length} messages for project: ${projectRoot}`);
+        console.log(`[MCPClient] Started new session for project: ${projectRoot}`);
     }
 
     /**
@@ -457,6 +605,65 @@ class MCPClient {
             return true;
         }
         return false;
+    }
+
+    async generateSessionTitle() {
+        if (this.history.length === 0) return;
+
+        console.log('[MCPClient] Generating session title...');
+        const firstUserMsg = this.history.find(m => m.role === 'user');
+        if (!firstUserMsg) return;
+
+        const prompt = `Summarize the following user request into a short, concise title (max 5 words). Do not use quotes. Request: "${firstUserMsg.content.substring(0, 200)}"`;
+
+        try {
+            const title = await this.sendHiddenMessage(prompt);
+            if (title) {
+                const cleanTitle = title.replace(/"/g, '').trim();
+                console.log('[MCPClient] Generated title:', cleanTitle);
+
+                // Update session
+                const sessions = this.getSessions();
+                const session = sessions.find(s => s.id === this.currentSessionId);
+                if (session) {
+                    session.title = cleanTitle;
+                    localStorage.setItem('peak-chat-sessions', JSON.stringify(sessions));
+                    // Notify UI
+                    window.dispatchEvent(new CustomEvent('peak-session-changed', { detail: { id: this.currentSessionId } }));
+                }
+            }
+        } catch (e) {
+            console.error('[MCPClient] Failed to generate title:', e);
+        }
+    }
+
+    async sendHiddenMessage(prompt, model = 'openrouter/auto') {
+        return new Promise((resolve, reject) => {
+            const requestId = 'hidden-' + Date.now();
+            const messages = [{ role: 'user', content: prompt }];
+
+            // Temporary listener
+            const handler = (event, id, data) => {
+                if (id !== requestId) return;
+                if (data.type === 'data') {
+                    // Accumulate? For simple title generation, we might get it in chunks or one go.
+                    // But since we can't easily accumulate without state, let's assume the first chunk or wait for end.
+                    // Actually, we need to accumulate.
+                    if (!this._hiddenResponse) this._hiddenResponse = '';
+                    this._hiddenResponse += data.content;
+                } else if (data.type === 'end') {
+                    ipcRenderer.removeListener('llm-stream-data', handler);
+                    resolve(this._hiddenResponse);
+                    this._hiddenResponse = '';
+                } else if (data.type === 'error') {
+                    ipcRenderer.removeListener('llm-stream-data', handler);
+                    reject(data.message);
+                }
+            };
+
+            ipcRenderer.on('llm-stream-data', handler);
+            ipcRenderer.send('llm-stream-request', requestId, model, messages);
+        });
     }
 
     getDebugData() {
