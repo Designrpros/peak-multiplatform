@@ -10,6 +10,7 @@ class InputBar {
         this.filteredItems = [];
         this.triggerChar = null; // '@' or '/'
         this.triggerIndex = -1;
+        this.attachments = []; // { type: 'image'|'file', name: string, content: string (base64/text), preview: string (url) }
     }
 
     render(isFileContextUsable, selectedAgentId, isAgentMode = false) {
@@ -76,6 +77,7 @@ class InputBar {
                 </div>
 
                 <div class="inspector-input-box">
+                    <div id="ai-assist-attachments" class="attachments-container" style="display:none; gap:8px; padding:8px; flex-wrap:wrap;"></div>
                     <div id="ai-assist-file-chips" class="file-chips-container"></div>
                     <textarea class="chat-textarea" id="ai-assist-input-textarea" 
                         placeholder="Ask anything... Type @ for refs, / for commands" 
@@ -157,6 +159,14 @@ class InputBar {
                 this.adjustHeight();
                 this.updateSubmitButton();
             }, 50);
+        }
+
+        // Drag & Drop + Paste
+        if (this.inputArea) {
+            this.inputArea.addEventListener('paste', (e) => this.handlePaste(e));
+            this.inputArea.addEventListener('dragover', (e) => { e.preventDefault(); this.inputArea.classList.add('drag-over'); });
+            this.inputArea.addEventListener('dragleave', (e) => { e.preventDefault(); this.inputArea.classList.remove('drag-over'); });
+            this.inputArea.addEventListener('drop', (e) => this.handleDrop(e));
         }
 
         // Stop
@@ -343,6 +353,169 @@ class InputBar {
         this.triggerChar = null;
         this.triggerIndex = -1;
         if (this.popover) this.popover.style.display = 'none';
+    }
+
+    // --- Attachments ---
+
+    addAttachment(file) {
+        this.attachments.push(file);
+        this.renderAttachments();
+    }
+
+    removeAttachment(index) {
+        this.attachments.splice(index, 1);
+        this.renderAttachments();
+    }
+
+    getAttachments() {
+        return this.attachments;
+    }
+
+    clearAttachments() {
+        this.attachments = [];
+        this.renderAttachments();
+    }
+
+    renderAttachments() {
+        const container = this.container.querySelector('#ai-assist-attachments');
+        if (!container) return;
+
+        if (this.attachments.length === 0) {
+            container.style.display = 'none';
+            container.innerHTML = '';
+            return;
+        }
+
+        container.style.display = 'flex';
+        container.innerHTML = this.attachments.map((att, index) => `
+            <div class="attachment-chip" style="display:flex; align-items:center; gap:6px; background:var(--control-background-color); padding:4px 8px; border-radius:4px; border:1px solid var(--border-color); font-size:11px;">
+                ${att.type === 'image'
+                ? `<img src="${att.preview}" style="width:16px; height:16px; object-fit:cover; border-radius:2px;">`
+                : `<i data-lucide="file" style="width:14px; height:14px;"></i>`
+            }
+                <span style="max-width:150px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${att.name}</span>
+                <button class="remove-attachment-btn" data-index="${index}" style="background:none; border:none; cursor:pointer; padding:0; display:flex; color:var(--peak-secondary);">
+                    <i data-lucide="x" style="width:12px; height:12px;"></i>
+                </button>
+            </div>
+        `).join('');
+
+        // Re-attach listeners for remove buttons
+        container.querySelectorAll('.remove-attachment-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation(); // Prevent input focus loss if possible
+                const idx = parseInt(btn.dataset.index, 10);
+                this.removeAttachment(idx);
+            });
+        });
+
+        if (window.lucide) window.lucide.createIcons();
+    }
+
+    // --- File Handling ---
+
+    async handlePaste(e) {
+        const items = (e.clipboardData || e.originalEvent.clipboardData).items;
+        const files = [];
+        for (const item of items) {
+            if (item.kind === 'file') {
+                const file = item.getAsFile();
+                if (file) files.push(file);
+            }
+        }
+
+        if (files.length > 0) {
+            e.preventDefault();
+            await this.processFiles(files);
+        } else {
+            // Check for text that might be a file path
+            const text = (e.clipboardData || e.originalEvent.clipboardData).getData('text');
+            if (text && text.trim().startsWith('/')) {
+                // Potential absolute path
+                const path = text.trim();
+                // Verify if it's a file
+                try {
+                    const { ipcRenderer } = require('electron');
+                    // We use project:read-file to check existence/readability
+                    // If it fails, it's likely not a file we can read or doesn't exist
+                    // But project:read-file returns content string or error object
+                    // We can't easily check "is file" without reading it, which is fine for small files
+                    // But for large files, this might be heavy.
+                    // Let's assume if the user pastes a path, they want to attach it.
+
+                    // We need to create a "File-like" object for our attachment system
+                    // { type: 'file', name: basename, content: string, preview: null }
+
+                    const result = await ipcRenderer.invoke('project:read-file', path);
+                    if (result && !result.error) {
+                        e.preventDefault();
+                        const content = typeof result === 'string' ? result : result.content;
+                        const name = path.split('/').pop();
+
+                        this.addAttachment({
+                            type: 'file',
+                            name: name,
+                            content: content,
+                            preview: null
+                        });
+                        return;
+                    }
+                } catch (err) {
+                    // Not a valid file path or read failed, treat as normal text paste
+                    console.log('Paste text was not a valid file path:', err);
+                }
+            }
+        }
+    }
+
+    async handleDrop(e) {
+        e.preventDefault();
+        this.inputArea.classList.remove('drag-over');
+        const files = Array.from(e.dataTransfer.files);
+        if (files.length > 0) {
+            await this.processFiles(files);
+        }
+    }
+
+    async processFiles(files) {
+        for (const file of files) {
+            try {
+                const processed = await this.readFile(file);
+                if (processed) this.addAttachment(processed);
+            } catch (err) {
+                console.error('Failed to process file:', file.name, err);
+            }
+        }
+    }
+
+    readFile(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+
+            if (file.type.startsWith('image/')) {
+                reader.onload = (e) => {
+                    resolve({
+                        type: 'image',
+                        name: file.name,
+                        content: e.target.result, // Base64
+                        preview: e.target.result
+                    });
+                };
+                reader.readAsDataURL(file);
+            } else {
+                // Text files
+                reader.onload = (e) => {
+                    resolve({
+                        type: 'file',
+                        name: file.name,
+                        content: e.target.result,
+                        preview: null
+                    });
+                };
+                reader.readAsText(file);
+            }
+            reader.onerror = reject;
+        });
     }
 
     // --- Data Providers ---

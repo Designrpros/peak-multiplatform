@@ -264,7 +264,20 @@ class MCPClient {
             }
         }
 
-        const fullPrompt = `${contextMsg}USER QUESTION: ${prompt}`;
+        // 3. Construct Messages Array
+        let fullPrompt;
+        if (Array.isArray(prompt)) {
+            // Multimodal: Inject context into the text part
+            fullPrompt = prompt.map(p => {
+                if (p.type === 'text') {
+                    return { ...p, text: `${contextMsg}USER QUESTION: ${p.text}` };
+                }
+                return p;
+            });
+        } else {
+            // Text-only
+            fullPrompt = `${contextMsg}USER QUESTION: ${prompt}`;
+        }
 
         // 3. Construct Messages Array
         // Filter history to only include role and content to avoid sending extra props like 'html'
@@ -316,10 +329,14 @@ class MCPClient {
 
         // Log to agent logger
         const agentId = this.debugData.lastRequest?.model || 'unknown';
+        const promptLen = Array.isArray(prompt)
+            ? prompt.reduce((acc, p) => acc + (p.text ? p.text.length : 0), 0)
+            : prompt.length;
+
         require('./AgentLogger').agent(`Agent Started: ${agentId}`, {
             model: agentId,
             contextFiles: context.selectedFiles ? context.selectedFiles.length : 0,
-            promptLength: prompt.length
+            promptLength: promptLen
         });
 
         // 4. Send Request

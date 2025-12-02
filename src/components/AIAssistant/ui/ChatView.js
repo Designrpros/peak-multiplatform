@@ -487,127 +487,155 @@ class ChatView {
 
         const container = document.createElement('div');
         container.className = 'initial-view-container';
-        // Ensure it takes full height and is visible
-        container.style.cssText = 'padding: 0; height: 100%; min-height: 100%; display: flex; flex-direction: column; gap: 16px; overflow-y: auto; flex: 1;';
+        // Flex column with space-between to push history to bottom
+        container.style.cssText = 'padding: 20px; height: 100%; min-height: 100%; display: flex; flex-direction: column; justify-content: space-between; overflow-y: auto; flex: 1; box-sizing: border-box;';
 
-        // --- HEADER & HOW IT WORKS ---
-        const introSection = document.createElement('div');
-        introSection.innerHTML = `
-            <div style="text-align: center; margin-bottom: 16px;">
-                <div style="width: 40px; height: 40px; background: var(--peak-accent); border-radius: 10px; margin: 0 auto 8px; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
-                    <i data-lucide="sparkles" style="width: 20px; height: 20px; color: white;"></i>
+        // --- TOP SECTION: HEADER & INFO ---
+        const topSection = document.createElement('div');
+        topSection.style.cssText = 'display: flex; flex-direction: column; gap: 24px;';
+
+        topSection.innerHTML = `
+            <div style="display: flex; align-items: center; gap: 10px; opacity: 0.8;">
+                <div style="width: 24px; height: 24px; background: var(--peak-accent); border-radius: 6px; display: flex; align-items: center; justify-content: center;">
+                    <i data-lucide="sparkles" style="width: 14px; height: 14px; color: white;"></i>
                 </div>
-                <h1 style="margin: 0; font-size: 16px; font-weight: 600; color: var(--peak-primary);">AI Assistant</h1>
-                <p style="margin: 4px 0 0; font-size: 12px; color: var(--peak-secondary);">Your intelligent coding partner.</p>
+                <h1 style="margin: 0; font-size: 14px; font-weight: 600; color: var(--peak-primary); letter-spacing: -0.02em;">AI Assistant</h1>
             </div>
 
-            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px;">
-                <div style="background: var(--control-background-color); padding: 10px; border-radius: 6px; text-align: center;">
-                    <i data-lucide="map" style="width: 16px; height: 16px; color: var(--peak-accent); margin-bottom: 6px;"></i>
-                    <div style="font-size: 11px; font-weight: 600; color: var(--peak-primary);">Plan</div>
-                    <div style="font-size: 9px; color: var(--peak-secondary); margin-top: 2px;">Breaks down tasks</div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+                <!-- Column 1: Workflow -->
+                <div>
+                    <h3 style="margin: 0 0 8px 0; font-size: 10px; font-weight: 700; color: var(--peak-secondary); text-transform: uppercase; letter-spacing: 0.05em;">Workflow</h3>
+                    <div style="display: flex; flex-direction: column; gap: 6px;">
+                        <div style="display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--peak-primary);">
+                            <i data-lucide="map" style="width: 12px; height: 12px; color: var(--peak-accent); opacity: 0.8;"></i>
+                            <span><strong>Plan:</strong> Break down tasks</span>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--peak-primary);">
+                            <i data-lucide="code-2" style="width: 12px; height: 12px; color: var(--peak-accent); opacity: 0.8;"></i>
+                            <span><strong>Execute:</strong> Write & Edit code</span>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--peak-primary);">
+                            <i data-lucide="check-circle-2" style="width: 12px; height: 12px; color: var(--peak-accent); opacity: 0.8;"></i>
+                            <span><strong>Review:</strong> Validate changes</span>
+                        </div>
+                    </div>
                 </div>
-                <div style="background: var(--control-background-color); padding: 10px; border-radius: 6px; text-align: center;">
-                    <i data-lucide="code-2" style="width: 16px; height: 16px; color: var(--peak-accent); margin-bottom: 6px;"></i>
-                    <div style="font-size: 11px; font-weight: 600; color: var(--peak-primary);">Execute</div>
-                    <div style="font-size: 9px; color: var(--peak-secondary); margin-top: 2px;">Writes code</div>
+
+                <!-- Column 2: Tools -->
+                <div>
+                    <h3 style="margin: 0 0 8px 0; font-size: 10px; font-weight: 700; color: var(--peak-secondary); text-transform: uppercase; letter-spacing: 0.05em;">Power Tools</h3>
+                    <div style="display: flex; flex-direction: column; gap: 6px;">
+                        <div style="display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--peak-primary);">
+                            <span style="background: var(--control-background-color); padding: 1px 4px; border-radius: 3px; font-family: monospace; font-size: 10px;">@</span>
+                            <span>Reference files & symbols</span>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--peak-primary);">
+                            <span style="background: var(--control-background-color); padding: 1px 4px; border-radius: 3px; font-family: monospace; font-size: 10px;">/</span>
+                            <span>Slash commands</span>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--peak-primary);">
+                            <i data-lucide="image" style="width: 12px; height: 12px; color: var(--peak-secondary);"></i>
+                            <span>Drag & Drop images</span>
+                        </div>
+                    </div>
                 </div>
-                <div style="background: var(--control-background-color); padding: 10px; border-radius: 6px; text-align: center;">
-                    <i data-lucide="check-circle-2" style="width: 16px; height: 16px; color: var(--peak-accent); margin-bottom: 6px;"></i>
-                    <div style="font-size: 11px; font-weight: 600; color: var(--peak-primary);">Review</div>
-                    <div style="font-size: 9px; color: var(--peak-secondary); margin-top: 2px;">Validates changes</div>
+            </div>
+
+            <div style="background: var(--control-background-color); padding: 10px; border-radius: 6px; border: 1px solid var(--border-color);">
+                <div style="display: flex; gap: 8px; align-items: flex-start;">
+                    <i data-lucide="info" style="width: 14px; height: 14px; color: var(--peak-secondary); margin-top: 1px;"></i>
+                    <div style="font-size: 11px; color: var(--peak-secondary); line-height: 1.4;">
+                        <strong style="color: var(--peak-primary);">Context Aware:</strong> The AI knows about your active file. Use <strong>@</strong> to add more context explicitly for better results.
+                    </div>
                 </div>
             </div>
         `;
-        container.appendChild(introSection);
+        container.appendChild(topSection);
 
-        // --- PREVIOUS PROJECTS ---
+        // --- BOTTOM SECTION: HISTORY ---
         const sessions = this.client.getSessions();
         if (sessions.length > 0) {
-            const projectsSection = document.createElement('div');
-            projectsSection.innerHTML = `
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-                    <h2 style="margin: 0; font-size: 13px; font-weight: 600; color: var(--peak-secondary); text-transform: uppercase;">Recent Conversations</h2>
-                    <button id="btn-flush-history" style="background: none; border: none; color: var(--peak-secondary); font-size: 11px; cursor: pointer; display: flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 4px; transition: background 0.1s;">
-                        <i data-lucide="trash-2" style="width: 12px; height: 12px;"></i> Clear All
+            const bottomSection = document.createElement('div');
+            bottomSection.style.cssText = 'display: flex; flex-direction: column; gap: 10px; margin-top: 20px;';
+
+            bottomSection.innerHTML = `
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <h2 style="margin: 0; font-size: 10px; font-weight: 700; color: var(--peak-secondary); text-transform: uppercase; letter-spacing: 0.05em;">Recent</h2>
+                    <button id="btn-flush-history" style="background: none; border: none; color: var(--peak-secondary); font-size: 10px; cursor: pointer; display: flex; align-items: center; gap: 4px; padding: 2px 6px; border-radius: 3px; opacity: 0.6; transition: opacity 0.1s;">
+                        Clear
                     </button>
                 </div>
-                <div id="recent-sessions-list" style="display: flex; flex-direction: column; gap: 8px;">
+                <div id="recent-sessions-list" style="display: flex; flex-direction: column; gap: 4px;">
                     <!-- Sessions injected here -->
                 </div>
             `;
 
-            const list = projectsSection.querySelector('#recent-sessions-list');
-            sessions.slice(0, 10).forEach(session => {
+            const list = bottomSection.querySelector('#recent-sessions-list');
+            // Show fewer sessions to keep it compact (max 5)
+            sessions.slice(0, 5).forEach(session => {
                 const item = document.createElement('div');
-                item.style.cssText = 'padding: 10px; background: var(--window-background-color); border: 1px solid var(--border-color); border-radius: 6px; cursor: pointer; transition: all 0.1s; display: flex; align-items: center; gap: 12px;';
+                item.style.cssText = 'padding: 6px 8px; border-radius: 4px; cursor: pointer; transition: background 0.1s; display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--peak-secondary);';
+
+                // Truncate title
+                const title = session.title || 'Untitled Chat';
+                const displayTitle = title.length > 35 ? title.substring(0, 35) + '...' : title;
+
+                // Format time (e.g., "2h ago")
+                const timeAgo = this.getTimeAgo(session.lastModified);
+
+                item.innerHTML = `
+                    <i data-lucide="message-square" style="width: 12px; height: 12px; opacity: 0.7;"></i>
+                    <span style="flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--peak-primary);">${displayTitle}</span>
+                    <span style="font-size: 9px; opacity: 0.6;">${timeAgo}</span>
+                `;
+
                 item.onmouseover = () => {
-                    item.style.borderColor = 'var(--peak-accent)';
-                    item.style.transform = 'translateY(-1px)';
-                    item.style.boxShadow = '0 2px 8px rgba(0,0,0,0.05)';
+                    item.style.background = 'var(--control-background-color)';
+                    item.style.color = 'var(--peak-primary)';
                 };
                 item.onmouseout = () => {
-                    item.style.borderColor = 'var(--border-color)';
-                    item.style.transform = 'none';
-                    item.style.boxShadow = 'none';
+                    item.style.background = 'transparent';
+                    item.style.color = 'var(--peak-secondary)';
                 };
                 item.onclick = () => {
                     this.client.loadSession(session.id);
-                    // renderHistory will be called by the event listener in constructor
                 };
-
-                // Context Menu for Deletion
-                item.oncontextmenu = (e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-
-                    // Create a simple custom context menu or use Electron's Menu
-                    // Using Electron's Menu via remote or IPC is better, but for simplicity let's use a browser confirm for now
-                    // or a custom overlay.
-                    // Let's use a simple confirm for MVP.
-
-                    if (confirm(`Delete conversation "${session.title || 'Untitled'}"?`)) {
-                        this.client.deleteSession(session.id);
-                        this.renderInitialView(); // Re-render list
-                    }
-                };
-
-                const date = new Date(session.lastModified).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-
-                item.innerHTML = `
-                    <div style="width: 32px; height: 32px; background: var(--control-background-color); border-radius: 6px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
-                        <i data-lucide="message-square" style="width: 16px; height: 16px; color: var(--peak-secondary);"></i>
-                    </div>
-                    <div style="flex: 1; min-width: 0;">
-                        <div style="font-size: 13px; font-weight: 500; color: var(--peak-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${session.title || 'Untitled Conversation'}</div>
-                        <div style="font-size: 11px; color: var(--peak-secondary); margin-top: 2px;">${date}</div>
-                    </div>
-                    <i data-lucide="chevron-right" style="width: 14px; height: 14px; color: var(--peak-secondary); opacity: 0.5;"></i>
-                `;
                 list.appendChild(item);
             });
 
-            // Flush Handler
-            const flushBtn = projectsSection.querySelector('#btn-flush-history');
-            if (flushBtn) {
-                flushBtn.onclick = (e) => {
+            // Clear button logic
+            const clearBtn = bottomSection.querySelector('#btn-flush-history');
+            if (clearBtn) {
+                clearBtn.onmouseover = () => clearBtn.style.opacity = '1';
+                clearBtn.onmouseout = () => clearBtn.style.opacity = '0.6';
+                clearBtn.onclick = (e) => {
                     e.stopPropagation();
-                    if (confirm('Are you sure you want to delete all conversation history? This cannot be undone.')) {
+                    if (confirm('Clear all chat history?')) {
                         localStorage.removeItem('peak-chat-sessions');
-                        localStorage.removeItem('peak-last-session-id');
-                        this.client.startNewSession(); // This triggers renderHistory -> renderInitialView
+                        this.renderInitialView(); // Re-render
                     }
                 };
-                flushBtn.onmouseover = () => flushBtn.style.background = 'rgba(220, 38, 38, 0.1)';
-                flushBtn.onmouseout = () => flushBtn.style.background = 'transparent';
-                flushBtn.style.color = 'var(--error-color, #dc2626)';
             }
 
-            container.appendChild(projectsSection);
+            container.appendChild(bottomSection);
         }
 
         this.chatThread.appendChild(container);
         if (window.lucide) window.lucide.createIcons();
+    }
+
+    // Helper for time ago
+    getTimeAgo(timestamp) {
+        if (!timestamp) return '';
+        const seconds = Math.floor((Date.now() - timestamp) / 1000);
+        if (seconds < 60) return 'just now';
+        const minutes = Math.floor(seconds / 60);
+        if (minutes < 60) return `${minutes}m`;
+        const hours = Math.floor(minutes / 60);
+        if (hours < 24) return `${hours}h`;
+        const days = Math.floor(hours / 24);
+        return `${days}d`;
     }
 
     renderLoadMoreButton(remainingCount) {
@@ -1087,11 +1115,44 @@ class ChatView {
         const { ipcRenderer } = require('electron');
         ipcRenderer.send('log', '[ChatView] handleSubmit called. valueOverride:', valueOverride);
 
-        const prompt = valueOverride || this.inputBar.inputArea.value.trim();
-        ipcRenderer.send('log', '[ChatView] handleSubmit prompt:', prompt);
+        let prompt = valueOverride || this.inputBar.inputArea.value.trim();
+        const attachments = this.inputBar.getAttachments();
 
-        if (!prompt) return;
+        if (!prompt && attachments.length === 0) return;
+
+        // Construct Multimodal Content if attachments exist
+        if (attachments.length > 0) {
+            const images = attachments.filter(a => a.type === 'image');
+            const files = attachments.filter(a => a.type === 'file');
+
+            // Append text files to prompt
+            if (files.length > 0) {
+                const fileContexts = files.map(f => `\n\n[Attached File: ${f.name}]\n\`\`\`\n${f.content}\n\`\`\``).join('');
+                prompt += fileContexts;
+            }
+
+            // If images exist, create array content
+            if (images.length > 0) {
+                const contentArray = [];
+                if (prompt) {
+                    contentArray.push({ type: 'text', text: prompt });
+                }
+                images.forEach(img => {
+                    contentArray.push({
+                        type: 'image_url',
+                        image_url: {
+                            url: img.content // Base64
+                        }
+                    });
+                });
+                prompt = contentArray;
+            }
+        }
+
+        ipcRenderer.send('log', '[ChatView] handleSubmit prompt:', typeof prompt === 'object' ? 'Multimodal Array' : prompt);
+
         this.processUserMessage(prompt);
+        this.inputBar.clearAttachments();
     }
 
     async handleTerminalResponse(e) {
@@ -1212,127 +1273,135 @@ class ChatView {
 
         ipcRenderer.send('log', '[ChatView] processUserMessage - agentId:', agentId, 'mode:', mode);
 
-        // Get selected agent (mode is now always 'auto')
-        const agent = AgentRegistry.getAgent(agentId);
+        try {
+            // Get selected agent (mode is now always 'auto')
+            const agent = AgentRegistry.getAgent(agentId);
 
-        // Ensure modelId is never null - fallback to openrouter/auto
-        const modelId = (agent && agent.modelId) || 'openrouter/auto';
+            // Ensure modelId is never null - fallback to openrouter/auto
+            const modelId = (agent && agent.modelId) || 'openrouter/auto';
 
-        // Get mode-based system prompt and inject project root
-        const { getSystemPrompt } = require('../core/SystemPrompt');
-        const projectRoot = window.currentProjectRoot || (this.client && this.client.context && this.client.context.root) || '/project';
+            // Get mode-based system prompt and inject project root
+            const { getSystemPrompt } = require('../core/SystemPrompt');
+            const projectRoot = window.currentProjectRoot || (this.client && this.client.context && this.client.context.root) || '/project';
 
-        console.log('[ChatView] Loading system prompt. Mode:', mode, 'Agent:', agentId, 'Has custom prompt:', !!(agent && agent.systemPrompt));
+            console.log('[ChatView] Loading system prompt. Mode:', mode, 'Agent:', agentId, 'Has custom prompt:', !!(agent && agent.systemPrompt));
 
-        let systemPrompt = agent && agent.systemPrompt
-            ? agent.systemPrompt
-            : await getSystemPrompt(mode);
+            let systemPrompt = agent && agent.systemPrompt
+                ? agent.systemPrompt
+                : await getSystemPrompt(mode);
 
-        console.log('[ChatView] System prompt loaded. Length:', systemPrompt ? systemPrompt.length : 'NULL');
+            console.log('[ChatView] System prompt loaded. Length:', systemPrompt ? systemPrompt.length : 'NULL');
 
-        // Replace {{PROJECT_ROOT}} placeholder with actual project path (if prompt exists)
-        if (systemPrompt && typeof systemPrompt === 'string') {
-            systemPrompt = systemPrompt.replace(/\{\{PROJECT_ROOT\}\}/g, projectRoot);
-
-            // SAFETY NET: Ensure tool definitions are present
-            if (!systemPrompt.includes('<tool_definition>') && !systemPrompt.includes('TOOLS AVAILABLE')) {
-                console.warn('[ChatView] System prompt missing tools. Injecting defaults.');
-                const tools = await ToolRegistry.getSystemPromptTools();
-                systemPrompt += `\n\n# TOOLS AVAILABLE\n${tools}\n\n# MANDATORY RULES\n1. Use tools for all file operations.\n2. Do not output code blocks for files.`;
-            }
-
-            console.log('[ChatView] Project root injected:', projectRoot);
-        } else {
-            console.error('[ChatView] Invalid system prompt:', systemPrompt);
-            systemPrompt = await getSystemPrompt('hybrid'); // Fallback to hybrid mode
-            if (systemPrompt) {
+            // Replace {{PROJECT_ROOT}} placeholder with actual project path (if prompt exists)
+            if (systemPrompt && typeof systemPrompt === 'string') {
                 systemPrompt = systemPrompt.replace(/\{\{PROJECT_ROOT\}\}/g, projectRoot);
-            }
-        }
 
-
-        // UI Updates
-        this.inputBar.setLoading(true);
-        this.inputBar.updateStatus('thinking', 'Analyzing request...');
-
-        // Clear selected files from UI
-        const filesToSend = Array.from(this.selectedFiles);
-        const docsToSend = Array.from(this.selectedDocs);
-        this.selectedFiles.clear();
-        this.selectedDocs.clear();
-        this.renderFileChips();
-
-        // --- CHECKPOINT CREATION ---
-        const rootPath = window.currentProjectRoot || (this.client && this.client.context && this.client.context.root);
-        console.log('[ChatView] Checking checkpoint requirements. Root:', rootPath, 'isAuto:', isAuto);
-
-        let commitHash = null;
-        if (!isAuto && rootPath) {
-            try {
-                const result = await require('electron').ipcRenderer.invoke('git:create-checkpoint', rootPath, Date.now());
-                console.log('[ChatView] Checkpoint result:', result);
-                if (result.hash) {
-                    commitHash = result.hash;
-                } else {
-                    console.error('[ChatView] No hash returned. Error:', result.error);
+                // SAFETY NET: Ensure tool definitions are present
+                if (!systemPrompt.includes('<tool_definition>') && !systemPrompt.includes('TOOLS AVAILABLE')) {
+                    console.warn('[ChatView] System prompt missing tools. Injecting defaults.');
+                    const tools = await ToolRegistry.getSystemPromptTools();
+                    systemPrompt += `\n\n# TOOLS AVAILABLE\n${tools}\n\n# MANDATORY RULES\n1. Use tools for all file operations.\n2. Do not output code blocks for files.`;
                 }
-            } catch (e) {
-                console.error("[ChatView] Checkpoint failed:", e);
-            }
-        } else {
-            console.log('[ChatView] Skipping checkpoint. isAuto:', isAuto, 'rootPath:', rootPath);
-        }
-        // ---------------------------
 
-        // Add User Message
-        console.log('[ChatView] Appending message with hash:', commitHash);
-        this.appendMessage('user', prompt, commitHash, isAuto);
-
-        // Log to agent logger
-        AgentLogger.agent('User message sent', { prompt: prompt.substring(0, 100), mode, agentId });
-
-        // Create AI Placeholder (only if not already streaming/continuing)
-        this.inputBar.updateStatus('thinking', 'Processing request...');
-
-        // Check if agent switched - if so, always create new card
-        const agentSwitched = this.currentAgentId !== null && this.currentAgentId !== agentId;
-
-        // ALWAYS create a new card for each AI response to preserve history
-        // This ensures users can see the full conversation thread
-        if (agentSwitched) {
-            console.log(`[ChatView] Agent switched from ${this.currentAgentId} to ${agentId}, creating new card`);
-        }
-        // Create new streaming message for every turn
-        console.log('[ChatView] Creating new streaming message');
-        this.createStreamingMessage(agent);
-        this.currentAgentId = agentId; // Update tracked agent
-
-        // Get Context
-        const context = await this.getProjectContext(filesToSend, docsToSend);
-
-        // Send to Client
-        if (this.isAgentMode && !isAuto) {
-            // Trigger Multi-Agent Loop
-            const AgentOrchestrator = require('../core/AgentOrchestrator');
-
-            // Load chain config from Registry (respecting order and enabled state)
-            const agents = AgentRegistry.getAgents();
-
-            // For Hierarchical Mode, we start with ROOT agents that are enabled for chaining
-            // A "Root" agent is one with no parent (or invalid parent)
-            let rootAgents = agents.filter(a => a.isChainEnabled && (!a.parentId || !agents.find(p => p.id === a.parentId))).map(a => a.id);
-
-            // Ensure at least one agent (fallback to default if empty)
-            if (rootAgents.length === 0) {
-                // Fallback: If no chain-enabled agents, maybe just run the selected agent?
-                // Or fallback to default planner if nothing selected.
-                rootAgents = ['planner'];
+                console.log('[ChatView] Project root injected:', projectRoot);
+            } else {
+                console.error('[ChatView] Invalid system prompt:', systemPrompt);
+                systemPrompt = await getSystemPrompt('hybrid'); // Fallback to hybrid mode
+                if (systemPrompt) {
+                    systemPrompt = systemPrompt.replace(/\{\{PROJECT_ROOT\}\}/g, projectRoot);
+                }
             }
 
-            await AgentOrchestrator.startLoop(prompt, context, rootAgents);
-        } else {
-            // Single Agent Mode
-            await this.client.sendMessage(prompt, context, modelId, commitHash, systemPrompt, agent);
+
+            // UI Updates
+            this.inputBar.setLoading(true);
+            this.inputBar.updateStatus('thinking', 'Analyzing request...');
+
+            // Clear selected files from UI
+            const filesToSend = Array.from(this.selectedFiles);
+            const docsToSend = Array.from(this.selectedDocs);
+            this.selectedFiles.clear();
+            this.selectedDocs.clear();
+            this.renderFileChips();
+
+            // --- CHECKPOINT CREATION ---
+            const rootPath = window.currentProjectRoot || (this.client && this.client.context && this.client.context.root);
+            console.log('[ChatView] Checking checkpoint requirements. Root:', rootPath, 'isAuto:', isAuto);
+
+            let commitHash = null;
+            if (!isAuto && rootPath) {
+                try {
+                    const result = await require('electron').ipcRenderer.invoke('git:create-checkpoint', rootPath, Date.now());
+                    console.log('[ChatView] Checkpoint result:', result);
+                    if (result.hash) {
+                        commitHash = result.hash;
+                    } else {
+                        console.error('[ChatView] No hash returned. Error:', result.error);
+                    }
+                } catch (e) {
+                    console.error("[ChatView] Checkpoint failed:", e);
+                }
+            } else {
+                console.log('[ChatView] Skipping checkpoint. isAuto:', isAuto, 'rootPath:', rootPath);
+            }
+            // ---------------------------
+
+            // Add User Message
+            console.log('[ChatView] Appending message with hash:', commitHash);
+            this.appendMessage('user', prompt, commitHash, isAuto);
+
+            // Log to agent logger
+            const promptLog = Array.isArray(prompt) ? 'Multimodal Request' : prompt.substring(0, 100);
+            AgentLogger.agent('User message sent', { prompt: promptLog, mode, agentId });
+
+            // Create AI Placeholder (only if not already streaming/continuing)
+            this.inputBar.updateStatus('thinking', 'Processing request...');
+
+            // Check if agent switched - if so, always create new card
+            const agentSwitched = this.currentAgentId !== null && this.currentAgentId !== agentId;
+
+            // ALWAYS create a new card for each AI response to preserve history
+            // This ensures users can see the full conversation thread
+            if (agentSwitched) {
+                console.log(`[ChatView] Agent switched from ${this.currentAgentId} to ${agentId}, creating new card`);
+            }
+            // Create new streaming message for every turn
+            console.log('[ChatView] Creating new streaming message');
+            this.createStreamingMessage(agent);
+            this.currentAgentId = agentId; // Update tracked agent
+
+            // Get Context
+            const context = await this.getProjectContext(filesToSend, docsToSend);
+
+            // Send to Client
+            if (this.isAgentMode && !isAuto) {
+                // Trigger Multi-Agent Loop
+                const AgentOrchestrator = require('../core/AgentOrchestrator');
+
+                // Load chain config from Registry (respecting order and enabled state)
+                const agents = AgentRegistry.getAgents();
+
+                // For Hierarchical Mode, we start with ROOT agents that are enabled for chaining
+                // A "Root" agent is one with no parent (or invalid parent)
+                let rootAgents = agents.filter(a => a.isChainEnabled && (!a.parentId || !agents.find(p => p.id === a.parentId))).map(a => a.id);
+
+                // Ensure at least one agent (fallback to default if empty)
+                if (rootAgents.length === 0) {
+                    // Fallback: If no chain-enabled agents, maybe just run the selected agent?
+                    // Or fallback to default planner if nothing selected.
+                    rootAgents = ['planner'];
+                }
+
+                await AgentOrchestrator.startLoop(prompt, context, rootAgents);
+            } else {
+                // Single Agent Mode
+                await this.client.sendMessage(prompt, context, modelId, commitHash, systemPrompt, agent);
+            }
+        } catch (err) {
+            console.error('[ChatView] processUserMessage failed:', err);
+            this.appendMessage('system', `Error processing request: ${err.message}`);
+            this.inputBar.setLoading(false);
+            this.inputBar.updateStatus('ready');
         }
     }
 
@@ -1344,10 +1413,29 @@ class ChatView {
             agent = resolved;
         }
 
-        console.log(`[ChatView] createMessageElement called. Role: ${role}, Content Length: ${content ? content.length : 0}`);
+        console.log(`[ChatView] createMessageElement called. Role: ${role}, Content Length: ${content ? (typeof content === 'string' ? content.length : 'Multimodal') : 0}`);
 
         let displayContent = content;
-        let isHtml = false;
+
+        // Handle Multimodal User Message Display
+        if (role === 'user' && Array.isArray(content)) {
+            // Extract text and images for display
+            const textPart = content.find(c => c.type === 'text')?.text || '';
+            const images = content.filter(c => c.type === 'image_url');
+
+            let html = '';
+            if (images.length > 0) {
+                html += `<div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px;">
+                    ${images.map(img => `<img src="${img.image_url.url}" style="max-width:200px; max-height:200px; border-radius:6px; border:1px solid var(--border-color);">`).join('')}
+                </div>`;
+            }
+            html += textPart ? renderMarkdown(textPart) : '';
+            displayContent = html;
+        } else {
+            displayContent = content;
+        }
+
+        let isHtml = role === 'user' && Array.isArray(content);
 
         // If assistant message, parse it with StreamParser to restore tool cards
         // We only do this for history rendering (where this method is used)
@@ -3066,13 +3154,14 @@ If REJECTED, explain why and provide a corrected version if possible.
             this.container.insertAdjacentHTML('beforeend', html);
         }
 
-        // 3. Re-attach listeners
         if (this.inputBarCallbacks) {
             ipcRenderer.send('log', '[ChatView] Re-attaching InputBar listeners');
             this.inputBar.attachListeners(this.container, this.inputBarCallbacks);
         } else {
             ipcRenderer.send('log', '[ChatView] renderInputBar called but inputBarCallbacks is undefined (expected during init)');
         }
+
+        if (window.lucide) window.lucide.createIcons();
     }
 }
 
