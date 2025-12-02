@@ -53,8 +53,8 @@ class StreamParser {
         // 5. Process Tools
         processed = this.processTools(processed);
 
-        // 6. Process Sections
-        processed = this.processSections(processed);
+        // 6. Process Sections (Disabled: TaskCard handles phase grouping now)
+        // processed = this.processSections(processed);
 
         // 7. Final Pass: Render Markdown for non-placeholder text and restore placeholders
         return this.processMarkdownAndBoxing(processed);

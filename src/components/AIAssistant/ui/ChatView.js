@@ -410,6 +410,30 @@ class ChatView {
             // We don't need to re-render the whole view, just ensure the next menu open uses fresh data
         });
 
+        // Listen for Stream Updates (Task Card)
+        window.addEventListener('mcp:stream-update', (e) => {
+            if (this.currentTaskCard) {
+                this.currentTaskCard.update(e.detail.html);
+                this.scrollToBottom();
+                // Check for pending tools to show Accept All button immediately
+                // But only if user hasn't already taken action on this batch
+                if (!this.userReviewActionTaken) {
+                    this.updateReviewControlsVisibility();
+                }
+            }
+        });
+
+        window.addEventListener('mcp:stream-complete', (e) => {
+            if (this.currentTaskCard) {
+                this.currentTaskCard.complete();
+                // Trigger auto-execution for TaskCard content
+                this.handleAutoExecution(this.currentTaskCard.element);
+
+                // Update review controls - hide if no pending actions remain
+                this.updateReviewControlsVisibility();
+            }
+        });
+
         // Initial Render
         this.renderHistory();
     }
@@ -450,29 +474,91 @@ class ChatView {
 
         // Don't clear existing messages - only append new ones
         // Track how many messages are already rendered
-        const existingMessages = forceClear ? 0 : this.chatThread.querySelectorAll('.term-chat-msg, .term-chat-msg-user').length;
+        const existingMessages = forceClear ? 0 : this.chatThread.querySelectorAll('.task-card').length * 2; // Approx, since 1 card = 2 messages (user+assistant)
 
-        // Only render messages that aren't already in the DOM
-        const newMessages = this.client.history.slice(existingMessages);
+        // Actually, with TaskCards, it's harder to track "existing messages" by count because of grouping.
+        // It's safer to clear and re-render ALL history if we are switching sessions or if the structure is complex.
+        // But for performance, let's try to be smart.
+        // If forceClear is false, we assume we just added a message.
+        // But wait, the stream adds the card LIVE. So renderHistory is only called on load/switch.
+        // So we can probably just clear and re-render all for now to be safe and ensure correct grouping.
 
-        if (newMessages.length > 0) {
-            newMessages.forEach(msg => {
-                // Filter out internal agent handoff messages
-                const isHandoffMessage = msg.role === 'user' &&
-                    msg.content &&
-                    msg.content.includes('Previous Agent Output:');
+        if (!forceClear && this.chatThread.children.length > 0) {
+            // If we already have content and it's not a force clear, we might be okay.
+            // But if this is called after a "save", we might duplicate.
+            // Let's rely on the fact that renderHistory is mainly for INITIAL load or SESSION SWITCH.
+            // Live updates happen via stream events.
+            return;
+        }
 
-                if (!isHandoffMessage) {
-                    const el = this.createMessageElement(msg.role, msg.content, msg.commitHash, false, msg.agent);
-                    if (el) {
-                        this.chatThread.appendChild(el);
+        this.chatThread.innerHTML = '';
+        this.chatThread.style.height = 'auto';
+
+        const history = this.client.history;
+        let i = 0;
+        while (i < history.length) {
+            const msg = history[i];
+
+            // Filter out internal messages
+            if (msg.role === 'user' && msg.content && msg.content.includes('Previous Agent Output:')) {
+                i++;
+                continue;
+            }
+
+            if (msg.role === 'user') {
+                // Start of a Task
+                const userPrompt = msg.content;
+                const TaskCard = require('./cards/TaskCard');
+                const card = new TaskCard(userPrompt, msg.agent || 'general');
+
+                // Look ahead for assistant response
+                let j = i + 1;
+                let assistantResponse = '';
+
+                while (j < history.length) {
+                    const nextMsg = history[j];
+                    if (nextMsg.role === 'assistant') {
+                        assistantResponse += nextMsg.content; // Append if multiple (rare but possible)
+                        j++;
+                    } else if (nextMsg.role === 'system') {
+                        // Add system message as a step
+                        const sysDiv = document.createElement('div');
+                        sysDiv.className = 'system-output-step';
+                        sysDiv.innerHTML = `<pre style="margin:0; font-size:11px; color:var(--peak-secondary); white-space:pre-wrap; word-break:break-all;">${nextMsg.content}</pre>`;
+                        card.addStep('system', sysDiv);
+                        j++;
+                    } else {
+                        // Another user message -> End of this task
+                        break;
                     }
                 }
-            });
 
-            if (window.lucide) window.lucide.createIcons();
-            this.scrollToBottom();
+                // Update card with response
+                if (assistantResponse) {
+                    // CRITICAL FIX: Parse Markdown/XML from history into HTML
+                    // TaskCard expects HTML structure (thinking-card, tool-card, etc.)
+                    // Use the client's parser if available, or fallback
+                    let parsedHtml = assistantResponse;
+                    if (this.client && this.client.parser) {
+                        parsedHtml = this.client.parser.parse(assistantResponse);
+                    }
+
+                    card.update(parsedHtml);
+                    card.complete(); // Assume historical tasks are complete
+                }
+
+                this.chatThread.appendChild(card.element);
+                i = j; // Advance index
+            } else {
+                // Orphaned assistant/system message?
+                // Should not happen in normal flow, but if it does, maybe render as simple text?
+                // For now, ignore to keep UI clean.
+                i++;
+            }
         }
+
+        if (window.lucide) window.lucide.createIcons();
+        this.scrollToBottom();
     }
 
     renderInitialView() {
@@ -1259,6 +1345,7 @@ class ChatView {
     async processUserMessage(prompt, isAuto = false) {
         const { ipcRenderer } = require('electron');
         ipcRenderer.send('log', '[ChatView] processUserMessage called. Prompt:', prompt);
+        console.log(`[ChatView] processUserMessage called. Prompt: "${prompt}", isAuto: ${isAuto}, isStreaming: ${this.client.isStreaming}`);
 
         // Queueing Logic
         if (this.client.isStreaming) {
@@ -1272,6 +1359,12 @@ class ChatView {
         const mode = this.inputBar.modeSelect ? this.inputBar.modeSelect.value : 'auto';
 
         ipcRenderer.send('log', '[ChatView] processUserMessage - agentId:', agentId, 'mode:', mode);
+
+        // Clear Initial View if present
+        if (this.chatThread.querySelector('.initial-view-container')) {
+            this.chatThread.innerHTML = '';
+            this.chatThread.style.height = 'auto';
+        }
 
         try {
             // Get selected agent (mode is now always 'auto')
@@ -1346,9 +1439,70 @@ class ChatView {
             }
             // ---------------------------
 
-            // Add User Message
-            console.log('[ChatView] Appending message with hash:', commitHash);
-            this.appendMessage('user', prompt, commitHash, isAuto);
+            // Check if agent switched - if so, always create new card
+            const agentSwitched = this.currentAgentId !== null && this.currentAgentId !== agentId;
+
+            // --- TASK CARD CREATION ---
+            const TaskCard = require('./cards/TaskCard');
+
+            // CRITICAL FIX: Reuse existing card if this is an auto-continuation OR a manual 'continue'
+            // New prompts should create a NEW card to separate tasks visually.
+            const isContinue = prompt.trim().toLowerCase() === 'continue';
+
+            if (this.currentTaskCard && !agentSwitched && (isAuto || isContinue)) {
+                console.log('[ChatView] Reusing existing TaskCard for continuation/user message');
+
+                // Reset review action flag - user may have new actions to review
+                this.userReviewActionTaken = false;
+
+                // 1. Collapse previous steps into a group
+                if (this.currentTaskCard.continue) {
+                    this.currentTaskCard.continue();
+                }
+
+                // 2. Add User Message as a Step (if not auto)
+                if (!isAuto) {
+                    const userStepDiv = document.createElement('div');
+                    userStepDiv.className = 'user-message-step';
+                    userStepDiv.style.cssText = 'font-size: 13px; color: var(--peak-primary); white-space: pre-wrap;';
+
+                    // Handle multimodal
+                    if (Array.isArray(prompt)) {
+                        const textPart = prompt.find(p => p.type === 'text')?.text || '';
+                        const images = prompt.filter(p => p.type === 'image_url');
+                        let html = '';
+                        if (images.length > 0) {
+                            html += `<div style="display:flex; gap:8px; margin-bottom:8px;">${images.map(img => `<img src="${img.image_url.url}" style="height:40px; border-radius:4px;">`).join('')}</div>`;
+                        }
+                        html += `<div>${textPart}</div>`;
+                        userStepDiv.innerHTML = html;
+                    } else {
+                        userStepDiv.textContent = prompt;
+                    }
+
+                    this.currentTaskCard.addStep('user', userStepDiv);
+                }
+
+            } else {
+                // NEW CARD CREATION (New Session or Agent Switch)
+                if (agentSwitched && this.currentTaskCard) {
+                    // If switching agents, maybe mark the previous card as "Handing over"?
+                    // Or just leave it.
+                    console.log(`[ChatView] Agent switched from ${this.currentAgentId} to ${agentId}. Creating new dedicated card.`);
+
+                    // Optional: Add a system message to the thread indicating switch?
+                    // this.appendMessage('system', `Handing over to **${agent ? agent.name : agentId}**...`);
+                }
+
+                // Create new Task Card
+                this.currentTaskCard = new TaskCard(prompt, agentId);
+                this.chatThread.appendChild(this.currentTaskCard.element);
+
+                // Reset review action flag for new task
+                this.userReviewActionTaken = false;
+            }
+
+            this.scrollToBottom();
 
             // Log to agent logger
             const promptLog = Array.isArray(prompt) ? 'Multimodal Request' : prompt.substring(0, 100);
@@ -1357,9 +1511,6 @@ class ChatView {
             // Create AI Placeholder (only if not already streaming/continuing)
             this.inputBar.updateStatus('thinking', 'Processing request...');
 
-            // Check if agent switched - if so, always create new card
-            const agentSwitched = this.currentAgentId !== null && this.currentAgentId !== agentId;
-
             // ALWAYS create a new card for each AI response to preserve history
             // This ensures users can see the full conversation thread
             if (agentSwitched) {
@@ -1367,7 +1518,13 @@ class ChatView {
             }
             // Create new streaming message for every turn
             console.log('[ChatView] Creating new streaming message');
-            this.createStreamingMessage(agent);
+
+            // FIX: Do NOT create streaming message if we are reusing TaskCard
+            // TaskCard handles its own streaming updates via mcp:stream-update
+            if (!this.currentTaskCard) {
+                this.createStreamingMessage(agent);
+            }
+
             this.currentAgentId = agentId; // Update tracked agent
 
             // Get Context
@@ -1393,9 +1550,13 @@ class ChatView {
                 }
 
                 await AgentOrchestrator.startLoop(prompt, context, rootAgents);
+                // Check for auto-accept after loop (though loop might handle it internally)
+                await this.checkAutoAccept();
             } else {
                 // Single Agent Mode
                 await this.client.sendMessage(prompt, context, modelId, commitHash, systemPrompt, agent);
+                // Check for auto-accept after single message
+                await this.checkAutoAccept();
             }
         } catch (err) {
             console.error('[ChatView] processUserMessage failed:', err);
@@ -1476,6 +1637,18 @@ class ChatView {
 
     appendMessage(role, content, commitHash = null, isAuto = false, agent = null) {
         console.log(`[ChatView] appendMessage called. Role: ${role}, Content length: ${content ? content.length : 0}`);
+
+        // CRITICAL FIX: Redirect system messages to TaskCard if active
+        if (role === 'system' && this.currentTaskCard) {
+            console.log('[ChatView] Redirecting system message to TaskCard step');
+            const sysDiv = document.createElement('div');
+            sysDiv.className = 'system-output-step';
+            // Simple formatting for system output
+            sysDiv.innerHTML = `<pre style="margin:0; font-size:11px; color:var(--peak-secondary); white-space:pre-wrap; word-break:break-all;">${content}</pre>`;
+            this.currentTaskCard.addStep('system', sysDiv);
+            return;
+        }
+
         // Clear Initial View if present
         if (this.chatThread.querySelector('.initial-view-container')) {
             this.chatThread.innerHTML = '';
@@ -1654,49 +1827,132 @@ class ChatView {
     }
 
     updateStreamingMessage({ html }) {
+        // LEGACY: Disabled in favor of TaskCard
+        if (this.currentTaskCard) return;
+
         // CRITICAL FIX: StreamParser returns BOTH markdown content AND tool cards (command cards, etc.)
         // We need to insert into .message-content-minimal (the parent wrapper), not just .markdown-content
         // Otherwise tool cards won't be visible!
 
-        console.log('[ChatView] updateStreamingMessage called. HTML length:', html?.length);
-        console.log('[ChatView] HTML preview:', html?.substring(0, 200));
+        console.log('[ChatView] updateStreamingMessage called (Legacy Fallback). HTML length:', html?.length);
+        // ... rest of legacy code ...
 
         const messageContentWrapper = this.streamingMessageDiv?.querySelector('.message-content-minimal');
-        console.log('[ChatView] messageContentWrapper found:', !!messageContentWrapper);
-
         if (messageContentWrapper) {
-            // Insert all content (markdown + tool cards) into the wrapper
-            // Preserve the divider at the start
             const divider = messageContentWrapper.querySelector('.message-divider');
             messageContentWrapper.innerHTML = '';
             if (divider) messageContentWrapper.appendChild(divider);
-
-            // Insert the parsed HTML content
             messageContentWrapper.insertAdjacentHTML('beforeend', html);
-
             if (window.lucide) window.lucide.createIcons();
             this.scrollToBottom();
         } else if (this.streamingContentDiv) {
-            console.log('[ChatView] Fallback to streamingContentDiv');
-            // Fallback to old behavior if new structure not found
             this.streamingContentDiv.innerHTML = html;
             if (window.lucide) window.lucide.createIcons();
             this.scrollToBottom();
         } else if (this.streamingMessageDiv) {
-            console.log('[ChatView] Fallback to streamingMessageDiv');
-            // Last resort fallback
             this.streamingMessageDiv.innerHTML = html;
             if (window.lucide) window.lucide.createIcons();
             this.scrollToBottom();
-        } else {
-            console.error('[ChatView] No target div found for streaming update');
+        }
+    }
+
+    async handleAutoExecution(containerElement) {
+        if (!containerElement) return;
+
+        console.log('[ChatView] handleAutoExecution called for container');
+
+        // NEW: Trigger Review Mode instead of Auto-Execute
+        const buttons = containerElement.querySelectorAll('.tool-create-btn, .tool-run-btn, .tool-view-btn, .tool-search-btn, .tool-delete-btn, .tool-delegate-btn, .file-action-btn-compact, .tool-action-btn-compact');
+
+        console.log('[ChatView] Found buttons in DOM:', buttons.length);
+        buttons.forEach((b, i) => console.log(`[ChatView] Button ${i}:`, b.className, 'Disabled:', b.disabled, 'Type:', b.dataset.type));
+
+        // Filter out disabled buttons AND reject buttons
+        const pendingButtons = Array.from(buttons).filter(btn => !btn.disabled && btn.dataset.type !== 'reject');
+
+        console.log('[ChatView] Pending buttons (actionable):', pendingButtons.length);
+
+        if (pendingButtons.length > 0) {
+            // --- AUTO-ACCEPT LOGIC ---
+            const settings = {
+                list: localStorage.getItem('peak-auto-accept-list') !== 'false', // Default true
+                read: localStorage.getItem('peak-auto-accept-read') !== 'false', // Default true
+                create: localStorage.getItem('peak-auto-accept-create') === 'true', // Default false
+                edit: localStorage.getItem('peak-auto-accept-edit') === 'true', // Default false
+                run: localStorage.getItem('peak-auto-accept-run') === 'true' // Default false
+            };
+
+            const allAutoAccept = pendingButtons.every(btn => {
+                // Helper to map button to setting
+                if (btn.classList.contains('tool-list-dir-btn')) return settings.list;
+                if (btn.classList.contains('tool-view-btn') || btn.classList.contains('tool-read-url-btn') || btn.classList.contains('tool-search-btn') || btn.classList.contains('tool-problems-btn')) return settings.read;
+                if (btn.classList.contains('tool-create-btn') && btn.dataset.type === 'create') return settings.create;
+                if (btn.classList.contains('file-action-btn-compact') && btn.dataset.type === 'create') return settings.create;
+                if (btn.classList.contains('tool-create-btn') && btn.dataset.type === 'update') return settings.edit;
+                if (btn.classList.contains('file-action-btn-compact') && btn.dataset.type === 'update') return settings.edit;
+                if (btn.classList.contains('tool-run-btn')) return settings.run;
+                if (btn.classList.contains('tool-delete-btn')) return false; // Never auto-accept delete for now
+                return false;
+            });
+
+            if (allAutoAccept) {
+                console.log('[ChatView] Auto-accepting actions based on settings');
+                this.inputBar.updateStatus('thinking', 'Auto-executing...');
+
+                // Execute immediately
+                for (const btn of pendingButtons) {
+                    console.log('[ChatView] Auto-executing button:', btn.dataset.type, btn.dataset.path);
+                    await this.executeToolAction(btn);
+                }
+                // Auto-continue if enabled
+                if (this.isAutoMode || true) { // Force auto-continue for now as requested
+                    setTimeout(() => {
+                        this.processUserMessage('continue', true); // Pass true for isAuto
+                    }, 500);
+                }
+                // Close details if present
+                const details = containerElement.querySelector('details');
+                if (details) details.removeAttribute('open');
+
+                return;
+            }
+            // -------------------------
+
+            console.log('[ChatView] Showing review controls for', pendingButtons.length, 'actions');
+            this.inputBar.updateStatus('ready', 'Waiting for review...');
+            this.inputBar.showReviewControls(
+                pendingButtons.length,
+                async () => { // On Accept
+                    console.log('[ChatView] User accepted all changes');
+                    this.inputBar.updateStatus('thinking', 'Applying changes...');
+                    this.inputBar.hideReviewControls();
+
+                    // Execute all actions sequentially
+                    for (const btn of pendingButtons) {
+                        await this.executeToolAction(btn);
+                    }
+
+                    // Auto-continue after manual accept
+                    setTimeout(() => {
+                        this.processUserMessage('continue', true);
+                    }, 500);
+                },
+                () => { // On Reject
+                    console.log('[ChatView] User rejected changes');
+                    this.inputBar.hideReviewControls();
+                    this.appendMessage('system', 'Actions rejected by user.');
+                    // Maybe ask user what to do?
+                }
+            );
         }
     }
 
     finalizeStreamingMessage({ html, error }) {
+        // LEGACY: Disabled in favor of TaskCard
+        if (this.currentTaskCard) return;
+
         console.log('[ChatView] finalizeStreamingMessage called', { hasDiv: !!this.streamingMessageDiv, error });
         console.log('[ChatView] Final HTML length:', html?.length);
-        console.log('[ChatView] Final HTML preview:', html?.substring(0, 300));
 
         if (this.streamingMessageDiv) {
             // Re-render as complete message (collapsible)
@@ -1711,142 +1967,8 @@ class ChatView {
             this.streamingMessageDiv.replaceWith(finalDiv);
             this.streamingMessageDiv = finalDiv; // Update reference for button logic below
 
-            // We don't need to set innerHTML again because renderMessageCard included the content
-            // But wait, the button logic below expects to find buttons in this.streamingMessageDiv
-            // which is now the finalDiv. That works.
-
-            // NEW: Trigger Review Mode instead of Auto-Execute
-            const buttons = this.streamingMessageDiv.querySelectorAll('.tool-create-btn, .tool-run-btn, .tool-view-btn, .tool-search-btn, .tool-delete-btn, .tool-delegate-btn, .file-action-btn-compact, .tool-action-btn-compact');
-
-            console.log('[ChatView] Found buttons in DOM:', buttons.length);
-            buttons.forEach((b, i) => console.log(`[ChatView] Button ${i}:`, b.className, 'Disabled:', b.disabled, 'Type:', b.dataset.type));
-
-            // Filter out disabled buttons AND reject buttons
-            const pendingButtons = Array.from(buttons).filter(btn => !btn.disabled && btn.dataset.type !== 'reject');
-
-            console.log('[ChatView] Pending buttons (actionable):', pendingButtons.length);
-
-            if (pendingButtons.length > 0) {
-                // --- AUTO-ACCEPT LOGIC ---
-                const settings = {
-                    list: localStorage.getItem('peak-auto-accept-list') !== 'false', // Default true
-                    read: localStorage.getItem('peak-auto-accept-read') !== 'false', // Default true
-                    create: localStorage.getItem('peak-auto-accept-create') === 'true', // Default false
-                    edit: localStorage.getItem('peak-auto-accept-edit') === 'true', // Default false
-                    run: localStorage.getItem('peak-auto-accept-run') === 'true' // Default false
-                };
-
-                const allAutoAccept = pendingButtons.every(btn => {
-                    // Helper to map button to setting
-                    if (btn.classList.contains('tool-list-dir-btn')) return settings.list;
-                    if (btn.classList.contains('tool-view-btn') || btn.classList.contains('tool-read-url-btn') || btn.classList.contains('tool-search-btn') || btn.classList.contains('tool-problems-btn')) return settings.read;
-                    if (btn.classList.contains('tool-create-btn') && btn.dataset.type === 'create') return settings.create;
-                    if (btn.classList.contains('file-action-btn-compact') && btn.dataset.type === 'create') return settings.create;
-                    if (btn.classList.contains('tool-create-btn') && btn.dataset.type === 'update') return settings.edit;
-                    if (btn.classList.contains('file-action-btn-compact') && btn.dataset.type === 'update') return settings.edit;
-                    if (btn.classList.contains('tool-run-btn')) return settings.run;
-                    if (btn.classList.contains('tool-delete-btn')) return false; // Never auto-accept delete for now
-                    return false;
-                });
-
-                if (allAutoAccept) {
-                    console.log('[ChatView] Auto-accepting actions based on settings');
-                    this.inputBar.updateStatus('thinking', 'Auto-executing...');
-
-                    // Execute immediately
-                    (async () => {
-                        for (const btn of pendingButtons) {
-                            console.log('[ChatView] Auto-executing button:', btn.dataset.type, btn.dataset.path);
-                            await this.executeToolAction(btn);
-                        }
-                        // Auto-Continue
-                        console.log('[ChatView] Auto-continuing after auto-accepted actions');
-                        this.processUserMessage('continue', true);
-                    })();
-
-                    // Close details if present
-                    if (this.streamingMessageDiv) {
-                        const details = this.streamingMessageDiv.querySelector('details');
-                        if (details) details.removeAttribute('open');
-                    }
-                    return; // Skip showing review controls
-                }
-                // -------------------------
-
-                console.log('[ChatView] Showing review controls for', pendingButtons.length, 'actions');
-                this.inputBar.updateStatus('ready', 'Waiting for review...');
-                this.inputBar.showReviewControls(
-                    pendingButtons.length,
-                    async () => { // On Accept
-                        console.log('[ChatView] User accepted all changes');
-                        this.inputBar.updateStatus('thinking', 'Applying changes...');
-                        this.inputBar.hideReviewControls();
-
-                        // Execute all actions sequentially
-                        for (const btn of pendingButtons) {
-                            console.log('[ChatView] Executing button:', btn.dataset.type, btn.dataset.path);
-                            await this.executeToolAction(btn);
-                        }
-
-                        this.inputBar.updateStatus('ready');
-
-                        // Close the current message card after acceptance
-                        if (this.streamingMessageDiv) {
-                            const details = this.streamingMessageDiv.querySelector('details');
-                            if (details) {
-                                details.removeAttribute('open');
-                            }
-                        }
-
-                        // Auto-Continue - reuses the same card for the next response
-                        console.log('[ChatView] Auto-continuing after accepted actions');
-
-                        if (this.isAgentMode) {
-                            const AgentOrchestrator = require('../core/AgentOrchestrator');
-                            AgentOrchestrator.waitForContinue();
-                        }
-
-                        this.processUserMessage('continue', true);
-                    },
-                    () => { // On Reject
-                        console.log('[ChatView] User rejected changes');
-                        this.inputBar.hideReviewControls();
-                        this.appendMessage('system', 'Actions rejected by user.');
-
-                        if (this.isAgentMode) {
-                            const AgentOrchestrator = require('../core/AgentOrchestrator');
-                            AgentOrchestrator.stopLoop();
-                        }
-
-                        // Optionally disable buttons visually
-                        pendingButtons.forEach(btn => {
-                            btn.disabled = true;
-                            btn.style.opacity = '0.5';
-                        });
-                        this.inputBar.updateStatus('ready');
-
-                        // Clear streaming div reference since we're done
-                        this.streamingMessageDiv = null;
-
-                        // Check queue even if rejected
-                        this.checkMessageQueue();
-                    }
-                );
-                // Keep streamingMessageDiv alive for auto-continue to reuse the same parent card
-            } else {
-                console.log('[ChatView] No pending actions found. Resetting status.');
-                // DEBUG: Log innerHTML to see what was rendered
-                console.log('[ChatView] Message HTML content:', this.streamingMessageDiv.innerHTML.substring(0, 500) + '...');
-
-                // No pending actions, clear the reference
-                this.inputBar.setLoading(false);
-                this.inputBar.updateStatus('ready');
-                this.streamingMessageDiv = null;
-
-                // Check queue
-                this.checkMessageQueue();
-            }
-
+            // Trigger Auto-Execution / Review Mode
+            this.handleAutoExecution(this.streamingMessageDiv);
         } else {
             console.warn('[ChatView] streamingMessageDiv is null in finalizeStreamingMessage');
         }
@@ -1861,56 +1983,16 @@ class ChatView {
             }
 
             // Create error message with retry button
-            const errorDiv = document.createElement('div');
-            errorDiv.className = 'term-chat-msg system';
-            errorDiv.style.width = '100%';
-            errorDiv.innerHTML = `
-                <div class="response-card markdown-content" style="border-left:3px solid #dc2626; padding:12px; background:rgba(220,38,38,0.05);">
-                    <div style="color:#dc2626; font-weight:600; margin-bottom:8px; display:flex; align-items:center; gap:6px;">
-                        <i data-lucide="alert-circle" style="width:16px; height:16px;"></i>
-                        Error
-                    </div>
-                    <div style="font-size:12px; line-height:1.5; white-space:pre-wrap;">${errorMessage}</div>
-                    ${isEmptyResponseError ? `
-                    <button class="retry-request-btn" style="margin-top:12px; padding:6px 12px; background:var(--peak-accent); color:white; border:none; border-radius:4px; cursor:pointer; font-size:11px; display:flex; align-items:center; gap:4px;">
-                        <i data-lucide="refresh-cw" style="width:12px; height:12px;"></i>
-                        Retry with Fresh Context
-                    </button>
-                    ` : ''}
-                </div>
-            `;
-
-            this.chatThread.appendChild(errorDiv);
-
-            if (isEmptyResponseError) {
-                const retryBtn = errorDiv.querySelector('.retry-request-btn');
-                if (retryBtn) {
-                    retryBtn.onclick = () => {
-                        // Clear selected files to reduce context
-                        this.selectedFiles.clear();
-                        this.selectedDocs.clear();
-                        this.renderFileChips();
-
-                        // Retry with simple "continue"
-                        this.processUserMessage('Please try again with a simpler response', false);
-                    };
-                }
-            }
-
-            if (window.lucide) window.lucide.createIcons();
-
-            this.inputBar.setLoading(false);
-            this.inputBar.updateStatus('ready');
-            this.checkMessageQueue();
+            this.appendMessage('system', errorMessage);
         }
 
-        // Reset UI (if not waiting for review)
-        // If we showed review controls, we don't want to reset status immediately
-        // But we do want to focus input
-        setTimeout(() => this.inputBar.inputArea.focus(), 50);
-        if (window.lucide) window.lucide.createIcons();
-        this.scrollToBottom();
+        this.inputBar.setLoading(false);
+        this.inputBar.updateStatus('ready');
+        this.streamingMessageDiv = null;
+        this.checkMessageQueue();
     }
+
+
 
     checkMessageQueue() {
         if (this.messageQueue.length > 0) {
@@ -1959,8 +2041,6 @@ Analyze this change for:
 If APPROVED, reply with "APPROVED".
 If REJECTED, explain why and provide a corrected version if possible.
         `.trim();
-
-        // Send to Reviewer (using a temporary context or just the main client?)
         // We'll use the main client but with the Reviewer's persona (if it exists, or a default one)
         // Let's assume a "Reviewer" agent exists or we use a generic one.
         // For now, we'll use a hardcoded system prompt for the reviewer.
@@ -1991,6 +2071,175 @@ If REJECTED, explain why and provide a corrected version if possible.
         await this.client.sendMessage(reviewPrompt, context, 'openrouter/auto', null, reviewerSystemPrompt);
     }
 
+    async checkAutoAccept() {
+        console.log('[ChatView] Checking for auto-accept actions...');
+
+        // Find all pending tool buttons in the current thread
+        // We look for buttons that are NOT disabled and NOT success/error state
+        const pendingButtons = Array.from(this.chatThread.querySelectorAll('button[class*="tool-"]:not([disabled]):not(.success):not(.error)'));
+
+        if (pendingButtons.length === 0) {
+            this.inputBar.hideReviewControls();
+            return;
+        }
+
+        let pendingCount = 0;
+        const buttonsToClick = [];
+
+        for (const btn of pendingButtons) {
+            let shouldAutoAccept = false;
+
+            // Check settings based on button type
+            if (btn.classList.contains('tool-list-dir-btn')) {
+                shouldAutoAccept = localStorage.getItem('peak-auto-accept-list') === 'true';
+            } else if (btn.classList.contains('tool-read-url-btn') || btn.classList.contains('tool-view-btn')) {
+                shouldAutoAccept = localStorage.getItem('peak-auto-accept-read') === 'true';
+            } else if (btn.classList.contains('tool-create-btn') || (btn.classList.contains('file-action-btn-compact') && btn.dataset.type === 'create')) {
+                shouldAutoAccept = localStorage.getItem('peak-auto-accept-create') === 'true';
+            } else if (btn.classList.contains('file-action-btn-compact') && btn.dataset.type === 'update') {
+                shouldAutoAccept = localStorage.getItem('peak-auto-accept-edit') === 'true';
+            } else if (btn.classList.contains('tool-run-btn')) {
+                shouldAutoAccept = localStorage.getItem('peak-auto-accept-run') === 'true';
+            }
+
+            if (shouldAutoAccept) {
+                buttonsToClick.push(btn);
+            } else {
+                pendingCount++;
+            }
+        }
+
+        // Execute auto-accepted actions
+        if (buttonsToClick.length > 0) {
+            console.log(`[ChatView] Auto-accepting ${buttonsToClick.length} actions.`);
+
+            // Execute all actions sequentially, skipping individual auto-continues
+            for (const btn of buttonsToClick) {
+                await this.executeToolAction(btn, { skipAutoContinue: true });
+            }
+
+            // Trigger ONE auto-continue after all actions are done
+            console.log('[ChatView] Batch auto-accept complete. Triggering continue.');
+            this.processUserMessage('continue', true);
+        }
+        // Update Input Bar Controls
+        this.updateReviewControlsVisibility(pendingCount);
+    }
+
+    updateReviewControlsVisibility(count = null) {
+        // If count is not provided, calculate it
+        if (count === null) {
+            const pendingButtons = Array.from(this.chatThread.querySelectorAll('button[class*="tool-"]:not([disabled]):not(.success):not(.error)'));
+            count = pendingButtons.length;
+        }
+
+        if (count > 0) {
+            this.inputBar.showReviewControls(
+                count,
+                () => this.acceptAllPending(), // On Accept All
+                () => this.rejectAllPending()  // On Reject All
+            );
+        } else {
+            this.inputBar.hideReviewControls();
+        }
+    }
+
+    async acceptAllPending() {
+        console.log('[ChatView] Accept All clicked');
+        const pendingButtons = Array.from(this.chatThread.querySelectorAll('button[class*="tool-"]:not([disabled]):not(.success):not(.error)'));
+
+        if (pendingButtons.length === 0) {
+            console.log('[ChatView] No pending buttons found');
+            this.inputBar.hideReviewControls();
+            return;
+        }
+
+        console.log(`[ChatView] Accepting ${pendingButtons.length} pending actions`);
+
+        // Set flag to prevent controls from reappearing during streaming
+        this.userReviewActionTaken = true;
+
+        // Execute all actions sequentially WITHOUT auto-continue
+        for (const btn of pendingButtons) {
+            await this.executeToolAction(btn, { skipAutoContinue: true });
+        }
+
+        // Update controls - should hide since all buttons are now disabled/success
+        this.updateReviewControlsVisibility();
+
+        // Smart continuation: Check if the AI's response indicates completion
+        // Look for completion markers or check if we're still in an active workflow
+        let shouldContinue = false;
+
+        if (this.currentTaskCard && this.currentTaskCard.element) {
+            const cardText = this.currentTaskCard.element.textContent || '';
+
+            // Don't continue if we see completion markers
+            const hasCompletionMarkers =
+                cardText.includes('Task completed') ||
+                cardText.includes('PHASE 3') ||
+                cardText.includes('Phase 3') ||
+                cardText.includes('REVIEW') && cardText.includes('walkthrough') ||
+                cardText.includes('verification complete') ||
+                cardText.includes('All changes verified');
+
+            // Continue if we're in Phase 1 or 2 and no completion markers
+            const hasPhase1Or2 =
+                cardText.includes('PHASE 1') || cardText.includes('Phase 1') ||
+                cardText.includes('PHASE 2') || cardText.includes('Phase 2');
+
+            shouldContinue = hasPhase1Or2 && !hasCompletionMarkers;
+        }
+
+        if (shouldContinue) {
+            console.log('[ChatView] Accept All complete - continuing to next phase');
+            // Send continue to proceed to next phase
+            this.processUserMessage('continue', true);
+        } else {
+            console.log('[ChatView] Accept All complete - task finished, not continuing');
+            // Show ready status
+            this.inputBar.updateStatus('ready', 'Ready');
+        }
+    }
+
+    async rejectAllPending() {
+        console.log('[ChatView] Reject All clicked');
+        const pendingButtons = Array.from(this.chatThread.querySelectorAll('button[class*="tool-"]:not([disabled]):not(.success):not(.error)'));
+
+        if (pendingButtons.length === 0) {
+            console.log('[ChatView] No pending buttons found');
+            this.inputBar.hideReviewControls();
+            return;
+        }
+
+        console.log(`[ChatView] Rejecting ${pendingButtons.length} pending actions`);
+
+        // Set flag to prevent controls from reappearing during streaming
+        this.userReviewActionTaken = true;
+
+        for (const btn of pendingButtons) {
+            // Mark as rejected visually
+            btn.innerHTML = '<i data-lucide="x-circle"></i> Rejected';
+            btn.classList.add('error'); // Use error style for rejection
+            btn.disabled = true;
+        }
+
+        // Update controls - should hide since all buttons are now disabled
+        this.updateReviewControlsVisibility();
+
+        // Notify AI of rejection
+        this.appendMessage('system', 'User rejected all pending actions.');
+        this.client.history.push({
+            role: 'system',
+            content: 'User rejected all pending actions.'
+        });
+        this.client.saveHistory();
+
+        console.log('[ChatView] Reject All complete - controls should be hidden');
+    }
+
+    // --- Tool Execution ---
+
     getToolActionType(btn) {
         if (btn.classList.contains('tool-create-btn')) return 'create';
         if (btn.classList.contains('tool-run-btn')) return 'run';
@@ -2003,7 +2252,7 @@ If REJECTED, explain why and provide a corrected version if possible.
         return null;
     }
 
-    async executeToolAction(btn) {
+    async executeToolAction(btn, options = {}) {
         if (!window.currentProjectRoot) {
             this.appendMessage('system', '❌ **Error:** No active project found. Please open a project tab to use tools.');
             return;
@@ -2023,7 +2272,7 @@ If REJECTED, explain why and provide a corrected version if possible.
                 }
 
                 // Visual feedback
-                this.appendMessage('system', `Executing remote tool **${toolName}**...`);
+                this.appendMessage('system', `Executing remote tool ** ${toolName}**...`);
 
                 // Execute via IPC
                 const result = await require('electron').ipcRenderer.invoke('mcp:execute-tool', serverId, toolName, args);
@@ -2037,7 +2286,7 @@ If REJECTED, explain why and provide a corrected version if possible.
                     outputText = JSON.stringify(result, null, 2);
                 }
 
-                this.appendMessage('system', `Tool Output:\n\`\`\`\n${outputText}\n\`\`\``);
+                this.appendMessage('system', `Tool Output: \n\`\`\`\n${outputText}\n\`\`\``);
                 this.markButtonSuccess(btn, 'Executed');
 
                 // Add to history
@@ -2071,7 +2320,7 @@ If REJECTED, explain why and provide a corrected version if possible.
             btn.disabled = true;
             if (window.lucide) window.lucide.createIcons();
 
-            await this.listDirectoryAndSendToAI(path, recursive, targetCard);
+            await this.listDirectoryAndSendToAI(path, recursive, targetCard, options);
 
             // Reset button state
             btn.innerHTML = '<i data-lucide="check"></i> Done';
@@ -2228,7 +2477,9 @@ If REJECTED, explain why and provide a corrected version if possible.
                 // CRITICAL FIX: Auto-continue to send output to AI
                 // This ensures the AI receives the command results immediately
                 console.log('[ChatView] Auto-continuing after command execution');
-                this.processUserMessage('continue', true);
+                if (!options.skipAutoContinue) {
+                    this.processUserMessage('continue', true);
+                }
 
                 // Inject output into the card DOM for inline display
                 const card = btn.closest('.command-card');
@@ -2317,7 +2568,9 @@ If REJECTED, explain why and provide a corrected version if possible.
                 this.client.saveHistory();
 
                 this.markButtonSuccess(btn, 'Read');
-                this.processUserMessage('continue', true);
+                if (!options.skipAutoContinue) {
+                    this.processUserMessage('continue', true);
+                }
 
             } catch (e) {
                 console.error('[ChatView] View file failed:', e);
@@ -2357,22 +2610,22 @@ If REJECTED, explain why and provide a corrected version if possible.
             return;
         } else if (btn.classList.contains('tool-search-btn')) {
             const query = decodeURIComponent(btn.dataset.query);
-            this.runSearchAndSendToAI(query);
+            this.runSearchAndSendToAI(query, options);
             this.markButtonSuccess(btn, 'Searched');
         } else if (btn.classList.contains('tool-view-btn')) {
             const path = decodeURIComponent(btn.dataset.path);
             window.dispatchEvent(new CustomEvent('peak-open-file', { detail: { path } }));
             this.markButtonSuccess(btn, 'Opened');
-            await this.sendFileContentToAI(path, btn);
+            await this.sendFileContentToAI(path, btn, options);
         } else if (btn.classList.contains('tool-problems-btn')) {
-            this.getProblemsAndSendToAI(btn);
+            this.getProblemsAndSendToAI(btn, options);
             this.markButtonSuccess(btn, 'Checked');
         } else if (btn.classList.contains('tool-capture-live-btn')) {
-            this.captureLiveViewAndSendToAI(btn);
+            this.captureLiveViewAndSendToAI(btn, options);
             this.markButtonSuccess(btn, 'Captured');
         } else if (btn.classList.contains('tool-read-url-btn')) {
             const url = decodeURIComponent(btn.dataset.url);
-            this.readUrlAndSendToAI(url, btn);
+            this.readUrlAndSendToAI(url, btn, options);
             this.markButtonSuccess(btn, 'Fetched');
         } else if (btn.classList.contains('tool-list-dir-btn')) {
             const path = decodeURIComponent(btn.dataset.path);
@@ -2547,7 +2800,7 @@ If REJECTED, explain why and provide a corrected version if possible.
         }
     }
 
-    async captureLiveViewAndSendToAI(triggerButton = null) {
+    async captureLiveViewAndSendToAI(triggerButton = null, options = {}) {
         try {
             const webview = document.getElementById('inspector-live-view');
             if (!webview) {
@@ -2619,7 +2872,9 @@ If REJECTED, explain why and provide a corrected version if possible.
             this.client.saveHistory();
 
             // Trigger Auto-Continue
-            this.processUserMessage('continue', true);
+            if (!options.skipAutoContinue) {
+                this.processUserMessage('continue', true);
+            }
 
         } catch (e) {
             console.error("Failed to capture live view:", e);
@@ -2627,7 +2882,7 @@ If REJECTED, explain why and provide a corrected version if possible.
         }
     }
 
-    async readUrlAndSendToAI(url, triggerButton = null) {
+    async readUrlAndSendToAI(url, triggerButton = null, options = {}) {
         try {
             // Use Electron's net module or fetch if available in renderer (usually is)
             // We'll use a simple fetch here. If CORS is an issue, we might need IPC to main process.
@@ -2710,7 +2965,9 @@ If REJECTED, explain why and provide a corrected version if possible.
             this.client.saveHistory();
 
             // Trigger Auto-Continue
-            this.processUserMessage('continue', true);
+            if (!options.skipAutoContinue) {
+                this.processUserMessage('continue', true);
+            }
 
         } catch (e) {
             console.error("Failed to read URL:", e);
@@ -2718,7 +2975,7 @@ If REJECTED, explain why and provide a corrected version if possible.
         }
     }
 
-    async getProblemsAndSendToAI(triggerButton = null) {
+    async getProblemsAndSendToAI(triggerButton = null, options = {}) {
         try {
             if (window.peakGetDiagnostics) {
                 const diags = window.peakGetDiagnostics();
@@ -2790,7 +3047,9 @@ If REJECTED, explain why and provide a corrected version if possible.
                 this.client.saveHistory();
 
                 // Trigger Auto-Continue
-                this.processUserMessage('continue', true);
+                if (!options.skipAutoContinue) {
+                    this.processUserMessage('continue', true);
+                }
 
             } else {
                 this.appendMessage('system', "Error: Diagnostics service not available.");
@@ -2800,7 +3059,7 @@ If REJECTED, explain why and provide a corrected version if possible.
         }
     }
 
-    async sendFileContentToAI(relPath, triggerButton = null) {
+    async sendFileContentToAI(relPath, triggerButton = null, options = {}) {
         if (!window.currentProjectRoot) {
             this.appendMessage('system', '❌ **Error:** No active project found. Please open a project tab.');
             return;
@@ -2855,14 +3114,16 @@ If REJECTED, explain why and provide a corrected version if possible.
             this.client.saveHistory();
 
             // Trigger Auto-Continue to ensure AI sees the content and proceeds
-            this.processUserMessage('continue', true);
+            if (!options.skipAutoContinue) {
+                this.processUserMessage('continue', true);
+            }
 
         } catch (e) {
             console.error("Failed to send file content to AI:", e);
         }
     }
 
-    async listDirectoryAndSendToAI(relPath, recursive, targetCard = null) {
+    async listDirectoryAndSendToAI(relPath, recursive, targetCard = null, options = {}) {
         if (!window.currentProjectRoot) {
             this.appendMessage('system', '❌ **Error:** No active project found. Please open a project tab.');
             return;
@@ -2965,7 +3226,9 @@ If REJECTED, explain why and provide a corrected version if possible.
             this.client.saveHistory();
 
             // Trigger Auto-Continue
-            this.processUserMessage('continue', true);
+            if (!options.skipAutoContinue) {
+                this.processUserMessage('continue', true);
+            }
 
         } catch (e) {
             console.error("Failed to list directory:", e);
@@ -3023,7 +3286,7 @@ If REJECTED, explain why and provide a corrected version if possible.
         }
     }
 
-    async runSearchAndSendToAI(query) {
+    async runSearchAndSendToAI(query, options = {}) {
         try {
             const root = window.currentProjectRoot;
             if (!root) {
@@ -3059,7 +3322,9 @@ If REJECTED, explain why and provide a corrected version if possible.
             this.client.saveHistory();
 
             // Trigger Auto-Continue
-            this.processUserMessage('continue', true);
+            if (!options.skipAutoContinue) {
+                this.processUserMessage('continue', true);
+            }
 
         } catch (e) {
             console.error("Failed to run search:", e);
@@ -3070,6 +3335,12 @@ If REJECTED, explain why and provide a corrected version if possible.
         btn.innerHTML = `<i data-lucide="check"></i> ${text}`;
         btn.disabled = true;
         if (window.lucide) window.lucide.createIcons();
+
+        // Update review controls - decrease pending count
+        // Skip update if user has already taken action on batch (Accept/Reject All)
+        if (!this.userReviewActionTaken) {
+            this.updateReviewControlsVisibility();
+        }
     }
 
     destroy() {
