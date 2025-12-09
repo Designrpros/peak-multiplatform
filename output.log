@@ -1,0 +1,42 @@
+
+> peak-multiplatform@0.0.12 start
+> ELECTRON_DISABLE_SECURITY_WARNINGS=true electron . 2>&1 | grep -v 'CoreText note'
+
+[ExtensionHost] Initialized. getExtension type: function
+[ExtensionHost] Found 11 installed bundled extensions
+[ExtensionHost] Loaded 11 extensions total
+[Main] Extensions ready
+[76398:1203/201728.246443:ERROR:service_worker_storage.cc(2016)] Failed to delete the database: Database IO error
+[Main] Linting file: /Users/vegarberentsen/my-peak-app/src/app/layout.tsx
+[Main] Creating new ESLint instance with project root: /Users/vegarberentsen/my-peak-app
+[Main] Lint results for /Users/vegarberentsen/my-peak-app/src/app/layout.tsx: 1 messages
+[Main] Formatted messages: [ 'severity="error", msg="Parsing error: Unexpected token {"' ]
+[Main] Broadcast lint results: 1 messages
+[Main] Linting file: /Users/vegarberentsen/my-peak-app/src/app/page.tsx
+[Main] Lint results for /Users/vegarberentsen/my-peak-app/src/app/page.tsx: 1 messages
+[Main] Formatted messages: [ 'severity="error", msg="Parsing error: Unexpected token ."' ]
+[Main] Broadcast lint results: 1 messages
+[Main] Linting file: /Users/vegarberentsen/my-peak-app/src/app/layout.tsx
+[Main] Lint results for /Users/vegarberentsen/my-peak-app/src/app/layout.tsx: 1 messages
+[Main] Formatted messages: [ 'severity="error", msg="Parsing error: Unexpected token {"' ]
+[Main] Broadcast lint results: 1 messages
+[Main] Linting file: /Users/vegarberentsen/my-peak-app/next-env.d.ts
+[Main] Lint results for /Users/vegarberentsen/my-peak-app/next-env.d.ts: 0 messages
+[Main] Formatted messages: []
+[Main] Broadcast lint results: 0 messages
+[Main] Linting file: /Users/vegarberentsen/my-peak-app/src/app/page.tsx
+[Main] Lint results for /Users/vegarberentsen/my-peak-app/src/app/page.tsx: 1 messages
+[Main] Formatted messages: [ 'severity="error", msg="Parsing error: Unexpected token ."' ]
+[Main] Broadcast lint results: 1 messages
+[Main] Linting file: /Users/vegarberentsen/my-peak-app/next.config.ts
+[Main] Lint results for /Users/vegarberentsen/my-peak-app/next.config.ts: 1 messages
+[Main] Formatted messages: [ 'severity="error", msg="Parsing error: Unexpected token {"' ]
+[Main] Broadcast lint results: 1 messages
+[Main] Linting file: /Users/vegarberentsen/my-peak-app/next-env.d.ts
+[Main] Lint results for /Users/vegarberentsen/my-peak-app/next-env.d.ts: 0 messages
+[Main] Formatted messages: []
+[Main] Broadcast lint results: 0 messages
+[Main] Linting file: /Users/vegarberentsen/my-peak-app/next.config.ts
+[Main] Lint results for /Users/vegarberentsen/my-peak-app/next.config.ts: 1 messages
+[Main] Formatted messages: [ 'severity="error", msg="Parsing error: Unexpected token {"' ]
+[Main] Broadcast lint results: 1 messages

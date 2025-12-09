@@ -23,7 +23,20 @@ function streamChatCompletion(model, messages, apiKey, referer, title) {
         model: model,
         messages: messages,
         stream: true, // Crucial for streaming response
+        temperature: 0.7, // Lower for Gemini stability (1.0 can cause empty responses)
+        max_tokens: 8192, // Generous token limit
+        top_p: 0.9, // Better sampling for Gemini
     };
+
+    console.log('[OpenRouter] Request payload:', JSON.stringify({
+        model: payload.model,
+        messageCount: payload.messages.length,
+        temperature: payload.temperature,
+        max_tokens: payload.max_tokens,
+        firstMessage: payload.messages[0]?.role,
+        lastMessage: payload.messages[payload.messages.length - 1]?.role,
+        systemPromptLength: payload.messages[0]?.content?.length || 0
+    }, null, 2));
 
     const headers = {
         'Authorization': `Bearer ${apiKey}`,

@@ -59,7 +59,7 @@ function getPlaceholder() {
     switch (currentState.selectedMode) {
         case InputMode.SEARCH: return "Search the web or enter URL...";
         case InputMode.NOTE: return "Enter note content...";
-        case InputMode.LLM: return "Ask an AI assistant...";
+        case InputMode.LLM: return "Ask an Peak Assistant...";
         case InputMode.TERMINAL: return "Enter terminal command...";
         case InputMode.PROJECT: return "Open folder...";
         case InputMode.MINDMAP: return "Enter Mind Map name...";

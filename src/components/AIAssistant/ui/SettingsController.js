@@ -1,10 +1,11 @@
 /**
  * SettingsController.js
- * Manages the AI Assistant Settings View.
+ * Manages the Peak Assistant Settings View.
  */
 
 const DocsRegistry = require('../core/DocsRegistry');
 const AgentRegistry = require('../core/AgentRegistry');
+const SettingsManager = require('../core/SettingsManager');
 const { AvailableModels } = require('../../../utils/enums');
 
 class SettingsController {
@@ -24,6 +25,24 @@ class SettingsController {
                 this.renderAgentsList(document.getElementById('agents-list'));
             }
         });
+    }
+
+    render() {
+        // If we are called with an instance (prototype.render.call(new SettingsController())),
+        // we can just return the innerHTML of what would be rendered.
+        // But renderSettings() modifies this.container.
+        // We need a way to return the HTML string without attaching to DOM immediately if called this way.
+
+        // Mock a container if we don't have one
+        const mockContainer = document.createElement('div');
+        this.container = mockContainer;
+        this.renderSettings();
+        return mockContainer.innerHTML;
+    }
+
+    destroy() {
+        // Cleanup listeners if any
+        // window.removeEventListener('peak-agents-updated', ...);
     }
 
     loadActiveDocs() {
@@ -107,6 +126,7 @@ class SettingsController {
             { id: 'peak-auto-accept-create', label: 'Auto-accept Create File', default: false },
             { id: 'peak-auto-accept-edit', label: 'Auto-accept Edit File', default: false },
             { id: 'peak-auto-accept-run', label: 'Auto-accept Run Command', default: false },
+            { id: 'peak-auto-accept-plan', label: 'Auto-accept Plan Files', default: false },
         ];
 
         const sectionHeader = (text) => {
@@ -117,6 +137,45 @@ class SettingsController {
         };
 
         container.appendChild(sectionHeader('Automation'));
+
+        // --- Model Configuration Section ---
+        const modelHeader = sectionHeader('AI Model');
+        container.appendChild(modelHeader);
+
+        const modelContainer = document.createElement('div');
+        modelContainer.style.cssText = 'margin-bottom: 20px;';
+
+        const currentSettings = SettingsManager.getSettings();
+
+        const modelSelect = document.createElement('select');
+        modelSelect.style.cssText = `
+            width: 100%;
+            padding: 6px 8px;
+            background: var(--input-background-color);
+            border: 1px solid var(--border-color);
+            color: var(--peak-primary);
+            border-radius: 4px;
+            font-size: 11px;
+            cursor: pointer;
+        `;
+
+        AvailableModels.forEach(m => {
+            const option = document.createElement('option');
+            option.value = m.id;
+            option.textContent = `${m.name} ${m.isPremium ? '(Premium)' : ''}`;
+            if (m.id === currentSettings.model) option.selected = true;
+            modelSelect.appendChild(option);
+        });
+
+        modelSelect.addEventListener('change', (e) => {
+            SettingsManager.updateSettings({ model: e.target.value });
+        });
+
+        modelContainer.appendChild(modelSelect);
+        container.appendChild(modelContainer);
+
+        // --- Automation Section ---
+        container.appendChild(sectionHeader('Automation Rules'));
 
         const settingsGrid = document.createElement('div');
         settingsGrid.style.cssText = 'display: grid; grid-template-columns: 1fr; gap: 4px; margin-bottom: 20px;';
@@ -143,7 +202,15 @@ class SettingsController {
             checkbox.style.cursor = 'pointer';
 
             checkbox.addEventListener('change', (e) => {
-                localStorage.setItem(setting.id, e.target.checked);
+                const checked = e.target.checked;
+                const { automation } = SettingsManager.getSettings();
+                const newAutomation = { ...automation };
+
+                if (setting.id === 'peak-auto-accept-run') newAutomation.run_command = checked;
+                else if (setting.id === 'peak-auto-accept-create') newAutomation.create_file = checked;
+                else if (setting.id === 'peak-auto-accept-edit') newAutomation.edit_file = checked;
+
+                SettingsManager.updateSettings({ automation: newAutomation });
             });
 
             const label = document.createElement('label');
@@ -162,6 +229,27 @@ class SettingsController {
 
             settingsGrid.appendChild(item);
         });
+
+        // Sync visual state from SettingsManager
+        const syncCheckboxes = () => {
+            const { automation } = SettingsManager.getSettings();
+            if (!automation) return;
+
+            const mapping = {
+                'peak-auto-accept-create': automation.create_file,
+                'peak-auto-accept-edit': automation.edit_file,
+                'peak-auto-accept-run': automation.run_command,
+            };
+
+            Object.keys(mapping).forEach(id => {
+                const cb = container.querySelector('#' + id);
+                if (cb) cb.checked = mapping[id];
+            });
+        };
+        syncCheckboxes();
+
+        // Listen to updates from other sources
+        this.settingsUnsub = SettingsManager.subscribe(() => syncCheckboxes());
         container.appendChild(settingsGrid);
 
         // --- Project Memory Section ---

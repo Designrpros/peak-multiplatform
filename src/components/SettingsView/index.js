@@ -9,7 +9,7 @@ const FEATURE_LIST = [
     { title: 'Tab Management', description: 'Organize your work with multiple tabs for web pages, terminals, code projects, and notes.' },
     { title: 'Project Explorer', description: 'Open local folders, browse files, and use the integrated CodeMirror editor with auto-save and file system interaction.' },
     { title: 'Embedded Terminal', description: 'Run a fully functional shell within the Project View, anchored to your current project directory.' },
-    { title: 'AI Assistant', description: 'Get context-aware help (explain, debug, refactor) for the file currently open in the Project Explorer sidebar.' },
+    { title: 'Peak Assistant', description: 'Get context-aware help (explain, debug, refactor) for the file currently open in the Project Explorer sidebar.' },
     { title: 'Chat View (OpenRouter)', description: 'Dedicated AI chat space supporting streaming responses via OpenRouter models.' },
     { title: 'Note Editor', description: 'Long-form writing tool supporting structured block types (headings, paragraphs, code, todos) with real-time saving.' },
     { title: 'Session History', description: 'Access past web navigations, saved notes, and chat sessions easily via the right sidebar.' }

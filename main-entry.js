@@ -210,6 +210,18 @@ window.stopChatStream = () => tabManager.stopChatStream();
 document.addEventListener('DOMContentLoaded', () => {
     console.log("[MainEntry] DOM Content Loaded");
     tabManager.renderView();
-    if (window.lucide) window.lucide.createIcons();
+
+    // Initialize Lucide Icons
+    const initIcons = () => {
+        if (window.lucide) {
+            console.log("[MainEntry] Initializing Lucide icons...");
+            window.lucide.createIcons();
+        } else {
+            console.warn("[MainEntry] Lucide not loaded yet, retrying...");
+            setTimeout(initIcons, 100);
+        }
+    };
+    initIcons();
+
     ipcRenderer.send('renderer-ready');
 });

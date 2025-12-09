@@ -1,10 +1,78 @@
-// ... [Imports and renderFinderHTML remain the same] ...
-// (Keep the top part of the file as is until attachFinderListeners)
+const { ipcRenderer, clipboard } = require('electron');
+const path = require('path');
+const { Terminal } = require('@xterm/xterm');
+const { FitAddon } = require('@xterm/addon-fit');
+const { ClipboardAddon } = require('@xterm/addon-clipboard');
 
-async function attachFinderListeners(data, container) {
+let currentPath = null;
+let history = [];
+let historyIndex = 0;
+let viewMode = 'grid';
+let selectedPaths = new Set();
+let filesCache = [];
+let isTerminalVisible = false;
+
+function renderFinderHTML() {
+    return `
+        <div class="finder-container">
+            <div class="finder-toolbar">
+                <div class="nav-controls">
+                    <button class="nav-btn" id="btn-back" disabled><i data-lucide="chevron-left"></i></button>
+                    <button class="nav-btn" id="btn-fwd" disabled><i data-lucide="chevron-right"></i></button>
+                    <button class="nav-btn" id="btn-up"><i data-lucide="arrow-up"></i></button>
+                </div>
+                <div class="path-breadcrumbs" id="finder-breadcrumbs"></div>
+                <div class="view-controls">
+                    <button class="view-btn active" id="mode-grid"><i data-lucide="grid"></i></button>
+                    <button class="view-btn" id="mode-list"><i data-lucide="list"></i></button>
+                    <button class="view-btn" id="btn-toggle-term"><i data-lucide="terminal"></i></button>
+                </div>
+            </div>
+            <div class="finder-body">
+                <div class="finder-sidebar">
+                    <div class="sidebar-group">
+                        <div class="group-title">Favorites</div>
+                        <div id="finder-favorites"></div>
+                    </div>
+                    <div class="sidebar-group">
+                        <div class="group-title">Locations</div>
+                        <div class="sidebar-item" id="nav-home"><i data-lucide="home"></i> Home</div>
+                        <div class="sidebar-item" id="nav-root"><i data-lucide="hard-drive"></i> Root</div>
+                    </div>
+                </div>
+                <div class="finder-main">
+                    <div id="finder-content-area" class="finder-content file-grid"></div>
+                    
+                    <!-- Terminal Wrapper -->
+                    <div id="finder-terminal-wrapper" style="display:none; height: 200px; border-top: 1px solid var(--border-color); flex-direction: column;">
+                         <div class="term-header" style="padding: 4px 8px; background: var(--header-background); display: flex; justify-content: space-between; align-items: center;">
+                            <span style="font-size: 11px; font-weight: 600;">Terminal</span>
+                            <div style="display: flex; gap: 4px;">
+                                <button id="btn-term-clear" class="term-action-btn" title="Clear"><i data-lucide="ban"></i></button>
+                                <button id="btn-term-close" class="term-action-btn" title="Close"><i data-lucide="x"></i></button>
+                            </div>
+                         </div>
+                         <div id="finder-xterm-container" style="flex: 1; overflow: hidden; background: #1e1e1e;"></div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Quick Look Modal -->
+            <div id="quick-look" class="quick-look-overlay">
+                <div class="ql-content">
+                    <div class="ql-header">
+                        <span id="ql-title">Preview</span>
+                        <button id="ql-open-btn">Open</button>
+                    </div>
+                    <div id="ql-preview" class="ql-body"></div>
+                </div>
+            </div>
+        </div>
+    `;
+} async function attachFinderListeners(data, container) {
     const contentArea = container.querySelector('#finder-content-area');
     const quickLook = container.querySelector('#quick-look');
-    
+
     // --- TERMINAL SETUP ---
     const termContainer = container.querySelector('#finder-xterm-container');
     const termWrapper = container.querySelector('#finder-terminal-wrapper');
@@ -12,7 +80,7 @@ async function attachFinderListeners(data, container) {
     let fitAddon = null;
     const termId = `finder-term-${Date.now()}`;
     let onTermContextAction = null;
-    
+
     if (Terminal && termContainer) {
         term = new Terminal({
             cursorBlink: true,
@@ -23,38 +91,38 @@ async function attachFinderListeners(data, container) {
             rows: 8,
             rightClickSelectsWord: true
         });
-        
+
         fitAddon = new FitAddon();
         term.loadAddon(fitAddon);
         if (ClipboardAddon) term.loadAddon(new ClipboardAddon());
-        
+
         term.open(termContainer);
-        
+
         // --- FIXED: Key Handlers (Copy/Paste) ---
         term.attachCustomKeyEventHandler((arg) => {
             if (arg.type !== 'keydown') return true;
-            
+
             const key = arg.key.toLowerCase();
             const isMac = process.platform === 'darwin';
-            
-            const isCopy = isMac 
-                ? (arg.metaKey && key === 'c') 
+
+            const isCopy = isMac
+                ? (arg.metaKey && key === 'c')
                 : (arg.ctrlKey && arg.shiftKey && key === 'c');
-                
-            const isPaste = isMac 
-                ? (arg.metaKey && key === 'v') 
+
+            const isPaste = isMac
+                ? (arg.metaKey && key === 'v')
                 : (arg.ctrlKey && arg.shiftKey && key === 'v');
 
             if (isCopy) {
                 const selection = term.getSelection();
-                if (selection) { 
-                    clipboard.writeText(selection); 
+                if (selection) {
+                    clipboard.writeText(selection);
                     arg.preventDefault(); // Stop browser copy
-                    return false; 
+                    return false;
                 }
                 return true;
             }
-            
+
             if (isPaste) {
                 arg.preventDefault(); // <--- CRITICAL FIX: Stop double paste
                 term.paste(clipboard.readText());
@@ -75,7 +143,7 @@ async function attachFinderListeners(data, container) {
             if (action === 'copy') { clipboard.writeText(term.getSelection()); term.clearSelection(); }
             else if (action === 'paste') term.paste(clipboard.readText());
             else if (action === 'clear') term.clear();
-            else if (action === 'kill') { 
+            else if (action === 'kill') {
                 container.querySelector('#btn-toggle-term').click();
             }
         };
@@ -84,21 +152,21 @@ async function attachFinderListeners(data, container) {
         // ... [Rest of the function remains exactly the same] ...
         const initialPath = currentPath || data.path || await ipcRenderer.invoke('app:get-home-path');
         ipcRenderer.send('terminal-create', termId, initialPath);
-        
+
         fitAddon.fit();
-        
+
         term.onData(d => ipcRenderer.send('terminal-write', termId, d));
-        const onTermData = (e, id, d) => { if(id === termId) term.write(d); };
+        const onTermData = (e, id, d) => { if (id === termId) term.write(d); };
         ipcRenderer.on('terminal-data', onTermData);
-        
+
         const resizeObserver = new ResizeObserver(() => {
-            if(isTerminalVisible && fitAddon) {
+            if (isTerminalVisible && fitAddon) {
                 fitAddon.fit();
                 ipcRenderer.send('terminal-resize', termId, { cols: term.cols, rows: term.rows });
             }
         });
         resizeObserver.observe(termWrapper);
-        
+
         container.termCleanup = () => {
             ipcRenderer.removeListener('terminal-data', onTermData);
             if (onTermContextAction) ipcRenderer.removeListener('terminal-context-action', onTermContextAction);
@@ -114,7 +182,7 @@ async function attachFinderListeners(data, container) {
         history = [currentPath];
         historyIndex = 0;
     }
-    
+
     await loadDirectory(currentPath);
     renderSidebar();
 
@@ -128,11 +196,11 @@ async function attachFinderListeners(data, container) {
         currentPath = dirPath;
         filesCache = files;
         selectedPaths.clear();
-        
+
         renderBreadcrumbs();
         renderFiles(files);
         updateNavButtons();
-        
+
         if (term) {
             const safePath = dirPath.includes(' ') ? `"${dirPath}"` : dirPath;
             ipcRenderer.send('terminal-write', termId, `cd ${safePath}\r`);
@@ -152,7 +220,7 @@ async function attachFinderListeners(data, container) {
             contentArea.className = 'finder-content file-grid';
             contentArea.innerHTML = files.map(f => {
                 const isDir = f.isDirectory;
-                const iconName = isDir ? 'folder' : getFileIcon(f.name); 
+                const iconName = isDir ? 'folder' : getFileIcon(f.name);
                 const iconClass = isDir ? 'folder' : 'file';
                 return `
                     <div class="grid-item" data-path="${f.path}" data-name="${f.name}" data-isdir="${isDir}">
@@ -177,7 +245,7 @@ async function attachFinderListeners(data, container) {
             }).join('');
             contentArea.innerHTML = header + rows;
         }
-        if(window.lucide) window.lucide.createIcons();
+        if (window.lucide) window.lucide.createIcons();
     }
 
     // ... (Rest of interactions) ...
@@ -197,7 +265,7 @@ async function attachFinderListeners(data, container) {
 
     contentArea.addEventListener('dblclick', async (e) => {
         const item = e.target.closest('[data-path]');
-        if(!item) return;
+        if (!item) return;
         if (item.dataset.isdir === 'true') {
             history = history.slice(0, historyIndex + 1);
             history.push(item.dataset.path);
@@ -224,7 +292,7 @@ async function attachFinderListeners(data, container) {
     });
 
     document.addEventListener('keydown', (e) => {
-        if (!document.getElementById('finder-content-area')) return; 
+        if (!document.getElementById('finder-content-area')) return;
         if (e.code === 'Space' && selectedPaths.size === 1 && !e.target.matches('input,textarea')) {
             e.preventDefault();
             toggleQuickLook();
@@ -246,21 +314,21 @@ async function attachFinderListeners(data, container) {
         quickLook.classList.add('active');
 
         const ext = file.name.split('.').pop().toLowerCase();
-        if (['jpg','png','svg','gif','webp'].includes(ext)) {
+        if (['jpg', 'png', 'svg', 'gif', 'webp'].includes(ext)) {
             previewEl.innerHTML = `<img src="file://${pathStr}">`;
-        } else if (['txt','md','json','js','css','html'].includes(ext)) {
+        } else if (['txt', 'md', 'json', 'js', 'css', 'html'].includes(ext)) {
             const content = await ipcRenderer.invoke('project:read-file', pathStr);
             previewEl.innerHTML = `<pre>${content.substring(0, 2000)}</pre>`;
         } else {
             previewEl.innerHTML = `<div style="text-align:center"><i data-lucide="file" style="width:64px;height:64px;color:#888"></i><p>Preview not available</p></div>`;
-            if(window.lucide) window.lucide.createIcons();
+            if (window.lucide) window.lucide.createIcons();
         }
         document.getElementById('ql-open-btn').onclick = () => {
             ipcRenderer.invoke('app:open-path', pathStr);
             quickLook.classList.remove('active');
         };
     }
-    
+
     quickLook.addEventListener('click', (e) => { if (e.target === quickLook) quickLook.classList.remove('active'); });
 
     // --- IPC LISTENERS ---
@@ -301,30 +369,30 @@ async function attachFinderListeners(data, container) {
     };
     container.querySelector('#btn-back').onclick = () => { if (historyIndex > 0) loadDirectory(history[--historyIndex]); };
     container.querySelector('#btn-fwd').onclick = () => { if (historyIndex < history.length - 1) loadDirectory(history[++historyIndex]); };
-    
+
     const btnGrid = container.querySelector('#mode-grid');
     const btnList = container.querySelector('#mode-list');
-    
-    btnGrid.onclick = () => { 
-        viewMode = 'grid'; 
+
+    btnGrid.onclick = () => {
+        viewMode = 'grid';
         btnGrid.classList.add('active');
         btnList.classList.remove('active');
-        loadDirectory(currentPath); 
+        loadDirectory(currentPath);
     };
-    btnList.onclick = () => { 
-        viewMode = 'list'; 
+    btnList.onclick = () => {
+        viewMode = 'list';
         btnList.classList.add('active');
         btnGrid.classList.remove('active');
-        loadDirectory(currentPath); 
+        loadDirectory(currentPath);
     };
 
     container.querySelector('#nav-home').onclick = async () => loadDirectory(await ipcRenderer.invoke('app:get-home-path'));
     container.querySelector('#nav-root').onclick = () => loadDirectory('/');
-    
+
     const termBtn = container.querySelector('#btn-toggle-term');
     const termCloseBtn = container.querySelector('#btn-term-close');
     const termClearBtn = container.querySelector('#btn-term-clear');
-    
+
     const toggleTerm = () => {
         isTerminalVisible = !isTerminalVisible;
         termWrapper.style.display = isTerminalVisible ? 'flex' : 'none';
@@ -336,10 +404,10 @@ async function attachFinderListeners(data, container) {
             });
         }
     };
-    
+
     termBtn.onclick = toggleTerm;
     termCloseBtn.onclick = toggleTerm;
-    termClearBtn.onclick = () => { if(term) term.clear(); };
+    termClearBtn.onclick = () => { if (term) term.clear(); };
 
     container.querySelector('#dot-landing-f').onclick = () => window.showLandingPage();
     container.querySelector('#dot-dashboard-f').onclick = () => window.showDashboardPage();
@@ -353,24 +421,24 @@ async function attachFinderListeners(data, container) {
         const breadcrumbs = container.querySelector('#finder-breadcrumbs');
         const parts = currentPath.split(path.sep).filter(Boolean);
         const displayParts = parts.slice(-3);
-        breadcrumbs.innerHTML = displayParts.map((p, i, arr) => 
-            `<span class="path-segment ${i===arr.length-1?'current':''}">${p}</span>`
+        breadcrumbs.innerHTML = displayParts.map((p, i, arr) =>
+            `<span class="path-segment ${i === arr.length - 1 ? 'current' : ''}">${p}</span>`
         ).join('<i data-lucide="chevron-right" class="path-arrow"></i>');
-        if(window.lucide) window.lucide.createIcons();
+        if (window.lucide) window.lucide.createIcons();
     }
 
     async function renderSidebar() {
         const home = await ipcRenderer.invoke('app:get-home-path');
-        const favs = [ { name: 'Desktop', icon: 'monitor' }, { name: 'Documents', icon: 'files' }, { name: 'Downloads', icon: 'download' }, { name: 'Pictures', icon: 'image' } ];
+        const favs = [{ name: 'Desktop', icon: 'monitor' }, { name: 'Documents', icon: 'files' }, { name: 'Downloads', icon: 'download' }, { name: 'Pictures', icon: 'image' }];
         container.querySelector('#finder-favorites').innerHTML = favs.map(f => `
             <div class="sidebar-item" data-link="${path.join(home, f.name)}">
                 <i data-lucide="${f.icon}"></i> ${f.name}
             </div>
         `).join('');
         container.querySelectorAll('.sidebar-item').forEach(el => {
-            if(el.dataset.link) el.onclick = () => loadDirectory(el.dataset.link);
+            if (el.dataset.link) el.onclick = () => loadDirectory(el.dataset.link);
         });
-        if(window.lucide) window.lucide.createIcons();
+        if (window.lucide) window.lucide.createIcons();
     }
 
     return () => {
@@ -385,8 +453,8 @@ async function attachFinderListeners(data, container) {
 // ... (Keep getFileIcon and formatBytes helpers unchanged) ...
 function getFileIcon(name) {
     const ext = name.split('.').pop().toLowerCase();
-    if (['jpg','png','gif','svg','webp'].includes(ext)) return 'image';
-    if (['js','html','css','json','py','md'].includes(ext)) return 'code';
+    if (['jpg', 'png', 'gif', 'svg', 'webp'].includes(ext)) return 'image';
+    if (['js', 'html', 'css', 'json', 'py', 'md'].includes(ext)) return 'code';
     return 'file';
 }
 function formatBytes(bytes) {

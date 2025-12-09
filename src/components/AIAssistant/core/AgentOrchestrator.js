@@ -1,21 +1,32 @@
 /**
  * AgentOrchestrator.js
- * Manages multi-agent loops (Planner -> Coder -> Reviewer).
+ * Manages multi-agent loops (Planner -> Coder -> Reviewer) using a State Machine.
  */
 
 const MCPClient = require('./MCPClient');
 const AgentRegistry = require('./AgentRegistry');
 const AgentLogger = require('./AgentLogger');
 
+// Workflow States
+const WorkflowState = {
+    IDLE: 'IDLE',
+    PLANNING: 'PLANNING',
+    REVIEW_PLAN: 'REVIEW_PLAN',
+    EXECUTING: 'EXECUTING',
+    REVIEW_CHANGES: 'REVIEW_CHANGES',
+    FINISHED: 'FINISHED'
+};
+
 class AgentOrchestrator {
     constructor() {
-        this.isLoopActive = false;
-        this.executionQueue = []; // Stack/Queue for agents to run
+        this.state = WorkflowState.IDLE;
+        this.executionQueue = []; // Queue for agents
         this.originalRequest = null;
         this.context = null;
         this.accumulatedHistory = [];
-        this.maxSteps = 10; // Safety limit
+        this.maxSteps = 20; // Increased safety limit
         this.stepCount = 0;
+        this.currentPlan = null; // Store the structured plan
     }
 
     /**
@@ -25,17 +36,19 @@ class AgentOrchestrator {
      * @param {Array} rootAgents - Array of initial agent IDs (roots).
      */
     async startLoop(prompt, context, rootAgents = []) {
-        if (this.isLoopActive) {
-            console.warn('[AgentOrchestrator] Loop already active.');
+        if (this.state !== WorkflowState.IDLE) {
+            console.warn('[AgentOrchestrator] Loop already active in state:', this.state);
             return;
         }
 
-        this.isLoopActive = true;
-        this.executionQueue = [...rootAgents]; // Initialize with roots
+        this.transitionTo(WorkflowState.PLANNING);
+
+        this.executionQueue = [...rootAgents];
         this.originalRequest = prompt;
         this.context = context;
         this.accumulatedHistory = [];
         this.stepCount = 0;
+        this.currentPlan = null;
 
         AgentLogger.system('Multi-Agent Flow Started', {
             roots: rootAgents,
@@ -45,14 +58,40 @@ class AgentOrchestrator {
         await this.executeNextStep();
     }
 
+    transitionTo(newState) {
+        console.log(`[AgentOrchestrator] Transition: ${this.state} -> ${newState}`);
+        this.state = newState;
+
+        // Notify UI
+        window.dispatchEvent(new CustomEvent('peak-workflow-state-change', {
+            detail: { state: this.state }
+        }));
+    }
+
     async executeNextStep() {
-        if (this.executionQueue.length === 0 || this.stepCount >= this.maxSteps) {
+        if (this.state === WorkflowState.IDLE || this.state === WorkflowState.FINISHED) return;
+
+        // Check limits
+        if (this.stepCount >= this.maxSteps) {
+            AgentLogger.error('Max steps reached. Stopping loop.');
             this.finishLoop();
             return;
         }
 
+        // Check Queue
+        if (this.executionQueue.length === 0) {
+            // If queue is empty but we are not finished, what do we do?
+            // In EXECUTING state, if queue is empty, we might be done with execution phase.
+            if (this.state === WorkflowState.EXECUTING) {
+                // Check if we should move to Review or Finish
+                // For now, let's assume if queue is empty, we are done.
+                this.finishLoop();
+            }
+            return;
+        }
+
         this.stepCount++;
-        const agentId = this.executionQueue.shift(); // FIFO (Queue) - BFS-ish, or use pop() for DFS? Queue is safer for "Manager then Worker" flow.
+        const agentId = this.executionQueue.shift();
         const agent = AgentRegistry.getAgent(agentId);
 
         if (!agent) {
@@ -73,7 +112,7 @@ class AgentOrchestrator {
             detail: { agent }
         }));
 
-        AgentLogger.system(`Step ${this.stepCount}: ${agent.name}`, {
+        AgentLogger.system(`Step ${this.stepCount}: ${agent.name} (${this.state})`, {
             agentId: agent.id,
             role: agent.name,
             agentColor: agent.color
@@ -86,16 +125,15 @@ class AgentOrchestrator {
             : null;
 
         if (children.length > 0) {
-            // This is a Manager Agent
+            // Manager/Planner
             stepPrompt = this.constructManagerPrompt(agent, children, this.originalRequest, previousOutput);
         } else {
-            // This is a Worker Agent
+            // Worker
             stepPrompt = this.constructWorkerPrompt(agent, this.originalRequest, previousOutput);
         }
 
         // --- Send Request ---
         const client = MCPClient.getInstance();
-
         this.setupCompletionListener();
 
         // Ensure tool definitions are present
@@ -114,14 +152,14 @@ class AgentOrchestrator {
         window.addEventListener('mcp:stream-complete', completionHandler, { once: true });
     }
 
-    waitForContinue() {
-        console.log('[AgentOrchestrator] Waiting for continuation...');
-        this.setupCompletionListener();
-    }
-
     handleAgentCompletion(e) {
         if (e.detail.error) {
+            if (e.detail.error === 'Aborted by user') {
+                this.stopLoop();
+                return;
+            }
             AgentLogger.error(`Agent ${this.currentAgent.name} failed`, { error: e.detail.error });
+            // Retry or move on? For now, move on.
             this.executeNextStep();
             return;
         }
@@ -135,122 +173,163 @@ class AgentOrchestrator {
             content: content
         });
 
-        let delegated = false;
+        // --- 1. CHECK FOR PLAN (Planner Agent) ---
+        if (this.currentAgent.id === 'planner') {
+            // Look for <plan> tag
+            if (content.includes('<plan>')) {
+                console.log('[AgentOrchestrator] Plan detected. Pausing for approval.');
+                this.transitionTo(WorkflowState.REVIEW_PLAN);
+                // We do NOT schedule next step. We wait for user action.
+                return;
+            }
+        }
 
-        // --- Check for Delegation (support both tag formats) ---
+        // --- 2. CHECK FOR DELEGATION ---
+        let delegated = false;
         if (this.currentChildren.length > 0) {
             // Format 1: <delegate agent="agent-id" />
             let delegationMatch = content.match(/<delegate\s+agent="([^"]+)"\s*\/?>/i);
-
-            //Format 2: <delegate_task agent_id="agent-id" instruction="...">
+            // Format 2: <delegate_task agent_id="agent-id" ...>
             if (!delegationMatch) {
                 delegationMatch = content.match(/<delegate_task\s+agent_id="([^"]+)"/i);
             }
 
             if (delegationMatch) {
                 const targetAgentId = delegationMatch[1];
-                // Verify target is a valid child
                 if (this.currentChildren.find(c => c.id === targetAgentId)) {
                     AgentLogger.system(`${this.currentAgent.name} delegated to ${targetAgentId}`);
-                    // Add to FRONT of queue (immediate execution)
                     this.executionQueue.unshift(targetAgentId);
                     delegated = true;
-                    this.consecutiveNoDelegations = 0; // Reset counter
-                } else {
-                    AgentLogger.warn(`${this.currentAgent.name} tried to delegate to invalid child: ${targetAgentId}`);
                 }
             }
         }
 
-        // Track consecutive non-delegations to prevent infinite loops
-        if (!delegated && this.currentChildren.length > 0) {
-            this.consecutiveNoDelegations = (this.consecutiveNoDelegations || 0) + 1;
-            if (this.consecutiveNoDelegations >= 3) {
-                AgentLogger.error(`${this.currentAgent.name} failed to delegate 3 times consecutively. Stopping loop to prevent infinite recursion.`);
-                this.finishLoop();
-                return;
-            }
-        }
-
-        // Check for tool usage (pause if needed)
+        // --- 3. CHECK FOR TOOLS (Pause for Auto-Execution) ---
+        // If we are in EXECUTING state, we might need to pause for the tool to run.
+        // ChatView handles the actual execution via 'handleAutoExecution'.
+        // But we need to know if we should wait.
         const hasTools = /<(tool|create_file|update_file|run_command|delete_file|search_project|list_directory)/.test(content);
+
         if (hasTools) {
-            AgentLogger.system(`Agent ${this.currentAgent.name} proposed actions. Waiting for review...`);
-            window.dispatchEvent(new CustomEvent('peak-agent-waiting-review', {
-                detail: { agentId: this.currentAgent.id }
-            }));
-            return; // Pause loop
+            console.log('[AgentOrchestrator] Tools detected. Pausing loop for execution.');
+            // We don't change state, but we stop the immediate recursion.
+            // The ChatView will call resumeLoop() after tools are done.
+            return;
         }
 
-        // Move to next step
+        // If no tools and no plan pause, continue immediately
         setTimeout(() => {
-            if (this.isLoopActive) {
+            if (this.state !== WorkflowState.IDLE && this.state !== WorkflowState.REVIEW_PLAN && this.state !== WorkflowState.FINISHED) {
                 this.executeNextStep();
             }
         }, 1000);
     }
 
+    // --- User Actions ---
+
+    handlePlanApproval(approved, feedback = null) {
+        if (approved) {
+            this.approvePlan();
+        } else {
+            this.rejectPlan(feedback);
+        }
+    }
+
+    approvePlan() {
+        if (this.state !== WorkflowState.REVIEW_PLAN) return;
+
+        AgentLogger.system('Plan Approved by User');
+        this.transitionTo(WorkflowState.EXECUTING);
+
+        // Resume execution (Planner delegated to Coder, so Coder should be in queue or we need to prompt Planner to delegate?)
+        // Actually, if Planner output <plan> AND <delegate>, the delegate is in queue.
+        // If Planner ONLY output <plan>, we might need to nudge it to delegate.
+
+        // Let's check if queue has items.
+        if (this.executionQueue.length > 0) {
+            this.executeNextStep();
+        } else {
+            // Planner didn't delegate? Nudge it.
+            // Or maybe we just manually add 'code-expert' if it's the standard flow?
+            // Let's assume Planner follows instructions and delegates.
+            // If not, we might need a "Start Execution" prompt.
+            AgentLogger.warn('Queue empty after plan approval. Nudging Planner to delegate...');
+            // For now, let's just try to resume.
+            this.resumeLoop();
+        }
+    }
+
+    rejectPlan(feedback) {
+        if (this.state !== WorkflowState.REVIEW_PLAN) return;
+
+        AgentLogger.system('Plan Rejected/Refined by User', { feedback });
+        this.transitionTo(WorkflowState.PLANNING);
+
+        // Add feedback to history
+        this.accumulatedHistory.push({
+            role: 'user',
+            content: `The plan is rejected. Feedback: ${feedback}\nPlease revise the plan.`
+        });
+
+        // Re-queue Planner
+        this.executionQueue.unshift('planner');
+        this.executeNextStep();
+    }
+
+    resumeLoop() {
+        if (this.state === WorkflowState.IDLE || this.state === WorkflowState.FINISHED) return;
+        console.log('[AgentOrchestrator] Resuming loop...');
+
+        // If we paused for tools, we just call executeNextStep
+        // But wait, if the tool execution added a result to history, we want the SAME agent to see it?
+        // Or the NEXT agent?
+        // Usually, the same agent continues to process the tool result.
+        // So we should re-queue the current agent?
+
+        if (this.currentAgent) {
+            // We want the current agent to see the tool output and continue.
+            this.executionQueue.unshift(this.currentAgent.id);
+        }
+
+        this.executeNextStep();
+    }
+
+    stopLoop() {
+        this.transitionTo(WorkflowState.FINISHED);
+        this.executionQueue = [];
+        AgentLogger.system('Multi-Agent Flow Stopped');
+    }
+
+    finishLoop() {
+        this.transitionTo(WorkflowState.FINISHED);
+        AgentLogger.system('Multi-Agent Flow Finished', { steps: this.stepCount });
+        window.dispatchEvent(new CustomEvent('peak-multi-agent-loop-complete'));
+    }
+
+    // --- Prompt Construction ---
+
     constructManagerPrompt(agent, children, originalRequest, previousOutput) {
-        const childrenList = children.map(c => `- ID: "${c.id}", Name: "${c.name}", Description: "${c.description}"`).join('\n');
-
+        const childrenList = children.map(c => `- ID: "${c.id}", Name: "${c.name}"`).join('\n');
         let base = `You are a MANAGER AGENT (${agent.name}).\n`;
-        base += `Your role is to ORCHESTRATE work by delegating to specialized sub-agents. You do NOT execute tasks yourself.\n\n`;
-
+        base += `Your role is to ORCHESTRATE work. You do NOT execute tasks yourself.\n\n`;
         base += `AVAILABLE SUB-AGENTS:\n${childrenList}\n\n`;
-
         base += `USER REQUEST:\n"${originalRequest}"\n\n`;
 
         if (previousOutput) {
-            base += `PREVIOUS AGENT OUTPUT:\n${previousOutput}\n\n`;
+            base += `PREVIOUS OUTPUT:\n${previousOutput}\n\n`;
         }
 
-        base += `CRITICAL INSTRUCTIONS - YOU MUST FOLLOW THESE RULES:\n`;
-        base += `1. You are a MANAGER. You do NOT execute tasks, install packages, or write code yourself.\n`;
-        base += `2. You MUST delegate to one of your sub-agents listed above.\n`;
-        base += `3. Analyze which sub-agent is best suited for the current step.\n`;
-        base += `4. Provide a brief analysis (2-3 sentences) explaining WHY you're delegating to that agent.\n`;
-        base += `5. Then output EXACTLY this tag on a new line: <delegate agent="AGENT_ID" />\n`;
-        base += `6. MANDATORY: You must delegate at least once. Do not claim the task is "complete" without delegating.\n`;
-        base += `7. If no sub-agent is appropriate, explain why and request user guidance.\n\n`;
-
-        base += `EXAMPLE RESPONSE:\n`;
-        base += `"The user needs to install dependencies. The Coder agent is responsible for executing terminal commands and managing build processes, so I'm delegating this task to them.\n`;
-        base += `<delegate agent="coder" />"\n\n`;
-
-        base += `Now analyze the request and delegate appropriately.\n`;
+        base += `INSTRUCTIONS:\n`;
+        base += `1. Analyze the request.\n`;
+        base += `2. If you haven't created a plan yet, output a <plan> block.\n`;
+        base += `3. Delegate to sub-agents using <delegate agent="AGENT_ID" />.\n`;
 
         return base;
     }
 
     constructWorkerPrompt(agent, originalRequest, previousOutput) {
         if (!previousOutput) return originalRequest;
-
-        return `
-Previous Agent Output:
-${previousOutput}
-
-Your Task:
-Based on the user request "${originalRequest}" and the context above, perform your specific role (${agent.name}).
-        `.trim();
-    }
-
-    resumeLoop() {
-        if (!this.isLoopActive) return;
-        console.log('[AgentOrchestrator] Resuming flow...');
-        this.executeNextStep();
-    }
-
-    stopLoop() {
-        console.log('[AgentOrchestrator] Stopping flow...');
-        this.isLoopActive = false;
-        this.executionQueue = [];
-        AgentLogger.system('Multi-Agent Flow Stopped by User');
-    }
-
-    finishLoop() {
-        this.isLoopActive = false;
-        AgentLogger.system('Multi-Agent Flow Finished', { steps: this.stepCount });
-        window.dispatchEvent(new CustomEvent('peak-multi-agent-loop-complete'));
+        return `Previous Output:\n${previousOutput}\n\nYour Task:\nPerform your role (${agent.name}) based on the request "${originalRequest}".`;
     }
 }
 

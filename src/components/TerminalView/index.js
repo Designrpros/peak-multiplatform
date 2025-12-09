@@ -26,15 +26,23 @@ function renderTerminalHTML(tab, container) {
 
 function attachTerminalListeners(tab, containerWrapper) {
     const tabId = tab.id;
-    const container = document.getElementById(`terminal-container-${tabId}`);
-    if (!container) return () => { };
+    // Use querySelector on the wrapper to ensure we find the element we just created
+    const container = containerWrapper.querySelector(`#terminal-container-${tabId}`);
+
+    if (!container) {
+        console.error(`[Terminal] Container not found for ID: terminal-container-${tabId}`);
+        return () => { };
+    }
+
+    console.log(`[Terminal] Initializing terminal for ID: ${tabId}`);
+    window.ipcRenderer.send('log:info', `[Terminal] Initializing terminal for ID: ${tabId}`);
 
     window.ipcRenderer.send('did-finish-content-swap');
 
     // 1. Initialize with current theme
     const term = new Terminal({
         cursorBlink: true,
-        fontFamily: 'Menlo, monospace',
+        fontFamily: "Menlo, Monaco, 'Courier New', monospace",
         fontSize: 13,
         allowTransparency: true,
         theme: getCurrentTheme(),
@@ -56,78 +64,115 @@ function attachTerminalListeners(tab, containerWrapper) {
     if (SearchAddon) term.loadAddon(new SearchAddon());
     if (WebLinksAddon) term.loadAddon(new WebLinksAddon());
 
-    term.open(container);
-    fitAddon.fit();
+    try {
+        term.open(container);
+        console.log(`[Terminal] term.open successful for ID: ${tabId}`);
+    } catch (e) {
+        console.error(`[Terminal] term.open failed for ID: ${tabId}`, e);
+    }
+
+    // Defer fit and resize to ensure DOM is fully laid out
+    setTimeout(() => {
+        try {
+            console.log(`[Terminal] Executing deferred fit for ID: ${tabId}`);
+            fitAddon.fit();
+            // Send resize after fit
+            window.ipcRenderer.send('terminal-resize', tabId, { cols: term.cols, rows: term.rows });
+        } catch (e) {
+            console.warn('[Terminal] Initial fit failed:', e);
+        }
+    }, 300); // Increased to 300ms
 
     // --- NEW: Dynamic Theme Listener ---
     const onThemeChange = () => {
-        // getCurrentTheme() reads CSS vars, which auto-update via media query
-        term.options.theme = getCurrentTheme();
+        try {
+            // getCurrentTheme() reads CSS vars, which auto-update via media query
+            term.options.theme = getCurrentTheme();
+        } catch (e) {
+            console.warn('[Terminal] Theme update failed:', e);
+        }
     };
-    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-    mediaQuery.addEventListener('change', onThemeChange);
+
+    try {
+        const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+        mediaQuery.addEventListener('change', onThemeChange);
+    } catch (e) {
+        console.warn('[Terminal] MediaQuery listener failed:', e);
+    }
     // -----------------------------------
 
-    // Key Handlers (Copy/Paste)
+    // Key Handlers (Copy/Paste/SelectAll)
     term.attachCustomKeyEventHandler((arg) => {
-        if (arg.type !== 'keydown') return true;
-        const key = arg.key.toLowerCase();
-        const isMac = process.platform === 'darwin';
-        const isCopy = isMac ? (arg.metaKey && key === 'c') : (arg.ctrlKey && arg.shiftKey && key === 'c');
-        const isPaste = isMac ? (arg.metaKey && key === 'v') : (arg.ctrlKey && arg.shiftKey && key === 'v');
+        try {
+            if (arg.type !== 'keydown') return true;
 
-        // DEBUG: Log key press
-        // window.ipcRenderer.invoke('log-to-debug-file', `[Terminal] Key: ${key}, Meta: ${arg.metaKey}, Ctrl: ${arg.ctrlKey}, Shift: ${arg.shiftKey}, isCopy: ${isCopy}, isPaste: ${isPaste}`);
+            // Safety check for process
+            const isMac = (typeof process !== 'undefined' && process.platform === 'darwin');
+            const key = arg.key.toLowerCase();
 
-        if (isCopy) {
-            const selection = term.getSelection();
-            if (selection) {
-                clipboard.writeText(selection);
+            const isCopy = isMac ? (arg.metaKey && key === 'c') : (arg.ctrlKey && arg.shiftKey && key === 'c');
+            const isPaste = isMac ? (arg.metaKey && key === 'v') : (arg.ctrlKey && arg.shiftKey && key === 'v');
+            const isSelectAll = isMac ? (arg.metaKey && key === 'a') : (arg.ctrlKey && key === 'a');
+
+            // console.log('[Terminal] Key:', key, 'Meta:', arg.metaKey, 'Ctrl:', arg.ctrlKey);
+
+            if (isCopy) {
+                const selection = term.getSelection();
+                if (selection) {
+                    clipboard.writeText(selection);
+                    arg.preventDefault();
+                    return false;
+                }
+                return true;
+            }
+            if (isPaste) {
                 arg.preventDefault();
+                const text = clipboard.readText();
+                term.paste(text);
                 return false;
             }
-            return true;
-        }
-        if (isPaste) {
-            arg.preventDefault();
-            const text = clipboard.readText();
-            term.paste(text);
-            return false;
-        }
+            if (isSelectAll) {
+                arg.preventDefault();
+                term.selectAll();
+                return false;
+            }
 
-        // NEW: Handle Option+Left/Right for word jumps (macOS style)
-        if (isMac) {
-            if (arg.altKey) {
-                if (key === 'arrowleft') {
-                    arg.preventDefault();
-                    term.write('\x1bb'); // Send Esc+b (backward word)
-                    return false;
+            // NEW: Handle Option+Left/Right for word jumps (macOS style)
+            if (isMac) {
+                if (arg.altKey) {
+                    if (key === 'arrowleft') {
+                        arg.preventDefault();
+                        term.write('\x1bb'); // Send Esc+b (backward word)
+                        return false;
+                    }
+                    if (key === 'arrowright') {
+                        arg.preventDefault();
+                        term.write('\x1bf'); // Send Esc+f (forward word)
+                        return false;
+                    }
+                    if (key === 'backspace') {
+                        arg.preventDefault();
+                        term.write('\x17'); // Send Ctrl+W (delete word backward) - standard unix
+                        return false;
+                    }
                 }
-                if (key === 'arrowright') {
-                    arg.preventDefault();
-                    term.write('\x1bf'); // Send Esc+f (forward word)
-                    return false;
-                }
-                if (key === 'backspace') {
-                    arg.preventDefault();
-                    term.write('\x17'); // Send Ctrl+W (delete word backward) - standard unix
-                    // Alternatively: term.write('\x1b\x7f'); // Esc+Backspace
-                    return false;
+                // NEW: Handle Cmd+Left/Right for line jumps
+                if (arg.metaKey) {
+                    if (key === 'arrowleft') {
+                        arg.preventDefault();
+                        term.write('\x01'); // Send Ctrl+A (start of line)
+                        return false;
+                    }
+                    if (key === 'arrowright') {
+                        arg.preventDefault();
+                        term.write('\x05'); // Send Ctrl+E (end of line)
+                        return false;
+                    }
                 }
             }
-            // NEW: Handle Cmd+Left/Right for line jumps
-            if (arg.metaKey) {
-                if (key === 'arrowleft') {
-                    arg.preventDefault();
-                    term.write('\x01'); // Send Ctrl+A (start of line)
-                    return false;
-                }
-                if (key === 'arrowright') {
-                    arg.preventDefault();
-                    term.write('\x05'); // Send Ctrl+E (end of line)
-                    return false;
-                }
-            }
+        } catch (e) {
+            console.error('[Terminal] Key handler error:', e);
+            return true; // Fallback to default behavior
         }
 
         return true;
@@ -145,6 +190,7 @@ function attachTerminalListeners(tab, containerWrapper) {
         switch (action) {
             case 'copy': clipboard.writeText(term.getSelection()); term.clearSelection(); break;
             case 'paste': term.paste(clipboard.readText()); break;
+            case 'select-all': term.selectAll(); break;
             case 'clear': term.clear(); break;
             case 'kill': if (window.closeTab) window.closeTab(tabId); break;
         }
@@ -167,11 +213,49 @@ function attachTerminalListeners(tab, containerWrapper) {
     };
     window.addEventListener('terminal-tab-shown', onShow);
 
-    window.ipcRenderer.send('terminal-create', tabId, tab.content.data.cwd);
-    window.ipcRenderer.send('terminal-resize', tabId, { cols: term.cols, rows: term.rows });
+    console.log(`[Terminal] Requesting terminal creation for ID: ${tabId}, CWD: ${tab.content.data.cwd}`);
+    try {
+        const cwd = (tab.content && tab.content.data && tab.content.data.cwd) || '';
+        window.ipcRenderer.send('log:info', `[Terminal] Requesting terminal creation for ID: ${tabId}, CWD: ${cwd}`);
+        window.ipcRenderer.send('terminal-create', tabId, cwd);
+    } catch (err) {
+        window.ipcRenderer.send('log:info', `[Terminal] Failed to request terminal creation: ${err.message}`);
+        console.error(err);
+    }
+    // window.ipcRenderer.send('terminal-resize', tabId, { cols: term.cols, rows: term.rows }); // Moved to setTimeout
 
     const onData = term.onData(d => window.ipcRenderer.send('terminal-write', tabId, d));
-    const onPtyData = (e, id, d) => { if (id === tabId) term.write(d); };
+
+    // Error Parsing Logic
+    const errorRegex = /([a-zA-Z0-9_\-\.\/]+\.(ts|tsx|js|jsx|css|html)):(\d+):(\d+)/;
+    // Also catch "ERROR in ./path/to/file"
+    const webpackErrorRegex = /ERROR in (\.\/[a-zA-Z0-9_\-\.\/]+)/;
+
+    const onPtyData = (e, id, d) => {
+        if (id === tabId) {
+            // console.log(`[Terminal] Received data for ${id}:`, d.substring(0, 50)); // Verbose
+            term.write(d);
+
+            // Simple chunk-based parsing (can be improved with buffering)
+            // Check for file paths with line numbers
+            const match = d.match(errorRegex);
+            if (match) {
+                const filePath = match[1];
+                // Dispatch event for sidebar to pick up
+                window.dispatchEvent(new CustomEvent('peak-console-error', {
+                    detail: { filePath, line: match[3], col: match[4] }
+                }));
+            }
+
+            const webpackMatch = d.match(webpackErrorRegex);
+            if (webpackMatch) {
+                const filePath = webpackMatch[1];
+                window.dispatchEvent(new CustomEvent('peak-console-error', {
+                    detail: { filePath }
+                }));
+            }
+        }
+    };
     window.ipcRenderer.on('terminal-data', onPtyData);
 
     const initialCmd = tab.content.data.initialCommand;
@@ -196,6 +280,7 @@ function attachTerminalListeners(tab, containerWrapper) {
     const resizeObserver = new ResizeObserver(() => {
         try {
             fitAddon.fit();
+            // console.log(`[Terminal] ResizeObserver triggered for ${tabId}. New dims: ${term.cols}x${term.rows}`);
             window.ipcRenderer.send('terminal-resize', tabId, { cols: term.cols, rows: term.rows });
         } catch (e) { }
     });

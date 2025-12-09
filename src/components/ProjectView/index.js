@@ -9,7 +9,9 @@ const {
     handleDragOver,
     handleDragLeave,
     handleDrop,
-    setActiveFile
+    setActiveFile,
+    setSearchMode,
+    getSearchMode
 } = require('./sidebar.js');
 const { setupCodeMirror, disposeEditor, setupDiffEditor, getDiffContent, disposeDiffEditor, scanFileForErrors } = require('./editor.js');
 const TerminalView = require('../TerminalView/index.js');
@@ -34,11 +36,16 @@ function renderProjectViewHTML(projectData, container) {
 
                     </div>
                 </div>
-                <div class="file-tree-container file-tree-scroll-container">
-                    <p style="font-size:12px;color:var(--peak-secondary);padding:10px;">Loading...</p>
+                <div class="sidebar-progress-container">
+                    <div class="sidebar-progress-line"></div>
                 </div>
-                <div class="project-sidebar-footer">
-                    <input type="text" placeholder="Filter..." class="sidebar-filter-input">
+                <div class="file-tree-container file-tree-scroll-container">
+                </div>
+                <div class="project-sidebar-footer" style="display:flex; align-items:center; gap:6px; padding: 8px;">
+                    <input type="text" placeholder="Search files..." class="sidebar-filter-input" style="flex:1;">
+                    <button id="search-options-btn" class="sidebar-icon-btn" title="Search Mode: Files" style="background:transparent; border:none; cursor:pointer; color:var(--peak-secondary); padding:4px; display:flex; align-items:center; justify-content:center; border-radius: 4px; transition: background 0.2s;">
+                        <i data-lucide="sliders-horizontal" style="width:14px; height:14px;"></i>
+                    </button>
                 </div>
             </div>
             <div class="project-editor-area">
@@ -47,7 +54,7 @@ function renderProjectViewHTML(projectData, container) {
                     <div class="editor-actions">
                         <a href="#" class="editor-action-link link-toggle-sidebar" title="Toggle Sidebar"><i data-lucide="panel-left" class="editor-toolbar-icon"></i></a>
                         <a href="#" class="editor-action-link link-toggle-terminal" title="Toggle Terminal"><i data-lucide="panel-bottom" class="editor-toolbar-icon"></i></a>
-                        <a href="#" class="editor-action-link link-ai-chat" title="AI Assistant"><i data-lucide="panel-right" class="editor-toolbar-icon"></i></a>
+                        <a href="#" class="editor-action-link link-ai-chat" title="Peak Assistant"><i data-lucide="panel-right" class="editor-toolbar-icon"></i></a>
                     </div>
                 </div>
                 <div class="editor-pane-wrapper">
@@ -90,6 +97,27 @@ function renderProjectViewHTML(projectData, container) {
 async function attachProjectViewListeners(projectData, container) {
     if (window.ipcRenderer) window.ipcRenderer.send('did-finish-content-swap');
     const tabId = container.id.replace('tab-content-', '');
+
+    // Listen for icon theme changes
+    const onIconThemeChanged = () => {
+        const sidebarContent = container.querySelector('.file-tree-container');
+        if (sidebarContent) {
+            const filterInput = container.querySelector('.sidebar-filter-input');
+            const filter = filterInput ? filterInput.value : '';
+            renderSidebarHTML(sidebarContent, projectData, filter);
+        }
+    };
+    window.addEventListener('peak-icon-theme-changed', onIconThemeChanged);
+
+    // Clean up listener when tab is closed or replaced (not easily doable here without a cleanup hook, 
+    // but since this is a global event, we should be careful. 
+    // Ideally, we should attach this to the container or manage it via a cleanup function returned by attachProjectViewListeners).
+    // For now, we'll leave it, but it might leak if tabs are created/destroyed frequently.
+    // Better approach: Add a cleanup method to the container.
+    container.cleanup = () => {
+        window.removeEventListener('peak-icon-theme-changed', onIconThemeChanged);
+        // ... other cleanups
+    };
 
     if (!window.projectTerminalsData[tabId]) window.projectTerminalsData[tabId] = { terminals: [], activeIndex: -1 };
     const terminalState = window.projectTerminalsData[tabId];
@@ -365,10 +393,17 @@ async function attachProjectViewListeners(projectData, container) {
         // We want to stream the response and then apply it as a diff.
 
         // Construct a focused prompt
+        // Get fresh context including diagnostics
+        const globalContext = window.getProjectFileContext ? window.getProjectFileContext() : {};
+        const diagnosticsInfo = globalContext.diagnostics && globalContext.diagnostics.length > 0
+            ? `\n\nActive Problems in Project:\n${globalContext.diagnostics.join('\n')}`
+            : '';
+
         const systemInstruction = `
 You are an expert coding assistant.
 The user wants to edit the following file: "${context.filePath}".
 ${context.selection ? `They have selected this code:\n\`\`\`\n${context.selection}\n\`\`\`\n` : ''}
+${diagnosticsInfo}
 
 USER PROMPT: ${prompt}
 
@@ -430,8 +465,61 @@ INSTRUCTIONS:
         filterInput.addEventListener('input', () => refreshSidebar());
     }
 
+    // Search mode toggle (Menu Icon)
+    const searchOptionsBtn = container.querySelector('#search-options-btn');
+    if (searchOptionsBtn) {
+        searchOptionsBtn.addEventListener('click', () => {
+            const currentMode = getSearchMode();
+            const newMode = currentMode === 'file' ? 'content' : 'file';
+            setSearchMode(newMode);
+
+            // Update UI
+            searchOptionsBtn.title = newMode === 'file' ? 'Search Mode: Files' : 'Search Mode: Content';
+            searchOptionsBtn.style.color = newMode === 'content' ? 'var(--peak-accent)' : 'var(--peak-secondary)';
+            searchOptionsBtn.style.background = newMode === 'content' ? 'var(--control-background-color)' : 'transparent';
+
+            // Update placeholder
+            if (filterInput) {
+                filterInput.placeholder = newMode === 'file' ? 'Search files...' : 'Search in files...';
+                // Refresh if there's existing search text
+                if (filterInput.value.trim()) {
+                    refreshSidebar();
+                }
+            }
+        });
+    }
+
+    // Content search result clicks
+    fileTreeContainer.addEventListener('click', async (e) => {
+        const resultItem = e.target.closest('.content-search-result');
+        if (resultItem && resultItem.dataset.filePath) {
+            const filePath = resultItem.dataset.filePath;
+
+            // Check if clicked on a specific match line
+            const matchLine = e.target.closest('.content-search-match');
+            if (matchLine && matchLine.dataset.line) {
+                const lineNum = parseInt(matchLine.dataset.line);
+                // Load file and jump to line
+                await loadFile(filePath);
+                if (editorPane.jumpToLine) {
+                    editorPane.jumpToLine(lineNum);
+                }
+            } else {
+                // Just load the file
+                await loadFile(filePath);
+            }
+        }
+    });
+
     const updateGlobalContext = () => {
+        console.log('[ProjectView] Setting project root for AI:', projectData.path);
         window.currentProjectRoot = projectData.path; // Expose project root for AI
+        window.currentProjectTitle = projectData.title;
+        console.log('[ProjectView] window.currentProjectRoot is now:', window.currentProjectRoot);
+
+        // Sync with main process for AI tool path resolution
+        ipcRenderer.send('update-project-root', projectData.path);
+
         window.peakGetDiagnostics = () => {
             // Convert Map to a serializable format
             const result = [];
@@ -440,12 +528,29 @@ INSTRUCTIONS:
             });
             return result;
         };
-        window.getProjectFileContext = () => ({
-            currentFilePath: activeFilePath,
-            currentFileContent: currentFileContent,
-            currentFileContentError: null,
-            projectTitle: projectData.title || path.basename(projectData.path)
-        });
+        window.getProjectFileContext = () => {
+            // Gather diagnostics summary
+            const diagnosticsSummary = [];
+            allDiagnostics.forEach((diags, file) => {
+                if (diags.length > 0) {
+                    const relPath = path.relative(projectData.path, file);
+                    diagnosticsSummary.push(`File: ${relPath} (${diags.length} problems)`);
+                    // Limit to top 3 errors/warnings to avoid context bloat
+                    diags.slice(0, 3).forEach(d => {
+                        diagnosticsSummary.push(`  - [${d.severity}] Line ${d.line}: ${d.message}`);
+                    });
+                }
+            });
+
+            return {
+                currentFilePath: activeFilePath,
+                currentFileContent: currentFileContent,
+                currentFileContentError: null,
+                projectTitle: projectData.title || path.basename(projectData.path),
+                root: projectData.path,
+                diagnostics: diagnosticsSummary
+            };
+        };
         // Notify other components (like ChatView) that project root is available
         window.dispatchEvent(new CustomEvent('peak-project-root-updated', { detail: { root: window.currentProjectRoot } }));
     };
@@ -502,7 +607,72 @@ INSTRUCTIONS:
     }
 
     // Problems View
-    const renderProblemsView = () => { if (!problemsView) return; problemsView.innerHTML = ''; let totalCount = 0; if (allDiagnostics.size === 0) { problemsView.innerHTML = `<div class="empty-problems">No problems detected.</div>`; if (problemsBadge) problemsBadge.textContent = ''; return; } const sortedFiles = Array.from(allDiagnostics.keys()).sort(); sortedFiles.forEach(filePath => { const diags = allDiagnostics.get(filePath); if (!diags || diags.length === 0) return; totalCount += diags.length; const fileGroup = document.createElement('div'); fileGroup.className = 'problem-file-group'; const displayPath = path.relative(projectData.path, path.dirname(filePath)); const header = document.createElement('div'); header.className = 'problem-file-header'; header.innerHTML = `<div class="file-toggle"><i data-lucide="chevron-down"></i></div><div class="file-icon">${getFileIconHTML(path.basename(filePath))}</div><div class="file-info"><span class="file-name">${path.basename(filePath)}</span><span class="file-path">${displayPath ? displayPath : ''}</span></div><div class="file-badge">${diags.length}</div>`; header.onclick = () => { fileGroup.classList.toggle('collapsed'); const icon = header.querySelector('.file-toggle i'); icon.setAttribute('data-lucide', fileGroup.classList.contains('collapsed') ? 'chevron-right' : 'chevron-down'); if (window.lucide) window.lucide.createIcons(); }; const list = document.createElement('div'); list.className = 'problem-list'; diags.forEach(d => { const item = document.createElement('div'); item.className = 'problem-item'; if (selectedProblem && selectedProblem.diagnostic === d) item.classList.add('selected'); const severityIcon = d.severity === 'error' ? 'x-circle' : 'alert-triangle'; const severityClass = d.severity === 'error' ? 'error' : 'warning'; const lineText = (d.line !== undefined && d.col !== undefined) ? `[${d.line}, ${d.col}]` : `[Pos ${d.from}]`; item.innerHTML = `<div class="problem-gutter"></div><div class="problem-main"><i data-lucide="${severityIcon}" class="problem-icon ${severityClass}"></i><span class="problem-message" title="${d.message}">${d.message}</span><span class="problem-source">${d.source || ''}</span><span class="problem-pos">${lineText}</span></div>`; item.onclick = async (e) => { e.stopPropagation(); selectedProblem = { diagnostic: d, filePath: filePath }; problemsView.querySelectorAll('.problem-item').forEach(el => el.classList.remove('selected')); item.classList.add('selected'); problemsView.focus(); if (window.currentFilePath !== filePath) await loadFile(filePath); if (editorPane.jumpToLine) editorPane.jumpToLine(d.from); }; item.addEventListener('contextmenu', (e) => { e.preventDefault(); e.stopPropagation(); selectedProblem = { diagnostic: d, filePath: filePath }; const copyText = `${d.message} (${path.basename(filePath)} ${lineText})`; window.ipcRenderer.send('show-problem-context-menu', copyText); }); list.appendChild(item); }); fileGroup.appendChild(header); fileGroup.appendChild(list); problemsView.appendChild(fileGroup); }); if (problemsBadge) { problemsBadge.textContent = totalCount > 0 ? ` ${totalCount}` : ''; problemsBadge.style.color = totalCount > 0 ? 'var(--peak-accent)' : 'inherit'; } if (window.lucide) window.lucide.createIcons(); };
+    const renderProblemsView = () => {
+        if (!problemsView) return;
+        problemsView.innerHTML = '';
+        let totalCount = 0;
+        if (allDiagnostics.size === 0) {
+            problemsView.innerHTML = `<div class="empty-problems">No problems detected.</div>`;
+            if (problemsBadge) problemsBadge.textContent = '';
+            return;
+        }
+        const sortedFiles = Array.from(allDiagnostics.keys()).sort();
+        sortedFiles.forEach(filePath => {
+            const diags = allDiagnostics.get(filePath);
+            if (!diags || diags.length === 0) return;
+            totalCount += diags.length;
+            const fileGroup = document.createElement('div');
+            fileGroup.className = 'problem-file-group';
+            const displayPath = path.relative(projectData.path, path.dirname(filePath));
+            const header = document.createElement('div');
+            header.className = 'problem-file-header';
+            header.innerHTML = `<div class="file-toggle"><i data-lucide="chevron-down"></i></div><div class="file-icon">${getFileIconHTML(path.basename(filePath))}</div><div class="file-info"><span class="file-name">${path.basename(filePath)}</span><span class="file-path">${displayPath ? displayPath : ''}</span></div><div class="file-badge">${diags.length}</div>`;
+            header.onclick = () => {
+                fileGroup.classList.toggle('collapsed');
+                const toggleContainer = header.querySelector('.file-toggle');
+                const isCollapsed = fileGroup.classList.contains('collapsed');
+                // Re-create the icon element since Lucide replaces it with SVG
+                toggleContainer.innerHTML = `<i data-lucide="${isCollapsed ? 'chevron-right' : 'chevron-down'}"></i>`;
+                if (window.lucide) window.lucide.createIcons();
+            };
+            const list = document.createElement('div');
+            list.className = 'problem-list';
+            diags.forEach(d => {
+                const item = document.createElement('div');
+                item.className = 'problem-item';
+                if (selectedProblem && selectedProblem.diagnostic === d) item.classList.add('selected');
+                const severityIcon = d.severity === 'error' ? 'x-circle' : 'alert-triangle';
+                const severityClass = d.severity === 'error' ? 'error' : 'warning';
+                const lineText = (d.line !== undefined && d.col !== undefined) ? `[${d.line}, ${d.col}]` : `[Pos ${d.from}]`;
+                item.innerHTML = `<div class="problem-gutter"></div><div class="problem-main"><i data-lucide="${severityIcon}" class="problem-icon ${severityClass}"></i><span class="problem-message" title="${d.message}">${d.message}</span><span class="problem-source">${d.source || ''}</span><span class="problem-pos">${lineText}</span></div>`;
+                item.onclick = async (e) => {
+                    e.stopPropagation();
+                    selectedProblem = { diagnostic: d, filePath: filePath };
+                    problemsView.querySelectorAll('.problem-item').forEach(el => el.classList.remove('selected'));
+                    item.classList.add('selected');
+                    problemsView.focus();
+                    if (window.currentFilePath !== filePath) await loadFile(filePath);
+                    if (editorPane.jumpToLine) editorPane.jumpToLine(d.from);
+                };
+                item.addEventListener('contextmenu', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    selectedProblem = { diagnostic: d, filePath: filePath };
+                    const copyText = `${d.message} (${path.basename(filePath)} ${lineText})`;
+                    window.ipcRenderer.send('show-problem-context-menu', copyText);
+                });
+                list.appendChild(item);
+            });
+            fileGroup.appendChild(header);
+            fileGroup.appendChild(list);
+            problemsView.appendChild(fileGroup);
+        });
+        if (problemsBadge) {
+            problemsBadge.textContent = totalCount > 0 ? ` ${totalCount}` : '';
+            problemsBadge.style.color = totalCount > 0 ? 'var(--peak-accent)' : 'inherit';
+        }
+        if (window.lucide) window.lucide.createIcons();
+    };
     const onDiagnostics = (e) => { const { filePath, diagnostics } = e.detail; if (!filePath) return; if (!diagnostics || diagnostics.length === 0) allDiagnostics.delete(filePath); else allDiagnostics.set(filePath, diagnostics); renderProblemsView(); };
     window.addEventListener('peak-editor-diagnostics', onDiagnostics);
     problemsView.addEventListener('keydown', (e) => { if ((e.metaKey || e.ctrlKey) && e.key === 'c' && selectedProblem) { const d = selectedProblem.diagnostic; const lineText = (d.line !== undefined) ? `[${d.line}:${d.col}]` : `[Pos ${d.from}]`; const text = `${d.message} (${path.basename(selectedProblem.filePath)} ${lineText})`; clipboard.writeText(text); e.preventDefault(); } });

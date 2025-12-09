@@ -1,0 +1,1 @@
+Setup LSP for /Users/vegarberentsen/studio-test-6/src/app/page.tsx at 2025-12-09T01:30:08.705Z

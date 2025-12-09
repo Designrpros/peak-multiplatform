@@ -7,6 +7,11 @@ class MCPHost {
     }
 
     async connectToServer(name, command, args, env = {}) {
+        if (this.connections.has(name)) {
+            console.log(`[MCPHost] Already connected to ${name}, reusing connection.`);
+            return this.connections.get(name);
+        }
+
         console.log(`[MCPHost] Connecting to ${name}...`);
 
         const transport = new StdioClientTransport({
@@ -26,10 +31,22 @@ class MCPHost {
             },
         });
 
-        await client.connect(transport);
-        this.connections.set(name, client);
-        console.log(`[MCPHost] Connected to ${name}`);
-        return client;
+        try {
+            await client.connect(transport);
+            this.connections.set(name, client);
+            console.log(`[MCPHost] Connected to ${name}`);
+
+            // Handle close
+            transport.onclose = () => {
+                console.log(`[MCPHost] Connection to ${name} closed.`);
+                this.connections.delete(name);
+            };
+
+            return client;
+        } catch (e) {
+            console.error(`[MCPHost] Failed to connect to ${name}:`, e);
+            throw e;
+        }
     }
 
     async getAllTools() {
@@ -64,6 +81,18 @@ class MCPHost {
             });
         }
         return status;
+    }
+
+    async terminate() {
+        console.log('[MCPHost] Terminating all connections...');
+        for (const [name, client] of this.connections.entries()) {
+            try {
+                await client.close();
+            } catch (e) {
+                console.error(`[MCPHost] Error closing ${name}:`, e);
+            }
+        }
+        this.connections.clear();
     }
 }
 

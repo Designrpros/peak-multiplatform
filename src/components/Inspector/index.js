@@ -8,9 +8,13 @@ let terminalOps = null;
 
 try {
     // FIX: Point to new folder structure
+    console.log('[Inspector] Loading AIAssistant from: ../AIAssistant/index.js');
     aiAssist = require('../AIAssistant/index.js');
+    console.log('[Inspector] ✅ AIAssistant module loaded successfully');
 } catch (e) {
-    console.error("[Inspector] Failed to load AI Assist module:", e);
+    console.error("[Inspector] ❌ FAILED to load AI Assist module:");
+    console.error("[Inspector] Error:", e);
+    console.error("[Inspector] Stack:", e.stack);
 }
 
 try {
@@ -34,9 +38,12 @@ function toggle(mode) {
     open(mode);
 }
 
-function open(mode) {
+function open(mode, data = null) {
     let container = document.getElementById('inspector-container');
     const mainContent = document.getElementById('main-content-area');
+
+    // Store data for render
+    window.inspectorData = data;
 
     if (!container) {
         container = document.createElement('div');
@@ -144,11 +151,12 @@ function renderInspector(type) {
         container.innerHTML = `
             <div class="inspector-inner-wrapper">
                 <div class="inspector-header" style="display:flex; justify-content:space-between; align-items:center;">
-                    <h3 style="margin:0; font-size:14px; font-weight:600; color:var(--peak-primary);">AI Assistant <span style="opacity:0.5; font-weight:400;">(${displayFileName})</span></h3>
+                    <h3 style="margin:0; font-size:14px; font-weight:600; color:var(--peak-primary);">Peak Assistant <span style="opacity:0.5; font-weight:400;">(${displayFileName})</span></h3>
                     <div style="display:flex; gap:4px;">
                         ${type === 'settings' ?
                 `<button class="icon-btn" onclick="window.openInspector('ai')" title="Back to Chat"><i data-lucide="arrow-left"></i></button>` :
-                `<button id="inspector-settings-btn" class="icon-btn" title="Settings"><i data-lucide="settings"></i></button>`
+                `<button class="icon-btn" onclick="window.startNewChatSession()" title="New Chat"><i data-lucide="plus"></i></button>
+                 <button id="inspector-settings-btn" class="icon-btn" title="Settings"><i data-lucide="settings"></i></button>`
             }
                         <button class="icon-btn" onclick="window.showChatHistory()" title="Chat History"><i data-lucide="history"></i></button>
                         <button class="icon-btn" onclick="window.closeInspector()"><i data-lucide="x"></i></button>
@@ -179,6 +187,119 @@ function renderInspector(type) {
             window.currentInspectorCleanup = () => controller.destroy();
         }
 
+        return;
+    }
+
+    // --- AGENT ARTIFACTS VIEW ---
+    if (type === 'agent-artifacts') {
+        const activeTab = (window.inspectorData && window.inspectorData.tab) || 'task';
+
+        container.innerHTML = `
+            <div class="inspector-inner-wrapper">
+                <div class="inspector-header" style="display:flex; justify-content:space-between; align-items:center; padding-bottom:0; border-bottom:none;">
+                    <h3 style="margin:0; font-size:14px; font-weight:600; color:var(--peak-primary);">Task View</h3>
+                    <div style="display:flex; gap:4px;">
+                        <button class="icon-btn" onclick="window.openInspector('ai')" title="Back to Chat"><i data-lucide="message-square"></i></button>
+                        <button class="icon-btn" onclick="window.closeInspector()"><i data-lucide="x"></i></button>
+                    </div>
+                </div>
+                
+                <!-- Tab Bar -->
+                <div class="inspector-tabs-row">
+                    <button class="inspector-tab-btn ${activeTab === 'task' ? 'active' : ''}" onclick="window.openInspector('agent-artifacts', { tab: 'task', file: '${(window.inspectorData && window.inspectorData.file) || ''}' })">Task</button>
+                    <button class="inspector-tab-btn ${activeTab === 'plan' ? 'active' : ''}" onclick="window.openInspector('agent-artifacts', { tab: 'plan', file: '${(window.inspectorData && window.inspectorData.file) || ''}' })">Plan</button>
+                    <button class="inspector-tab-btn ${activeTab === 'walkthrough' ? 'active' : ''}" onclick="window.openInspector('agent-artifacts', { tab: 'walkthrough', file: '${(window.inspectorData && window.inspectorData.file) || ''}' })">Walkthrough</button>
+                </div>
+
+                <div id="artifact-content-area" class="inspector-content markdown-body" style="padding:20px; overflow-y:auto;">
+                    <div style="display:flex; justify-content:center; padding:20px;"><i data-lucide="loader-2" class="spin"></i></div>
+                </div>
+            </div>
+        `;
+        if (window.lucide) window.lucide.createIcons();
+        attachResizeListener(container);
+
+        // Load Content
+        const loadArtifact = async () => {
+            const contentArea = container.querySelector('#artifact-content-area');
+            if (!contentArea) return;
+
+            let filename = 'task.md';
+            if (activeTab === 'plan') filename = 'implementation_plan.md';
+            if (activeTab === 'walkthrough') filename = 'walkthrough.md';
+
+            // We assume artifacts are in the standard location. 
+            // Ideally we should know the exact path, but for now we'll search or assume a standard path.
+            // Since we don't have the exact path stored easily, let's try to find it in the brain directory.
+            // Or better, let's look for it in the project root first, then fallback?
+            // Actually, the user's prompt implies "in this file" -> "Task View".
+            // The system prompt says artifacts are in `.gemini/...`.
+            // We need to find where these files are.
+
+            // HACK: We'll try to find the file by name in the recent file list or just search for it?
+            // Let's try to use the `window.currentProjectRoot` to find `.gemini`?
+            // No, the artifacts are in a specific user directory.
+            // Let's assume they are in the workspace for now, OR we can pass the full path in `data` if we know it.
+
+            // If passed in data
+            let filePath = window.inspectorData && window.inspectorData.file;
+
+            // If we switched tabs, we might not have the file path for the NEW tab.
+            // We need a way to resolve the artifact path.
+            // Let's try to find it via IPC if we don't have it.
+
+            try {
+                // If we don't have a specific path, we try to construct it or find it.
+                // Since we can't easily search from renderer without a path, let's show a placeholder if no path.
+                // BUT, the TaskCard knows the path!
+                // So when clicking from TaskCard, we pass the path.
+                // When switching tabs, we need to deduce the other paths.
+                // Usually they are in the same directory.
+
+                if (filePath) {
+                    const dir = path.dirname(filePath);
+                    filePath = path.join(dir, filename);
+                } else {
+                    // Fallback: Try to find in project root?
+                    // Or ask main process to find it?
+                    // For now, let's just say "No file path provided" if we can't guess.
+                    // Wait, if we opened 'task.md', we know the dir.
+                    // If we opened 'ai', we don't know.
+
+                    // Let's try to find it in the project root recursively? Too slow.
+                    // Let's just try to read from the `window.currentProjectRoot` if available.
+                    if (window.currentProjectRoot) {
+                        // This is a guess, but often artifacts are in .gemini or root.
+                        // Let's try to find it.
+                        const found = await ipcRenderer.invoke('project:find-file', window.currentProjectRoot, filename);
+                        if (found) filePath = found;
+                    }
+                }
+
+                if (!filePath) {
+                    contentArea.innerHTML = `<div style="padding:20px; color:var(--peak-secondary); text-align:center;">Artifact not found.<br><small>Could not locate ${filename}</small></div>`;
+                    return;
+                }
+
+                const content = await ipcRenderer.invoke('project:read-file', filePath);
+                if (content && typeof content === 'string') {
+                    // Render Markdown
+                    // We can use the existing markdown renderer if available, or simple text
+                    if (window.marked) {
+                        contentArea.innerHTML = window.marked.parse(content);
+                    } else {
+                        contentArea.textContent = content;
+                    }
+                } else {
+                    contentArea.innerHTML = `<div style="padding:20px; color:var(--peak-secondary);">Empty or unreadable file.</div>`;
+                }
+            } catch (err) {
+                console.error("Failed to load artifact:", err);
+                contentArea.innerHTML = `<div style="padding:20px; color:var(--christmas-red);">Error loading file: ${err.message}</div>`;
+            }
+        };
+
+        loadArtifact();
         return;
     }
 

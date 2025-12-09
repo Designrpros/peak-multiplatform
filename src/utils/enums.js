@@ -32,6 +32,7 @@ const SearchEngine = [
 
 const AvailableModels = [
     { id: "openrouter/auto", name: "Auto", isPremium: true, supportsReasoning: true },
+    { id: "google/gemini-2.0-flash-exp", name: "Gemini 2.0 Flash (Stable)", isPremium: false, supportsReasoning: false },
     { id: "deepseek/deepseek-r1", name: "DeepSeek R1", isPremium: true, supportsReasoning: true },
     { id: "x-ai/grok-4-fast", name: "Grok 4 Fast", isPremium: true, supportsReasoning: true },
     { id: "openai/gpt-5", name: "GPT-5", isPremium: true, supportsReasoning: true },

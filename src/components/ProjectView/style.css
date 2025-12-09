@@ -44,7 +44,7 @@
     justify-content: space-between;
     align-items: center;
     padding: 8px 12px;
-    /* border-bottom: 1px solid var(--border-color); REMOVED for minimalism */
+    border-bottom: 1px solid var(--border-color);
     flex-shrink: 0;
     height: 36px;
 }
@@ -77,6 +77,48 @@
 .sidebar-action-icon:hover {
     color: var(--peak-primary);
     background-color: rgba(0, 0, 0, 0.05);
+}
+
+/* --- SIDEBAR PROGRESS BAR --- */
+.sidebar-progress-container {
+    height: 2px;
+    width: 100%;
+    background-color: transparent;
+    overflow: hidden;
+    position: relative;
+    flex-shrink: 0;
+    display: none;
+    /* Hidden by default */
+}
+
+.sidebar-progress-container.active {
+    display: block;
+}
+
+.sidebar-progress-line {
+    position: absolute;
+    height: 100%;
+    background-color: var(--peak-accent);
+    width: 40%;
+    left: -40%;
+    animation: sidebar-progress-anim 1.5s infinite linear;
+}
+
+@keyframes sidebar-progress-anim {
+    0% {
+        left: -40%;
+        width: 40%;
+    }
+
+    50% {
+        left: 30%;
+        width: 60%;
+    }
+
+    100% {
+        left: 100%;
+        width: 10%;
+    }
 }
 
 /* --- FILE TREE --- */
@@ -180,6 +222,17 @@ ul.file-tree.nested {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+/* Error and warning highlighting - must come after .selected to have higher specificity */
+li.tree-item.has-error .item-name,
+li.tree-item.selected.has-error .item-name {
+    color: var(--christmas-red, #ff4444) !important;
+}
+
+li.tree-item.has-warning .item-name,
+li.tree-item.selected.has-warning .item-name {
+    color: var(--warning-yellow, #ffa500) !important;
 }
 
 .directory-item {

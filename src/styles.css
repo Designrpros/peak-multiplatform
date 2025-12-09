@@ -21,6 +21,10 @@
     --syntax-comment: #008000;
     --syntax-func: #795E26;
     --syntax-number: #098658;
+
+    /* Status Colors */
+    --christmas-red: #D32F2F;
+    --christmas-green: #388E3C;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -40,6 +44,10 @@
         --syntax-comment: #6A9955;
         --syntax-func: #DCDCAA;
         --syntax-number: #B5CEA8;
+
+        /* Status Colors (Dark Mode) */
+        --christmas-red: #FF5252;
+        --christmas-green: #69F0AE;
     }
 }
 

@@ -1,14 +1,14 @@
 // src/components/Dashboard/index.js
 
 function renderDashboardHTML(activityItems = [], bookmarks = []) {
-    
+
     const recent = activityItems.slice(0, 6).map(item => {
         const timeString = new Date(item.sortTime || Date.now()).toLocaleDateString();
         let title = item.title || 'Untitled';
         let meta = timeString;
         if (item.type === 'web') meta = new URL(item.url).hostname;
-        else if (item.type === 'chat') meta = item.model || 'AI Assistant';
-        
+        else if (item.type === 'chat') meta = item.model || 'Peak Assistant';
+
         return `
         <div class="recent-item" 
              data-type="${item.type}" 
@@ -75,12 +75,12 @@ function escapeHtml(text) {
 
 function attachDashboardListeners() {
     const container = document.getElementById('dashboard-content');
-    
+
     if (container) {
         container.addEventListener('click', (e) => {
             const deleteBtn = e.target.closest('.bookmark-delete');
             if (deleteBtn) {
-                e.stopPropagation(); 
+                e.stopPropagation();
                 const url = deleteBtn.dataset.url;
                 if (window.toggleBookmark) window.toggleBookmark(url);
                 return;
@@ -113,7 +113,7 @@ function attachDashboardListeners() {
 
     if (dotLanding) dotLanding.addEventListener('click', () => window.showLandingPage());
     if (dotWorkspaces) dotWorkspaces.addEventListener('click', () => window.showWorkspacesPage());
-    
+
     const grid = document.getElementById('bookmark-grid-container');
     if (grid) {
         let draggedItem = null;
@@ -149,11 +149,11 @@ function attachDashboardListeners() {
             if (!isNaN(fromIndex) && !isNaN(toIndex)) window.reorderBookmarks(fromIndex, toIndex);
         });
     }
-    return () => {};
+    return () => { };
 }
 
 function handleBookmarkClick(url) {
-    if(window.handlePerformAction) window.handlePerformAction({ mode: 'Search', query: url, engine: 'google' });
+    if (window.handlePerformAction) window.handlePerformAction({ mode: 'Search', query: url, engine: 'google' });
 }
 
 module.exports = { renderDashboardHTML, attachDashboardListeners, handleBookmarkClick };

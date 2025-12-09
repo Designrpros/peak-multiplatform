@@ -256,7 +256,7 @@
     box-sizing: border-box;
 }
 
-/* Apply padding to text elements inside AI message */
+/* Apply padding to text elements inside Peak Assistant message */
 .term-chat-msg.ai>p,
 .term-chat-msg.ai>ul,
 .term-chat-msg.ai>ol,
@@ -451,32 +451,8 @@
     background: rgba(239, 68, 68, 0.05);
 }
 
-.term-chat-msg.user {
-    background: var(--peak-accent);
-    color: white;
-    align-self: flex-end;
-    border-radius: 6px;
-    /* Ultra minimal radius */
-    padding: 8px 10px;
-    /* Tighter padding */
-    width: auto;
-    /* Auto width for user bubbles */
-    max-width: 90%;
-    /* Limit max width */
-    margin: 0 0 16px auto;
-    /* Push to right */
-    position: relative;
-    display: flex;
-    flex-direction: column;
-    gap: 3px;
-    /* Minimal gap */
-    text-align: left;
-    font-size: 11px;
-    /* Smaller font */
-    float: right;
-    /* Ensure float right behavior if flex fails */
-    clear: both;
-}
+/* User message styles removed - now handled inline in MessageRenderer.js */
+
 
 
 .user-msg-content {
@@ -1371,4 +1347,42 @@ summary.message-summary-minimal {
     font-style: italic;
     text-align: center;
     opacity: 0.6;
+}
+
+/* --- INSPECTOR TABS (Matching ProjectView Panel Tabs) --- */
+.inspector-tabs-row {
+    height: 32px;
+    display: flex;
+    align-items: center;
+    padding: 0 12px;
+    border-bottom: 1px solid var(--border-color);
+    gap: 16px;
+    background-color: var(--window-background-color);
+    flex-shrink: 0;
+}
+
+.inspector-tab-btn {
+    background: none;
+    border: none;
+    font-size: 11px;
+    font-weight: 500;
+    text-transform: uppercase;
+    color: var(--peak-secondary);
+    cursor: pointer;
+    padding: 8px 0;
+    border-bottom: 2px solid transparent;
+    transition: all 0.1s;
+    opacity: 0.8;
+}
+
+.inspector-tab-btn:hover {
+    color: var(--peak-primary);
+    opacity: 1;
+}
+
+.inspector-tab-btn.active {
+    color: var(--peak-primary);
+    border-bottom-color: var(--peak-accent);
+    opacity: 1;
+    font-weight: 600;
 }

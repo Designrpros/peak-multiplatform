@@ -10,6 +10,7 @@ const SearchProject = require('./SearchProject');
 
 const ViewFile = require('./ViewFile');
 const UpdateFile = require('./UpdateFile');
+const EditFile = require('./EditFile');
 const GetProblems = require('./GetProblems');
 const CaptureLiveView = require('./CaptureLiveView');
 // const ReadURL = require('./ReadURL');
@@ -19,6 +20,7 @@ const DelegateTask = require('./DelegateTask');
 const tools = [
     CreateFile,
     UpdateFile,
+    EditFile,
     RunCommand,
     DeleteFile,
     SearchProject,
@@ -77,6 +79,9 @@ class ToolRegistry {
 
     static async getSystemPromptTools() {
         const allTools = await this.getTools();
+        console.log('[ToolRegistry] getSystemPromptTools called. Tool count:', allTools.length);
+        if (allTools.length === 0) console.warn('[ToolRegistry] No tools found!');
+
         return allTools.map(tool => {
             return `
 <tool_definition>

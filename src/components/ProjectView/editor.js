@@ -31,6 +31,12 @@ const Lint = getModule('@codemirror/lint');
 // NEW: Inline Chat
 const { inlineChatField, inlineChatKeymap } = require('./InlineChat.js');
 
+// NEW: LSP Integration
+const LSPIntegration = require('./lsp-integration.js');
+if (window.ipcRenderer) {
+    window.ipcRenderer.invoke('log-to-debug-file', `[Editor] Loaded LSPIntegration. Keys: ${Object.keys(LSPIntegration).join(', ')}`);
+}
+
 // Language Packages
 const LangJs = getModule('@codemirror/lang-javascript');
 const LangJson = getModule('@codemirror/lang-json');
@@ -245,6 +251,9 @@ const esLinter = async (view) => {
 // Factory to create the linter with filePath context
 const createESLinter = (filePath) => {
     return async (view) => {
+        if (window.ipcRenderer) {
+            window.ipcRenderer.invoke('project:lint-file', `LOG: Running ESLint. LSPIntegration keys: ${Object.keys(LSPIntegration).join(', ')}`, '');
+        }
         const diagnostics = [];
         try {
             const content = view.state.doc.toString();
@@ -325,7 +334,14 @@ function setupCodeMirror(container, content, filePath) {
         }, 600);
 
         if (update.docChanged) {
-            saveContent(update.state.doc.toString());
+            const newText = update.state.doc.toString();
+            saveContent(newText);
+
+            // Notify LSP of document changes
+            const languageId = LSPIntegration.getLanguageId(filePath);
+            if (languageId !== 'plaintext') {
+                LSPIntegration.notifyDocumentChange(filePath, newText);
+            }
         }
     });
 
@@ -353,6 +369,46 @@ function setupCodeMirror(container, content, filePath) {
         if (filePath.endsWith('.js') || filePath.endsWith('.jsx') || filePath.endsWith('.ts') || filePath.endsWith('.tsx')) {
             extensions.push(Lint.linter(createESLinter(filePath)));
         }
+    }
+
+    // Add LSP integration for supported languages
+    let languageId = 'plaintext';
+    try {
+        languageId = LSPIntegration.getLanguageId(filePath);
+        if (window.ipcRenderer) {
+            window.ipcRenderer.invoke('log-to-debug-file', `[Editor] Setup LSP for ${filePath}, languageId: ${languageId}`);
+            // Write a debug file to prove execution
+            window.ipcRenderer.invoke('project:write-file', '/Users/vegarberentsen/Documents/peak-multiplatform/editor-debug.txt', `Setup LSP for ${filePath} at ${new Date().toISOString()}`);
+        }
+    } catch (e) {
+        console.error('[Editor] Failed to get language ID:', e);
+    }
+
+    if (languageId !== 'plaintext') {
+        // Get document text for LSP didOpen notification
+        const documentText = content;
+
+        // Notify LSP that document is open
+        try {
+            LSPIntegration.notifyDocumentOpen(filePath, languageId, documentText);
+            if (window.ipcRenderer) window.ipcRenderer.send('log:info', `[Editor] Sent lsp:didOpen for ${filePath}`);
+        } catch (err) {
+            console.error('[Editor] Failed to notify LSP open:', err);
+        }
+
+        // Add LSP extensions
+        extensions.push(LSPIntegration.createLSPAutocomplete(filePath, languageId));
+        extensions.push(LSPIntegration.createLSPLinter(filePath, languageId));
+        extensions.push(LSPIntegration.createLSPHover(filePath, languageId));
+
+        // Add go-to-definition keymap (Cmd/Ctrl+B)
+        const gotoDefinitionCallback = (targetPath, line, character) => {
+            // Fire event to open file
+            window.dispatchEvent(new CustomEvent('peak-goto-definition', {
+                detail: { filePath: targetPath, line, character }
+            }));
+        };
+        extensions.push(LSPIntegration.createLSPGotoDefinitionKeymap(filePath, gotoDefinitionCallback));
     }
 
     if ((filePath.endsWith('.json') || filePath.endsWith('.jsonc')) && LangJson.jsonParseLinter && Lint.linter) {
@@ -396,6 +452,15 @@ function disposeEditor(view) {
     if (view) {
         if (saveTimeout) clearTimeout(saveTimeout);
         if (debounceDiagnostics) clearTimeout(debounceDiagnostics);
+
+        // Notify LSP that document is closed
+        if (window.currentFilePath) {
+            const languageId = LSPIntegration.getLanguageId(window.currentFilePath);
+            if (languageId !== 'plaintext') {
+                LSPIntegration.notifyDocumentClose(window.currentFilePath);
+            }
+        }
+
         view.destroy();
     }
     editorView = null;

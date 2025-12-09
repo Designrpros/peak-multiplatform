@@ -1,109 +1,27 @@
-// REFINED COMPACT CSS (VS Code Sidebar Look)
-// Wait, ChatView/index.js DOES NOT have the injected styles. 
-// AIAssistantView.js had them.
-// Let me re-read AIAssistantView.js content I viewed in step 105.
-// Yes, AIAssistantView.js had `const compactStyle = ...`.
-// ChatView/index.js (step 120) does NOT seem to have it.
-// It returns `renderChatViewHTML`.
+const { ipcRenderer, clipboard, shell } = require('electron');
+const { renderMarkdown } = require('../../utils/markdown.js');
+const AgentRegistry = require('../AIAssistant/core/AgentRegistry.js');
+const ToolRegistry = require('../AIAssistant/tools/ToolRegistry.js');
+const DocsRegistry = require('../AIAssistant/core/DocsRegistry.js');
 
-// However, the user might be using `ChatView/index.js` if they are in a different mode?
-// But the user said "we are going to be focusing on the chatview, inside the aiassistant/ui".
-// That corresponds to `src/components/AIAssistant/ui/ChatView.js`.
-// And `AIAssistantView.js` seems to be the container that injects styles for it.
+let currentFiles = [];
+let streamListener = null;
+let activeInspectorState = null;
 
-// I already updated `AIAssistantView.js`.
-// Did I miss something in `AIAssistantView.js`?
-// Let's look at `AIAssistantView.js` again.
-// I updated `.term-chat-msg.user` to `max-width: 100%`.
+function renderChatViewHTML(session, tabId) {
+    const messages = session ? session.messages : [];
+    const messagesHTML = messages.map(m => renderMessage(m)).join('');
 
-// Maybe the `inspector-content-inner` or `term-panel` has padding?
-// In `AIAssistantView.js`:
-// Line 689: `<div class="term-chat-history" id="ai-assist-scroller" style="flex: 1; overflow-y: auto; padding-top: 16px;">`
-// It has `padding-top: 16px`. No side padding.
-
-// What about `inspector-content-inner`?
-// Line 687: `<div id="ai-assist-content" class="inspector-content-inner" style="height: 100%; display: flex; flex-direction: column; position: relative;">`
-// No padding.
-
-// What about `style.css`?
-// `.inspector-content-inner` (line 217) has `flex-grow: 1; overflow-y: hidden; display: flex; flex-direction: column;`. No padding.
-
-// Is there a global padding on `body` or `#root`?
-// Or maybe `.term-chat-msg` has margin?
-// In `style.css`: `.term-chat-msg` (line 235) has `margin-bottom: 12px` (from `AIAssistantView.js` injected style? No, `style.css` has `margin-bottom: 1px` for list items, but `term-chat-msg` has `margin-bottom`?
-// In `style.css` I set `margin: 0` for `.term-chat-msg.user`.
-
-// Wait, `AIAssistantView.js` has INJECTED STYLES.
-// Line 85: `.term-chat-msg { font-size: 12px; margin-bottom: 12px; padding: 0 16px; line-height: 1.6; }`
-// I changed it to `padding: 0`.
-
-// Line 86: `.term-chat-msg.user { ... margin-left: auto; ... }`
-// I changed it to `margin-left: 0`.
-
-// BUT, `AIAssistantView.js` ALSO has:
-// Line 689: `<div class="term-chat-history" ...>`
-// And `style.css` targets `.term-chat-history`.
-
-// Maybe the "cards" (MessageCard) have internal padding?
-// `MessageCard.js` returns a div with class `term-chat-msg`.
-// Inside it has `.user-msg-content`.
-// In `style.css`, `.user-msg-content` has no padding.
-
-// Let's look at `AIAssistantView.js` again.
-// Line 99: `.term-chat-msg.ai { padding: 0 16px; ... }`
-// I changed it to `padding: 4px 8px`.
-
-// Maybe the user means the "cards" (like `FileEditCard` etc.)?
-// `style.css` line 424: `.tool-block, .file-edit-card ... { margin: 12px 0; ... }`
-// It has `margin: 12px 0`.
-// If the container has 0 padding, `margin: 12px 0` means 0 horizontal margin.
-
-// Wait, if the user says "too much space between the sides and the cards", they might mean the cards are NOT full width?
-// If I set `width: 100%`, they should be full width.
-
-// Is it possible that `AIAssistantView.js` is NOT the one being used?
-// The user said "we are going to be focusing on the chatview, inside the aiassistant/ui".
-// `ChatView.js` is instantiated in `LayoutController.js`.
-// `LayoutController.js` is instantiated in `AIAssistant/index.js`.
-// `AIAssistant/index.js` exports `getAIAssistHTML`.
-// So `AIAssistantView.js` IS the source of HTML.
-
-// Let's double check my previous edit to `AIAssistantView.js`.
-// I replaced lines 85-105.
-// Did I miss something?
-
-// Maybe the `inspector-input-container` has padding?
-// In `AIAssistantView.js` line 136: `.inspector-input-container { padding: 4px; ... }`
-// In `style.css` line 403: `.inspector-input-container { padding: 8px; ... }`
-// The injected style in `AIAssistantView.js` wins if it's loaded later or has higher specificity.
-// But `inspector-input-container` is for input, not messages.
-
-// What about `.term-chat-history`?
-// `style.css` line 226: `padding: 0`.
-// `AIAssistantView.js` line 689: `padding-top: 16px`.
-
-// Is there a scrollbar taking up space?
-
-// Maybe the `max-width` is still 95% somewhere?
-// I changed it to 100% in `style.css` and `AIAssistantView.js`.
-
-// Let's look at `AIAssistantView.js` again.
-// Line 687: `style="... position: relative;"`
-// Line 688: `style="... overflow: hidden;"`
-
-// Maybe the "cards" refer to `MessageCard` which has `term-chat-msg` class.
-// But what about tool outputs? `.tool-block`.
-// `style.css` line 424: `.tool-block ... { margin: 12px 0; ... }`
-// It doesn't have width set. Block elements default to 100% width.
-
-// Wait! I might have missed `.term-chat-msg.ai` in `style.css`.
-// In step 90, I see:
-// `.term-chat-msg.ai { ... max-width: 100%; }`
-// So that looks correct.
-
-// Let's try to inspect `AIAssistantView.js` again to make sure my previous edit actually applied correctly.
-// Sometimes `multi_replace` or `replace` might fail silently or partially if context doesn't match.
-// I'll view `AIAssistantView.js` again.
+    return `
+        <div class="chat-view-container" id="chat-view-${tabId}">
+            <div class="message-list" id="chat-scroller">
+                ${messages.length === 0 ? renderEmptyState() : messagesHTML}
+            </div>
+            ${renderInputBar(session || {})}
+            ${renderInspector(session)}
+        </div>
+    `;
+}
 
 
 function renderEmptyState() {

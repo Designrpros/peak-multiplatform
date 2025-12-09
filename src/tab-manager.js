@@ -4,7 +4,7 @@ const Store = require('electron-store');
 
 function load(path) {
     try { return require(path); }
-    catch (e) { console.warn(`[Peak] Optional component missing: ${path}`); return null; }
+    catch (e) { console.warn(`[Peak] Optional component missing: ${path}`, e); return null; }
 }
 
 // --- Component Imports ---

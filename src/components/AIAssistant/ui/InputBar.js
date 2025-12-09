@@ -21,35 +21,35 @@ class InputBar {
         return `
             <div class="inspector-input-container">
                 <!-- Top Toolbar -->
-                <div class="input-toolbar" style="display:flex; justify-content:space-between; align-items:center; padding: 2px 6px; margin-bottom: 4px;">
-                    <div class="left-tools" style="display:flex; gap:3px; align-items:center;">
+                <div class="input-toolbar" style="display:flex; justify-content:space-between; align-items:center; padding: 1px 4px; margin-bottom: 2px;">
+                    <div class="left-tools" style="display:flex; gap:2px; align-items:center;">
                          <!-- AI Mode (Sparkles) -->
-                         <div class="agent-mode-toggle" style="display:flex; align-items:center; gap:4px; padding-right:4px; border-right:1px solid var(--border-color); margin-right: 4px;">
-                            <button id="ai-assist-agent-mode-btn" class="icon-btn ${isAgentMode ? 'active' : ''}" title="Toggle Agent Mode" style="padding:3px; color: ${isAgentMode ? 'var(--peak-accent)' : 'var(--peak-secondary)'};">
-                                <i data-lucide="sparkles" style="width:14px; height:14px;"></i>
+                         <div class="agent-mode-toggle" style="display:flex; align-items:center; gap:3px; padding-right:3px; border-right:1px solid var(--border-color); margin-right: 3px;">
+                            <button id="ai-assist-agent-mode-btn" class="icon-btn ${isAgentMode ? 'active' : ''}" title="Toggle Agent Mode" style="padding:2px; color: ${isAgentMode ? 'var(--peak-accent)' : 'var(--peak-secondary)'};">
+                                <i data-lucide="sparkles" style="width:13px; height:13px;"></i>
                             </button>
                          </div>
 
                          <!-- Workflows (Flow/GitBranch) -->
-                         <button id="ai-assist-tools-btn" class="icon-btn" title="Workflows & Commands (/)" style="padding:3px;">
-                            <i data-lucide="workflow" style="width:14px; height:14px;"></i>
+                         <button id="ai-assist-tools-btn" class="icon-btn" title="Workflows & Commands (/)" style="padding:2px;">
+                            <i data-lucide="workflow" style="width:13px; height:13px;"></i>
                          </button>
 
                          <!-- References (Link/FileText) -->
-                         <button id="ai-assist-docs-btn" class="icon-btn" title="References (@)" style="padding:3px;">
-                            <i data-lucide="link" style="width:14px; height:14px;"></i>
+                         <button id="ai-assist-docs-btn" class="icon-btn" title="References (@)" style="padding:2px;">
+                            <i data-lucide="link" style="width:13px; height:13px;"></i>
                          </button>
 
-                         <button id="ai-assist-add-file-btn" class="icon-btn" title="Add File Context" style="padding:3px;">
-                            <i data-lucide="plus" style="width:14px; height:14px;"></i>
+                         <button id="ai-assist-add-file-btn" class="icon-btn" title="Add File Context" style="padding:2px;">
+                            <i data-lucide="plus" style="width:13px; height:13px;"></i>
                          </button>
-                         <button id="ai-assist-add-active-file-btn" class="icon-btn" title="Add Active File Context" style="padding:3px; display:none;">
-                            <i data-lucide="file-code" style="width:14px; height:14px;"></i>
+                         <button id="ai-assist-add-active-file-btn" class="icon-btn" title="Add Active File Context" style="padding:2px; display:none;">
+                            <i data-lucide="file-code" style="width:13px; height:13px;"></i>
                          </button>
                     </div>
                     <div class="right-tools" style="display:flex; align-items:center;">
-                        <span id="ai-status-indicator" style="font-size:9px; font-weight:600; color:var(--peak-secondary); display:flex; align-items:center; gap:3px;">
-                            <span style="width:5px; height:5px; border-radius:50%; background:var(--peak-secondary);"></span> Ready
+                        <span id="ai-status-indicator" style="font-size:8px; font-weight:600; color:var(--peak-secondary); display:flex; align-items:center; gap:2px;">
+                            <span style="width:4px; height:4px; border-radius:50%; background:var(--peak-secondary);"></span> Ready
                         </span>
                         <div id="ai-review-controls" style="display:none; align-items:center; gap:6px;">
                             <button id="ai-review-reject-btn" style="background:none; border:1px solid var(--peak-error-border, #fca5a5); color:var(--peak-error-text, #dc2626); padding:2px 6px; border-radius:4px; font-size:9px; cursor:pointer;">Reject All</button>
@@ -86,6 +86,10 @@ class InputBar {
                     <div class="chat-controls" style="margin-top: 4px;">
                         <div class="left-controls">
                              <div class="model-selector-wrapper" style="position:relative; display:flex; gap:6px; align-items:center;">
+                                <select id="ai-assist-mode-select" class="model-select" title="Select Mode" style="width: auto; min-width: 80px;">
+                                    <option value="planning" selected>Planning</option>
+                                    <option value="fast">Fast</option>
+                                </select>
                                 <select id="ai-assist-agent-select" class="model-select" title="Select Agent">
                                     ${agents.map(agent => `<option value="${agent.id}" ${agent.id === currentAgentId ? 'selected' : ''}>${agent.name}</option>`).join('')}
                                 </select>
@@ -102,20 +106,55 @@ class InputBar {
                     </div>
                 </div>
             </div>
+            <style>
+                .inspector-input-container {
+                    width: 100%; 
+                    box-sizing: border-box; 
+                    border-top: 1px solid var(--border-color); 
+                    background: var(--window-background-color);
+                    display: flex;
+                    flex-direction: column;
+                    flex-shrink: 0;
+                }
+                .inspector-input-box {
+                    padding: 6px 12px;
+                    display: flex;
+                    flex-direction: column;
+                    width: 100%;
+                    box-sizing: border-box;
+                }
+                .chat-textarea {
+                    font-size: 12px;
+                    line-height: 1.4;
+                    padding: 4px 0;
+                }
+                .input-toolbar {
+                    padding: 2px 12px !important;
+                    background: rgba(0,0,0,0.02);
+                    border-bottom: 1px solid var(--border-color);
+                    width: 100%;
+                    box-sizing: border-box;
+                }
+            </style>
         `;
     }
 
     attachListeners(container, callbacks) {
         const { ipcRenderer } = require('electron');
+        const StateStore = require('../core/StateStore');
+        const ToolExecutor = require('../core/ToolExecutor');
+
         ipcRenderer.send('log', '[InputBar] attachListeners called');
 
         this.container = container;
         this.callbacks = callbacks || {};
+        this.pendingTools = new Set(); // Track pending tool confirmations
 
         this.inputArea = container.querySelector('#ai-assist-input-textarea');
         this.submitBtn = container.querySelector('#ai-assist-submit-btn');
         this.stopBtn = container.querySelector('#ai-assist-stop-btn');
         this.agentSelect = container.querySelector('#ai-assist-agent-select');
+        this.modeSelect = container.querySelector('#ai-assist-mode-select');
         this.toolsBtn = container.querySelector('#ai-assist-tools-btn');
         this.toolsMenu = container.querySelector('#ai-assist-tools-menu');
         this.docsBtn = container.querySelector('#ai-assist-docs-btn');
@@ -124,6 +163,76 @@ class InputBar {
         this.addActiveFileBtn = container.querySelector('#ai-assist-add-active-file-btn');
         this.agentModeBtn = container.querySelector('#ai-assist-agent-mode-btn');
         this.popover = container.querySelector('#ai-suggestion-popover');
+
+        // Listen for tool confirmation events
+        StateStore.on('tool:pending-confirmation', (data) => {
+            this.pendingTools.add(data.executionId);
+            this._updateReviewControls();
+        });
+
+        StateStore.on('tool:execution-completed', (data) => {
+            this.pendingTools.delete(data.executionId);
+            this._updateReviewControls();
+        });
+
+        // Accept All / Reject All buttons
+        const acceptAllBtn = container.querySelector('#ai-review-accept-btn');
+        const rejectAllBtn = container.querySelector('#ai-review-reject-btn');
+
+        if (acceptAllBtn) {
+            acceptAllBtn.addEventListener('click', () => {
+                // Approve all pending tools
+                const allTools = Array.from(this.pendingTools);
+                allTools.forEach(executionId => {
+                    ToolExecutor.confirmExecution(executionId);
+                });
+                this.pendingTools.clear();
+                this._updateReviewControls();
+            });
+        }
+
+        if (rejectAllBtn) {
+            rejectAllBtn.addEventListener('click', () => {
+                // Reject all pending tools
+                const allTools = Array.from(this.pendingTools);
+                allTools.forEach(executionId => {
+                    ToolExecutor.cancelExecution(executionId);
+                });
+                this.pendingTools.clear();
+                this._updateReviewControls();
+            });
+        }
+
+        // Mode Select Listener
+        if (this.modeSelect) {
+            // Sync initial state from SettingsManager
+            if (window.peakSettingsManager) {
+                const currentMode = window.peakSettingsManager.getSetting('mode');
+                // Map internal mode to UI value
+                // assisted/hybrid -> planning
+                // auto -> fast
+                this.modeSelect.value = (currentMode === 'auto') ? 'fast' : 'planning';
+            }
+
+            this.modeSelect.addEventListener('change', () => {
+                const uiMode = this.modeSelect.value;
+
+                // Map UI value to internal setting
+                // fast -> auto (no confirmation)
+                // planning -> assisted (confirmation required)
+                const settingsMode = (uiMode === 'fast') ? 'auto' : 'assisted';
+
+                if (window.peakSettingsManager) {
+                    window.peakSettingsManager.updateSettings({ mode: settingsMode });
+                }
+
+                // Optional: Disable agent select in Fast mode if desired
+                if (this.agentSelect) {
+                    this.agentSelect.disabled = (uiMode === 'fast');
+                    this.agentSelect.style.opacity = (uiMode === 'fast') ? '0.5' : '1';
+                }
+            });
+        }
 
         // Agent Mode Toggle
         if (this.agentModeBtn) {
@@ -172,6 +281,10 @@ class InputBar {
         // Stop
         if (this.stopBtn) {
             this.stopBtn.addEventListener('click', () => {
+                // this.stopBtn.innerHTML = '<i data-lucide="loader-2" class="spin" style="width:14px; height:14px;"></i>';
+                this.stopBtn.disabled = true; // Just disable to prevent double-click
+                if (window.lucide) window.lucide.createIcons();
+
                 if (this.callbacks.onStop) this.callbacks.onStop();
             });
         }
@@ -628,19 +741,19 @@ class InputBar {
 
     setLoading(isLoading) {
         if (this.submitBtn) {
-            this.submitBtn.style.display = 'flex';
-            this.submitBtn.style.opacity = isLoading ? '0.7' : '1';
+            this.submitBtn.style.display = isLoading ? 'none' : 'flex';
         }
 
-        if (this.stopBtn) this.stopBtn.style.display = isLoading ? 'flex' : 'none';
-
-        if (isLoading) {
-            this.submitBtn.style.display = 'flex';
-            this.stopBtn.style.display = 'flex';
-        } else {
-            this.submitBtn.style.display = 'flex';
-            this.stopBtn.style.display = 'none';
+        if (this.stopBtn) {
+            this.stopBtn.style.display = isLoading ? 'flex' : 'none';
+            // Reset text if showing again
+            if (isLoading) {
+                this.stopBtn.innerHTML = '<i data-lucide="square" style="width:14px; height:14px; fill:currentColor;"></i>';
+                this.stopBtn.disabled = false;
+            }
         }
+
+        if (window.lucide) window.lucide.createIcons();
     }
 
     updateStatus(status, customMessage = null) {
@@ -696,6 +809,16 @@ class InputBar {
 
         if (indicator) indicator.style.display = 'flex';
         if (controls) controls.style.display = 'none';
+    }
+
+    _updateReviewControls() {
+        const count = this.pendingTools.size;
+
+        if (count > 0) {
+            this.showReviewControls(count, null, null);
+        } else {
+            this.hideReviewControls();
+        }
     }
 }
 

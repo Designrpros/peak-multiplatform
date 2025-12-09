@@ -4,7 +4,8 @@ const CAPTURE_LIVE_VIEW_TOOL = {
     usage: '<tool name="capture_live_view">\n</tool>',
     examples: [
         '<tool name="capture_live_view">\n</tool>'
-    ]
+    ],
+    serverId: 'local'
 };
 
 module.exports = CAPTURE_LIVE_VIEW_TOOL;
