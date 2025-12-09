@@ -73,5 +73,6 @@ console.log('  Layer 3 (UI): Canvas, CardRenderer, InputController');
 module.exports = {
     getAIAssistHTML,
     attachAIAssistListeners,
-    getSettingsHTML
+    getSettingsHTML,
+    ConversationManager
 };

@@ -345,7 +345,9 @@ class ToolExecutor {
                 // Safety: Ensure content is never undefined
                 const safeContent = content === undefined ? '' : content;
                 // console.log('[ToolExecutor] create_file - content type:', typeof content, 'safeContent type:', typeof safeContent);
+                const timeout = setTimeout(() => reject(new Error('create_file timed out')), 10000);
                 ipcRenderer.once('project:create-file-reply', (event, error, result) => {
+                    clearTimeout(timeout);
                     if (error) reject(new Error(error));
                     else resolve({ path, created: true });
                 });
@@ -363,7 +365,9 @@ class ToolExecutor {
                 // Safety: Ensure content is never undefined
                 const safeContent = content === undefined ? '' : content;
                 // console.log('[ToolExecutor] update_file - content type:', typeof content, 'safeContent type:', typeof safeContent);
+                const timeout = setTimeout(() => reject(new Error('update_file timed out')), 10000);
                 ipcRenderer.once('project:update-file-reply', (event, error, result) => {
+                    clearTimeout(timeout);
                     if (error) reject(new Error(error));
                     else resolve({ path, updated: true });
                 });
@@ -382,7 +386,9 @@ class ToolExecutor {
                 const safeSearch = search === undefined ? '' : search;
                 const safeReplace = replace === undefined ? '' : replace;
                 // console.log('[ToolExecutor] edit_file - search type:', typeof search, 'replace type:', typeof replace);
+                const timeout = setTimeout(() => reject(new Error('edit_file timed out')), 15000);
                 ipcRenderer.once('project:edit-file-reply', (event, error, result) => {
+                    clearTimeout(timeout);
                     if (error) reject(new Error(error));
                     else resolve({ path, edited: true, changes: result });
                 });
@@ -397,7 +403,9 @@ class ToolExecutor {
         // Delete File
         this.registerTool('delete_file', async ({ path, settings }) => {
             return new Promise((resolve, reject) => {
+                const timeout = setTimeout(() => reject(new Error('delete_file timed out')), 10000);
                 ipcRenderer.once('project:delete-file-reply', (event, error, result) => {
+                    clearTimeout(timeout);
                     if (error) reject(new Error(error));
                     else resolve({ path, deleted: true });
                 });

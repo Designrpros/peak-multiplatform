@@ -42,61 +42,39 @@ class Canvas {
             <div style="display: flex; flex-direction: column; height: 100%; background: var(--window-background-color);">
                 
                 <!-- Tab Navigation: Chat | Task | Extensions | Live -->
-                <div class="term-tabs" style="display: flex; align-items: center; border-bottom: 1px solid var(--border-color); background: var(--window-background-color); padding: 0 12px; gap: 16px; flex-wrap: wrap;">
-                    <button class="tab-btn active" data-target="chat" style="padding: 10px 0; font-size: 12px; font-weight: 500; color: var(--peak-secondary); background: none; border: none; border-bottom: 2px solid transparent; cursor: pointer; transition: all 0.2s;">
-                        Chat
-                    </button>
-                    <button class="tab-btn" data-target="task" style="padding: 10px 0; font-size: 12px; font-weight: 500; color: var(--peak-secondary); background: none; border: none; border-bottom: 2px solid transparent; cursor: pointer; transition: all 0.2s;">
-                        Task
-                    </button>
-                    <button class="tab-btn" data-target="extensions" style="padding: 10px 0; font-size: 12px; font-weight: 500; color: var(--peak-secondary); background: none; border: none; border-bottom: 2px solid transparent; cursor: pointer; transition: all 0.2s;">
-                        Extensions
-                    </button>
-                    <button class="tab-btn" data-target="live" style="padding: 10px 0; font-size: 12px; font-weight: 500; color: var(--peak-secondary); background: none; border: none; border-bottom: 2px solid transparent; cursor: pointer; transition: all 0.2s;">
-                        Live
-                    </button>
-                    <button class="tab-btn" data-target="settings" style="padding: 10px 0; font-size: 12px; font-weight: 500; color: var(--peak-secondary); background: none; border: none; border-bottom: 2px solid transparent; cursor: pointer; transition: all 0.2s;">
-                        Settings
-                    </button>
+                <div class="term-tabs" style="display: flex; align-items: center; border-bottom: 1px solid var(--border-color); background: var(--window-background-color); padding: 12px; gap: 8px; flex-wrap: wrap;">
+                    <button class="tab-btn active" data-target="chat">Chat</button>
+                    <button class="tab-btn" data-target="task">Task</button>
+                    <button class="tab-btn" data-target="extensions">Extensions</button>
+                    <button class="tab-btn" data-target="live">Live</button>
                     
                     <!-- Spacer -->
                     <div style="flex: 1;"></div>
-                    
-
                 </div>
 
                 <!-- Panel Content -->
                 <div class="term-panels" style="flex: 1; position: relative; overflow: hidden;">
                     <!-- Chat Panel -->
-                    <div id="panel-chat" class="term-panel active" style="height: 100%; display: flex; flex-direction: column; overflow: hidden;">
-                        <div id="term-chat-messages" class="term-chat-messages" style="flex: 1; overflow-y: auto; min-height: 0; padding: 12px;"></div>
+                    <div id="panel-chat" class="term-panel active" style="height: 100%; display: flex; flex-direction: column; overflow: hidden; position: relative;">
+                        <div id="term-chat-messages" class="term-chat-messages" style="flex: 1; overflow-y: auto; overflow-x: hidden; min-height: 0; padding: 0;"></div>
                         <!-- Input container wrapper - will be replaced but acts as placeholder -->
-                        <div class="inspector-input-container" style="flex-shrink: 0;"></div>
+                        <div class="inspector-input-container" style="flex-shrink: 0; z-index: 10; position: relative;"></div>
                     </div>
 
                     <!-- Task Panel (Artifact Viewer) -->
-                    <div id="panel-task" class="term-panel" style="height: 100%; display: none; overflow: hidden;">
-                         <div style="display: flex; height: 100%;">
-                            <!-- Sidebar -->
-                            <div class="artifact-sidebar" style="width: 180px; border-right: 1px solid var(--border-color); display: flex; flex-direction: column; padding-top: 10px; background: rgba(0,0,0,0.02);">
-                                 <button class="artifact-nav-item active" data-file="task.md">
-                                    <i data-lucide="check-square" style="width: 14px; height: 14px;"></i>
-                                    <span>Task List</span>
-                                 </button>
-                                 <button class="artifact-nav-item" data-file="implementation_plan.md">
-                                    <i data-lucide="file-text" style="width: 14px; height: 14px;"></i>
-                                    <span>Plan</span>
-                                 </button>
-                                 <button class="artifact-nav-item" data-file="walkthrough.md">
-                                    <i data-lucide="footprints" style="width: 14px; height: 14px;"></i>
-                                    <span>Walkthrough</span>
-                                 </button>
-                            </div>
-                            <!-- Content -->
-                            <div id="artifact-content" class="artifact-content markdown-body" style="flex: 1; padding: 24px; overflow-y: auto; background: var(--window-background-color); color: var(--peak-primary);">
-                                <div style="display:flex; align-items:center; justify-content:center; height:100%; opacity:0.5; font-size:13px;">Select an artifact to view</div>
-                            </div>
-                        </div>
+                    <!-- Task Panel (Artifact Viewer) -->
+                    <div id="panel-task" class="term-panel" style="height: 100%; display: none; flex-direction: column; overflow: hidden;">
+                         <!-- Sub-navigation for artifacts -->
+                         <div class="artifact-tabs" style="display: flex; gap: 8px; padding: 12px; border-bottom: 1px solid var(--border-color); overflow-x: auto;">
+                             <button class="artifact-pill active" data-file="TODO.md">Task List</button>
+                             <button class="artifact-pill" data-file="implementation_plan.md">Plan</button>
+                             <button class="artifact-pill" data-file="walkthrough.md">Walkthrough</button>
+                             <button class="artifact-pill" data-file="vision.md">Vision</button>
+                         </div>
+                         <!-- Content -->
+                         <div id="artifact-content" class="artifact-content markdown-body" style="flex: 1; padding: 24px; overflow-y: auto; background: var(--window-background-color); color: var(--peak-primary);">
+                             <div style="display:flex; align-items:center; justify-content:center; height:100%; opacity:0.5; font-size:13px;">Select an artifact to view</div>
+                         </div>
                     </div>
 
                     <!-- Extensions Panel -->
@@ -128,37 +106,27 @@ class Canvas {
                     margin: 0;
                     overflow: hidden !important; /* Force no scroll on body so flex works */
                 }
-                .tab-btn:hover { color: var(--peak-primary) !important; }
-                .tab-btn.active { 
-                    color: var(--peak-primary) !important; 
-                    font-weight: 600 !important;
-                    border-bottom-color: var(--peak-accent) !important;
-                }
-                .icon-btn:hover { color: var(--peak-primary) !important; background: var(--control-background-color) !important; border-radius: 4px; }
-                
-                .artifact-nav-item {
-                    display: flex;
-                    align-items: center;
-                    gap: 8px;
-                    padding: 8px 16px;
-                    margin: 2px 8px;
-                    border: none;
-                    background: none;
-                    color: var(--peak-secondary);
-                    font-size: 12px;
-                    cursor: pointer;
-                    border-radius: 6px;
-                    text-align: left;
-                    transition: all 0.1s;
-                }
-                .artifact-nav-item:hover {
+                /* Shared Pill Styles */
+                .tab-btn, .artifact-pill {
+                    padding: 6px 12px;
+                    border-radius: 20px;
+                    border: 1px solid var(--border-color);
                     background: var(--control-background-color);
-                    color: var(--peak-primary);
-                }
-                .artifact-nav-item.active {
-                    background: rgba(59, 130, 246, 0.1); 
-                    color: var(--peak-accent);
+                    color: var(--peak-secondary);
+                    font-size: 11px;
                     font-weight: 500;
+                    cursor: pointer;
+                    transition: all 0.2s;
+                    white-space: nowrap;
+                }
+                .tab-btn:hover, .artifact-pill:hover {
+                    border-color: var(--peak-secondary);
+                    color: var(--peak-primary) !important;
+                }
+                .tab-btn.active, .artifact-pill.active {
+                    background: var(--peak-accent);
+                    color: #fff !important;
+                    border-color: var(--peak-accent) !important;
                 }
                 
                 /* Simple Markdown Styles */
@@ -241,8 +209,12 @@ class Canvas {
 
                 const panel = this.container.querySelector(`#panel-${target}`);
                 if (panel) {
-                    panel.style.display = (target === 'chat' ? 'flex' : (target === 'extensions' ? 'flex' : (target === 'live' ? 'flex' : 'block')));
-                    if (target === 'settings') panel.style.display = 'flex'; // Settings can be flex too
+                    // Chat, Extensions, Live, and Task all need flex for proper internal layout/scrolling
+                    if (target === 'chat' || target === 'extensions' || target === 'live' || target === 'task' || target === 'settings') {
+                        panel.style.display = 'flex';
+                    } else {
+                        panel.style.display = 'block';
+                    }
                     panel.classList.add('active');
                 }
 
@@ -259,11 +231,11 @@ class Canvas {
 
                 // Initial load for Task tab (Artifacts)
                 if (target === 'task') {
-                    const activeArtifact = taskPanel.querySelector('.artifact-nav-item.active');
+                    const activeArtifact = taskPanel.querySelector('.artifact-pill.active');
                     if (activeArtifact) {
                         this._loadArtifact(activeArtifact.dataset.file);
                     } else {
-                        const firstBtn = taskPanel.querySelector('.artifact-nav-item[data-file="task.md"]');
+                        const firstBtn = taskPanel.querySelector('.artifact-pill[data-file="TODO.md"]');
                         if (firstBtn) {
                             firstBtn.click();
                         }
@@ -306,12 +278,12 @@ class Canvas {
     }
 
     _attachArtifactListeners() {
-        const navItems = this.container.querySelectorAll('.artifact-nav-item');
-        navItems.forEach(item => {
-            item.addEventListener('click', () => {
-                navItems.forEach(n => n.classList.remove('active'));
-                item.classList.add('active');
-                this._loadArtifact(item.dataset.file);
+        const pills = this.container.querySelectorAll('.artifact-pill');
+        pills.forEach(pill => {
+            pill.addEventListener('click', () => {
+                pills.forEach(n => n.classList.remove('active'));
+                pill.classList.add('active');
+                this._loadArtifact(pill.dataset.file);
             });
         });
     }
@@ -322,23 +294,38 @@ class Canvas {
 
         contentArea.innerHTML = '<div style="opacity:0.5; padding:20px; text-align:center;">Loading...</div>';
 
-        // Hardcoded path to brain artifacts for this session
-        const brainPath = '/Users/vegarberentsen/.gemini/antigravity/brain/b81e3084-a500-4755-89b0-c1a29e9c9d71';
-        const fullPath = `${brainPath}/${filename}`;
-
         try {
             const { ipcRenderer } = require('electron');
-            const content = await ipcRenderer.invoke('project:read-file', fullPath);
+
+            // Try 1: Check project root
+            let content = null;
+            let loadedPath = '';
+
+            if (window.currentProjectRoot) {
+                const rootPath = window.currentProjectRoot;
+                const path = require('path');
+                loadedPath = path.join(rootPath, filename);
+
+                try {
+                    content = await ipcRenderer.invoke('project:read-file', loadedPath);
+                } catch (e) {
+                    console.error('[Canvas] Failed to load artifact from root:', e);
+                }
+            } else {
+                console.warn('[Canvas] No project root found.');
+            }
+
+            // Fallback: If not found, check if it's the specific task.md case and we are in a mode where we might want to check the brain?
+            // User requested "from the same repo not somewhere else", so we strictly disable the brain fallback.
 
             if (content && typeof content === 'string' && !content.error) {
                 const marked = require('marked');
-                // Use DOMPurify if available? marked is safe enough for trusted artifacts
                 const html = marked.parse(content);
                 contentArea.innerHTML = html;
             } else {
-                contentArea.innerHTML = `<div style="color:var(--error-text); padding:20px;">
-                    <h3>Failed to load ${filename}</h3>
-                    <p>${content && content.error ? content.error : 'File not found'}</p>
+                contentArea.innerHTML = `<div style="color:var(--error-text); padding:20px; text-align:center;">
+                    <h3>File not found</h3>
+                    <p>Could not locate <code>${filename}</code> in project root.</p>
                  </div>`;
             }
         } catch (e) {

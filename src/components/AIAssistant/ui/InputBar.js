@@ -19,45 +19,8 @@ class InputBar {
         const currentAgentId = selectedAgentId || defaultAgent.id;
 
         return `
-            <div class="inspector-input-container">
-                <!-- Top Toolbar -->
-                <div class="input-toolbar" style="display:flex; justify-content:space-between; align-items:center; padding: 1px 4px; margin-bottom: 2px;">
-                    <div class="left-tools" style="display:flex; gap:2px; align-items:center;">
-                         <!-- AI Mode (Sparkles) -->
-                         <div class="agent-mode-toggle" style="display:flex; align-items:center; gap:3px; padding-right:3px; border-right:1px solid var(--border-color); margin-right: 3px;">
-                            <button id="ai-assist-agent-mode-btn" class="icon-btn ${isAgentMode ? 'active' : ''}" title="Toggle Agent Mode" style="padding:2px; color: ${isAgentMode ? 'var(--peak-accent)' : 'var(--peak-secondary)'};">
-                                <i data-lucide="sparkles" style="width:13px; height:13px;"></i>
-                            </button>
-                         </div>
-
-                         <!-- Workflows (Flow/GitBranch) -->
-                         <button id="ai-assist-tools-btn" class="icon-btn" title="Workflows & Commands (/)" style="padding:2px;">
-                            <i data-lucide="workflow" style="width:13px; height:13px;"></i>
-                         </button>
-
-                         <!-- References (Link/FileText) -->
-                         <button id="ai-assist-docs-btn" class="icon-btn" title="References (@)" style="padding:2px;">
-                            <i data-lucide="link" style="width:13px; height:13px;"></i>
-                         </button>
-
-                         <button id="ai-assist-add-file-btn" class="icon-btn" title="Add File Context" style="padding:2px;">
-                            <i data-lucide="plus" style="width:13px; height:13px;"></i>
-                         </button>
-                         <button id="ai-assist-add-active-file-btn" class="icon-btn" title="Add Active File Context" style="padding:2px; display:none;">
-                            <i data-lucide="file-code" style="width:13px; height:13px;"></i>
-                         </button>
-                    </div>
-                    <div class="right-tools" style="display:flex; align-items:center;">
-                        <span id="ai-status-indicator" style="font-size:8px; font-weight:600; color:var(--peak-secondary); display:flex; align-items:center; gap:2px;">
-                            <span style="width:4px; height:4px; border-radius:50%; background:var(--peak-secondary);"></span> Ready
-                        </span>
-                        <div id="ai-review-controls" style="display:none; align-items:center; gap:6px;">
-                            <button id="ai-review-reject-btn" style="background:none; border:1px solid var(--peak-error-border, #fca5a5); color:var(--peak-error-text, #dc2626); padding:2px 6px; border-radius:4px; font-size:9px; cursor:pointer;">Reject All</button>
-                            <button id="ai-review-accept-btn" style="background:var(--peak-accent); border:none; color:white; padding:2px 8px; border-radius:4px; font-size:9px; font-weight:600; cursor:pointer;">Accept All</button>
-                        </div>
-                    </div>
-                </div>
-
+            <div class="inspector-input-container" style="background: transparent;">
+                
                 <!-- Suggestion Popover -->
                 <div id="ai-suggestion-popover" class="suggestion-popover" style="display:none;"></div>
 
@@ -70,70 +33,238 @@ class InputBar {
                         </div>
                     `).join('')}
                 </div>
-
-                <!-- Docs Menu Dropdown (Legacy/Fallback) -->
-                <div id="ai-assist-docs-menu" class="tools-menu">
-                    <!-- Populated by ChatView.js -->
-                </div>
+                <div id="ai-assist-docs-menu" class="tools-menu"></div>
 
                 <div class="inspector-input-box">
-                    <div id="ai-assist-attachments" class="attachments-container" style="display:none; gap:8px; padding:8px; flex-wrap:wrap;"></div>
+                    <div id="ai-assist-attachments" class="attachments-container" style="display:none; gap:6px; padding:4px 0 8px 0; flex-wrap:wrap;"></div>
                     <div id="ai-assist-file-chips" class="file-chips-container"></div>
-                    <textarea class="chat-textarea" id="ai-assist-input-textarea" 
-                        placeholder="Ask anything... Type @ for refs, / for commands" 
+                    
+                    <textarea class="chat-textarea-plain" id="ai-assist-input-textarea" 
+                        placeholder="Ask anything... @ to mention, / for workflows" 
                         rows="1"></textarea>
                     
-                    <div class="chat-controls" style="margin-top: 4px;">
-                        <div class="left-controls">
-                             <div class="model-selector-wrapper" style="position:relative; display:flex; gap:6px; align-items:center;">
-                                <select id="ai-assist-mode-select" class="model-select" title="Select Mode" style="width: auto; min-width: 80px;">
+                    <div class="chat-controls" style="margin-top: 4px; padding-top: 0px;">
+                        <div class="left-controls" style="display:flex; gap:8px; align-items:center;">
+                             <!-- Add File -->
+                             <button id="ai-assist-add-file-btn" class="icon-btn-plain" title="Add File Context">
+                                <i data-lucide="plus" style="width:14px; height:14px;"></i>
+                             </button>
+
+                             <div class="model-selector-wrapper" style="position:relative; display:flex; gap:8px; align-items:center;">
+                                <select id="ai-assist-mode-select" class="model-select-plain" title="Select Mode">
                                     <option value="planning" selected>Planning</option>
                                     <option value="fast">Fast</option>
                                 </select>
-                                <select id="ai-assist-agent-select" class="model-select" title="Select Agent">
+                                
+                                <select id="ai-assist-agent-select" class="model-select-plain" title="Select Agent">
                                     ${agents.map(agent => `<option value="${agent.id}" ${agent.id === currentAgentId ? 'selected' : ''}>${agent.name}</option>`).join('')}
                                 </select>
                              </div>
                         </div>
                         <div class="right-controls" style="display:flex; gap:6px; align-items:center;">
+                            <span id="ai-status-indicator" style="font-size:9px; font-weight:500; color:var(--peak-secondary); display:none; align-items:center; gap:4px; margin-right:8px;">
+                                <span style="width:5px; height:5px; border-radius:50%; background:var(--peak-secondary);"></span> Ready
+                            </span>
+                            
+                            <div id="ai-review-controls" style="display:none; align-items:center; gap:6px;">
+                                <button id="ai-review-reject-btn" class="review-btn reject">Reject All</button>
+                                <button id="ai-review-accept-btn" class="review-btn accept">Accept All</button>
+                            </div>
+
                             <button id="ai-assist-submit-btn" class="chat-submit-btn" title="Send (Enter)">
-                                <i data-lucide="arrow-up"></i>
+                                <i data-lucide="arrow-up" style="width: 14px; height: 14px; stroke-width: 3px;"></i>
                             </button>
                             <button id="ai-assist-stop-btn" class="chat-submit-btn stop" style="display:none;" title="Stop">
-                                <i data-lucide="square"></i>
+                                <i data-lucide="square" style="width: 12px; height: 12px; fill: currentColor;"></i>
                             </button>
                         </div>
                     </div>
                 </div>
             </div>
+
             <style>
+                /* New Plain Styles */
                 .inspector-input-container {
                     width: 100%; 
-                    box-sizing: border-box; 
-                    border-top: 1px solid var(--border-color); 
-                    background: var(--window-background-color);
-                    display: flex;
-                    flex-direction: column;
                     flex-shrink: 0;
+                    margin-top: 0px;
+                    position: relative; /* Essential for popover positioning */
                 }
+
                 .inspector-input-box {
-                    padding: 6px 12px;
+                    padding: 12px 12px 8px 12px; /* Top padding increased as requested */
                     display: flex;
                     flex-direction: column;
                     width: 100%;
                     box-sizing: border-box;
+                    background: var(--window-background-color);
+                    border-top: 1px solid var(--border-color);
                 }
-                .chat-textarea {
-                    font-size: 12px;
-                    line-height: 1.4;
-                    padding: 4px 0;
+                
+                .icon-btn-plain {
+                    background: none;
+                    border: none;
+                    color: var(--peak-secondary);
+                    cursor: pointer;
+                    padding: 0px; /* Zero padding for tight alignment */
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    transition: all 0.2s;
+                    opacity: 0.7;
                 }
-                .input-toolbar {
-                    padding: 2px 12px !important;
-                    background: rgba(0,0,0,0.02);
-                    border-bottom: 1px solid var(--border-color);
+                .icon-btn-plain:hover {
+                    color: var(--peak-primary);
+                    opacity: 1;
+                }
+
+                .suggestion-popover, .tools-menu {
+                    position: absolute;
+                    bottom: 100%; /* Sits directly on top of container */
+                    left: 0;
                     width: 100%;
+                    max-height: 200px;
+                    overflow-y: auto;
+                    background: var(--peak-background, #1e1e1e);
+                    border: 1px solid var(--border-color);
+                    border-bottom: none;
+                    z-index: 1000; /* Increased z-index */
+                    display: none;
+                    flex-direction: column;
+                    padding: 2px 0; /* Reduced vertical padding */
+                    box-shadow: 0 -4px 12px rgba(0,0,0,0.2);
+                }
+
+                .menu-item, .popover-item {
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                    padding: 4px 12px; /* aligned with input text */
+                    cursor: pointer;
+                    font-size: 13px;
+                    color: var(--peak-secondary);
+                    transition: all 0.2s;
+                }
+                .menu-item:hover, .popover-item:hover, .popover-item.active {
+                    background: var(--peak-hover-bg, rgba(255,255,255,0.05));
+                    color: var(--peak-primary);
+                }
+                .popover-item-content {
+                    display: flex;
+                    flex-direction: column;
+                    min-width: 0;
+                }
+                .popover-item-title { font-weight: 500; }
+                .popover-item-desc { font-size: 11px; opacity: 0.7; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+                .menu-section-header {
+                    padding: 4px 12px; /* aligned */
+                    font-size: 11px;
+                    font-weight: 600;
+                    text-transform: uppercase;
+                    color: var(--peak-secondary);
+                    opacity: 0.7;
+                    margin-top: 4px;
+                }
+
+                .model-select-plain {
+                    appearance: none;
+                    -webkit-appearance: none;
+                    background: transparent;
+                    border: none;
+                    color: var(--peak-secondary);
+                    font-size: 11px;
+                    font-weight: 500;
+                    cursor: pointer;
+                    padding: 0;
+                    margin: 0;
+                    outline: none;
+                    opacity: 0.8;
+                }
+                .model-select-plain:hover {
+                    color: var(--peak-primary);
+                    opacity: 1;
+                }
+
+                .chat-textarea-plain {
+                    flex: 1;
+                    background: transparent;
+                    border: none;
+                    color: var(--peak-primary);
+                    font-size: 13px;
+                    line-height: 1.5;
+                    padding: 0;
+                    resize: none;
+                    outline: none;
+                    font-family: inherit;
+                    min-height: 40px; 
+                    max-height: 200px;
+                    margin-bottom: 0px; 
+                    overflow-y: hidden; 
                     box-sizing: border-box;
+                }
+                .chat-textarea-plain::placeholder {
+                    color: var(--peak-secondary);
+                    opacity: 0.5;
+                }
+
+                .chat-submit-btn {
+                    background: var(--peak-accent);
+                    border: none;
+                    color: white;
+                    border-radius: 50%;
+                    width: 24px;
+                    height: 24px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    cursor: pointer;
+                    transition: all 0.2s;
+                    opacity: 0.3;
+                }
+                .chat-submit-btn svg {
+                    stroke: white !important;
+                    fill: none;
+                }
+                .chat-submit-btn:hover {
+                    transform: scale(1.05);
+                }
+                .chat-submit-btn.stop {
+                    background: var(--peak-error-text, #ef4444);
+                }
+
+                /* Layout helpers for chat controls */
+                .chat-controls {
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    margin-top: 0px; /* Zero top margin */
+                    padding-top: 0px;
+                }
+                .left-controls { display: flex; align-items: center; }
+                .right-controls { display: flex; gap: 6px; align-items: center; }
+
+                .review-btn {
+                    padding: 2px 8px;
+                    border-radius: 4px;
+                    font-size: 10px;
+                    font-weight: 500;
+                    cursor: pointer;
+                    border: 1px solid transparent;
+                }
+                .review-btn.reject {
+                    background: transparent;
+                    border-color: var(--peak-error-border, #fca5a5);
+                    color: var(--peak-error-text, #dc2626);
+                }
+                .review-btn.accept {
+                    background: var(--peak-accent);
+                    color: white;
+                }
+
+                .attachment-chip {
+                    font-size: 10px !important;
+                    padding: 2px 6px !important;
                 }
             </style>
         `;
@@ -723,8 +854,22 @@ class InputBar {
 
     adjustHeight() {
         if (!this.inputArea) return;
+
+        // Reset height to allow shrink
         this.inputArea.style.height = 'auto';
-        this.inputArea.style.height = (this.inputArea.scrollHeight) + 'px';
+
+        // Calculate new height
+        const newHeight = this.inputArea.scrollHeight;
+        const maxHeight = 200; // Match CSS
+
+        this.inputArea.style.height = Math.min(newHeight, maxHeight) + 'px';
+
+        // Show scrollbar only if max height reached
+        if (newHeight > maxHeight) {
+            this.inputArea.style.overflowY = 'auto';
+        } else {
+            this.inputArea.style.overflowY = 'hidden';
+        }
     }
 
     updateSubmitButton() {
@@ -732,10 +877,8 @@ class InputBar {
         const hasText = this.inputArea.value.trim().length > 0;
         if (hasText) {
             this.submitBtn.style.opacity = '1';
-            this.submitBtn.style.color = 'var(--peak-accent)';
         } else {
             this.submitBtn.style.opacity = '0.3';
-            this.submitBtn.style.color = 'var(--peak-secondary)';
         }
     }
 

@@ -43,7 +43,19 @@ class SettingsManager {
     loadSettings() {
         try {
             const stored = localStorage.getItem('peak-ai-settings');
-            const settings = stored ? JSON.parse(stored) : {};
+            const storedVersion = localStorage.getItem('peak-settings-version');
+            const CURRENT_VERSION = '3'; // Bump to force model update
+
+            let settings = stored ? JSON.parse(stored) : {};
+
+            // Migration logic
+            if (storedVersion !== CURRENT_VERSION) {
+                console.log('[SettingsManager] Migrating settings to version', CURRENT_VERSION);
+                // Force update model to new default
+                settings.model = DEFAULT_SETTINGS.model;
+                localStorage.setItem('peak-settings-version', CURRENT_VERSION);
+                this._saveSettings(settings); // Helper saves to peak-ai-settings
+            }
 
             // Merge with defaults
             const merged = { ...DEFAULT_SETTINGS, ...settings };

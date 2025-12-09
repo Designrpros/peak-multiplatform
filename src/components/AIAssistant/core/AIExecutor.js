@@ -24,6 +24,16 @@ class AIExecutor {
 
         // Bind methods
         this.handleStreamData = this.handleStreamData.bind(this);
+        this._handleRuntimeError = this._handleRuntimeError.bind(this);
+
+        // Runtime error tracking
+        this.lastErrorTime = 0;
+        this.errorCount = 0;
+
+        // Listen for runtime errors (from Sidebar)
+        if (typeof window !== 'undefined') {
+            window.addEventListener('peak-console-error', this._handleRuntimeError);
+        }
 
         // Subscribe to settings changes
         StateStore.subscribeTo('settings', (settings) => {
@@ -55,6 +65,46 @@ class AIExecutor {
             // Continue AI conversation
             await this.continueSilently();
         });
+    }
+
+    _handleRuntimeError(event) {
+        const { filePath, error } = event.detail || {};
+        if (!filePath) return;
+
+        const now = Date.now();
+        // Debounce: Ignore same file errors within 2 seconds
+        if (now - this.lastErrorTime < 2000) return;
+
+        this.lastErrorTime = now;
+        this.errorCount++;
+
+        // Reset error count if it's been a while (1 minute)
+        if (now - this.lastErrorTime > 60000) this.errorCount = 0;
+
+        // Prevent infinite loops: If too many errors in short time, stop auto-reporting
+        if (this.errorCount > 5) {
+            console.warn('[AIExecutor] Too many runtime errors, pausing auto-reporting.');
+            return;
+        }
+
+        console.log(`[AIExecutor] Detected runtime error in ${filePath}, adding to context.`);
+
+        // Add system message to conversation
+        const errorMessage = `Runtime Custom Error: Issue detected in ${filePath}. The previous change might have caused a regression. Please investigate.`;
+
+        StateStore.setState(prevState => ({
+            conversation: {
+                ...prevState.conversation,
+                messages: [
+                    ...prevState.conversation.messages,
+                    {
+                        role: 'system',
+                        content: errorMessage,
+                        timestamp: Date.now()
+                    }
+                ]
+            }
+        }));
     }
 
     /**

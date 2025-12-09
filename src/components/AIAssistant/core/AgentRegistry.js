@@ -17,8 +17,8 @@ class AgentRegistry {
             const version = localStorage.getItem('peak-agents-version');
 
             // Migration: Clear old agents if version doesn't match
-            // Version 17: Added edit_file tool support
-            const CURRENT_VERSION = '17'; // Bump to force reload of default agents
+            // Version 18: Updated default models to Gemini 2.5 Pro
+            const CURRENT_VERSION = '18';
             if (stored && version !== CURRENT_VERSION) {
                 console.log('[AgentRegistry] Migrating agents to version', CURRENT_VERSION);
                 localStorage.removeItem('peak-agents');
@@ -47,7 +47,7 @@ class AgentRegistry {
                 id: 'general',
                 name: 'Peak Assistant',
                 description: 'Your primary AI companion for coding, design, and general tasks.',
-                modelId: 'anthropic/claude-sonnet-4',
+                modelId: 'google/gemini-2.5-pro',
                 systemPrompt: `You are Peak AI, a coding assistant in AUTONOMOUS mode working inside an IDE.
 
 # ⚠️ CRITICAL: YOU MUST USE TOOLS IMMEDIATELY ⚠️
@@ -162,7 +162,7 @@ Start working now. Use tools immediately.`,
                 id: 'planner',
                 name: 'Planner',
                 description: 'Breaks down complex tasks into actionable steps and delegates to specialists.',
-                modelId: 'anthropic/claude-sonnet-4',
+                modelId: 'google/gemini-2.5-pro',
                 systemPrompt: `You are a MANAGER Planner agent. You MUST follow a strict 3-PHASE WORKFLOW:
 
 PHASE 1: PLAN
@@ -204,7 +204,7 @@ PHASE 3: VALIDATION
                 id: 'code-expert',
                 name: 'Code Expert',
                 description: 'Focused on writing high-quality, efficient code.',
-                modelId: 'anthropic/claude-sonnet-4',
+                modelId: 'google/gemini-2.5-pro',
                 systemPrompt: `You are a Code Expert. Your goal is to IMPLEMENT the plan provided by the Planner.
 
 **RULES:**
@@ -245,7 +245,7 @@ PHASE 3: VALIDATION
                 id: 'code-reviewer',
                 name: 'Code Reviewer',
                 description: 'Specialized in reviewing code for bugs, security, and style.',
-                modelId: 'anthropic/claude-sonnet-4',
+                modelId: 'google/gemini-2.5-pro',
                 systemPrompt: `You are a Code Reviewer. Your goal is to VALIDATE the work done by the Code Expert.
 
 **TASKS:**
@@ -271,7 +271,7 @@ PHASE 3: VALIDATION
                 id: 'decision-reviewer',
                 name: 'Decision Reviewer',
                 description: 'Reviews architectural and design decisions.',
-                modelId: 'anthropic/claude-sonnet-4',
+                modelId: 'google/gemini-2.5-pro',
                 systemPrompt: 'You are a Decision Reviewer. Evaluate architectural choices, trade-offs, and long-term implications. Ensure alignment with project goals. DO NOT just guess. Use tools like `list_directory`, `view_file`, and `run_command` to gather information before making decisions. If you are unsure, ask the user or delegate to a researcher.',
                 color: AgentColors.DECISION_REVIEWER,
                 isDefault: false,
@@ -295,7 +295,7 @@ PHASE 3: VALIDATION
                 id: 'aesthetics',
                 name: 'Aesthetics Agent',
                 description: 'Specialized in UI/UX design and visual aesthetics.',
-                modelId: 'anthropic/claude-sonnet-4',
+                modelId: 'google/gemini-2.5-pro',
                 systemPrompt: 'You are an Aesthetics Agent. Your goal is to ensure the application looks beautiful, modern, and consistent. Focus on CSS, layout, typography, and animations. Use the `generate_image` tool to create UI mockups if needed.',
                 color: AgentColors.AESTHETICS,
                 isDefault: false,

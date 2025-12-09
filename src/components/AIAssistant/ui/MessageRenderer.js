@@ -6,6 +6,7 @@
  */
 
 const StateStore = require('../core/StateStore');
+const ConversationManager = require('../core/ConversationManager');
 
 class MessageRenderer {
     constructor(container) {
@@ -35,14 +36,166 @@ class MessageRenderer {
     }
 
     renderInitialView() {
-        this.container.innerHTML = `
-            <div class="welcome-container" style="text-align: center; padding: 60px 20px; color: var(--peak-secondary);">
-                <i data-lucide="sparkles" style="width: 48px; height: 48px; margin-bottom: 16px; opacity: 0.5;"></i>
-                <h3 style="margin-bottom: 12px; color: var(--peak-primary);">Welcome to Peak AI</h3>
-                <p style="font-size: 13px; opacity: 0.8;">Start a conversation or select a session from History</p>
+        this.container.innerHTML = '';
+
+        const wrapper = document.createElement('div');
+        // Flex column with space-between to push history to bottom
+        wrapper.style.cssText = 'padding: 20px; height: 100%; min-height: 100%; display: flex; flex-direction: column; justify-content: space-between; overflow-y: auto; box-sizing: border-box;';
+
+        // --- TOP SECTION: HEADER & INFO ---
+        const topSection = document.createElement('div');
+        topSection.style.cssText = 'display: flex; flex-direction: column; gap: 24px;';
+
+        topSection.innerHTML = `
+            <div style="display: flex; align-items: center; gap: 10px; opacity: 0.8;">
+                <div style="width: 24px; height: 24px; background: var(--peak-accent); border-radius: 6px; display: flex; align-items: center; justify-content: center;">
+                    <i data-lucide="sparkles" style="width: 14px; height: 14px; color: white;"></i>
+                </div>
+                <h1 style="margin: 0; font-size: 14px; font-weight: 600; color: var(--peak-primary); letter-spacing: -0.02em;">AI Assistant</h1>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+                <!-- Column 1: Workflow -->
+                <div>
+                    <h3 style="margin: 0 0 8px 0; font-size: 10px; font-weight: 700; color: var(--peak-secondary); text-transform: uppercase; letter-spacing: 0.05em;">Workflow</h3>
+                    <div style="display: flex; flex-direction: column; gap: 6px;">
+                        <div style="display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--peak-primary);">
+                            <i data-lucide="map" style="width: 12px; height: 12px; color: var(--peak-accent); opacity: 0.8;"></i>
+                            <span><strong>Plan:</strong> Break down tasks</span>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--peak-primary);">
+                            <i data-lucide="code-2" style="width: 12px; height: 12px; color: var(--peak-accent); opacity: 0.8;"></i>
+                            <span><strong>Execute:</strong> Write & Edit code</span>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--peak-primary);">
+                            <i data-lucide="check-circle-2" style="width: 12px; height: 12px; color: var(--peak-accent); opacity: 0.8;"></i>
+                            <span><strong>Review:</strong> Validate changes</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Column 2: Tools -->
+                <div>
+                    <h3 style="margin: 0 0 8px 0; font-size: 10px; font-weight: 700; color: var(--peak-secondary); text-transform: uppercase; letter-spacing: 0.05em;">Power Tools</h3>
+                    <div style="display: flex; flex-direction: column; gap: 6px;">
+                        <div style="display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--peak-primary);">
+                            <span style="background: var(--control-background-color); padding: 1px 4px; border-radius: 3px; font-family: monospace; font-size: 10px;">@</span>
+                            <span>Reference files & symbols</span>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--peak-primary);">
+                            <span style="background: var(--control-background-color); padding: 1px 4px; border-radius: 3px; font-family: monospace; font-size: 10px;">/</span>
+                            <span>Slash commands</span>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--peak-primary);">
+                            <i data-lucide="image" style="width: 12px; height: 12px; color: var(--peak-secondary);"></i>
+                            <span>Drag & Drop images</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div style="background: var(--control-background-color); padding: 10px; border-radius: 6px; border: 1px solid var(--border-color);">
+                <div style="display: flex; gap: 8px; align-items: flex-start;">
+                    <i data-lucide="info" style="width: 14px; height: 14px; color: var(--peak-secondary); margin-top: 1px;"></i>
+                    <div style="font-size: 11px; color: var(--peak-secondary); line-height: 1.4;">
+                        <strong style="color: var(--peak-primary);">Context Aware:</strong> The AI knows about your active file. Use <strong>@</strong> to add more context explicitly for better results.
+                    </div>
+                </div>
             </div>
         `;
+        wrapper.appendChild(topSection);
+
+        // --- BOTTOM SECTION: HISTORY ---
+        const sessions = ConversationManager.getSessions();
+        if (sessions.length > 0) {
+            // Sort by recent
+            sessions.sort((a, b) => (b.lastModified || 0) - (a.lastModified || 0));
+
+            const bottomSection = document.createElement('div');
+            bottomSection.style.cssText = 'display: flex; flex-direction: column; gap: 10px; margin-top: 20px;';
+
+            bottomSection.innerHTML = `
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <h2 style="margin: 0; font-size: 10px; font-weight: 700; color: var(--peak-secondary); text-transform: uppercase; letter-spacing: 0.05em;">Recent</h2>
+                    <button id="btn-flush-history" style="background: none; border: none; color: var(--peak-secondary); font-size: 10px; cursor: pointer; display: flex; align-items: center; gap: 4px; padding: 2px 6px; border-radius: 3px; opacity: 0.6; transition: opacity 0.1s;">
+                        Clear
+                    </button>
+                </div>
+                <div id="recent-sessions-list" style="display: flex; flex-direction: column; gap: 4px;">
+                    <!-- Sessions injected here -->
+                </div>
+            `;
+
+            const list = bottomSection.querySelector('#recent-sessions-list');
+            // Show fewer sessions to keep it compact (max 5)
+            sessions.slice(0, 5).forEach(session => {
+                const item = document.createElement('div');
+                item.style.cssText = 'padding: 6px 8px; border-radius: 4px; cursor: pointer; transition: background 0.1s; display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--peak-secondary);';
+
+                // Truncate title
+                const title = session.title || 'Untitled Chat';
+                const displayTitle = title.length > 35 ? title.substring(0, 35) + '...' : title;
+
+                // Format time (e.g., "2h ago")
+                const timeAgo = this.getTimeAgo(session.lastModified || session.created);
+
+                item.innerHTML = `
+                    <i data-lucide="message-square" style="width: 12px; height: 12px; opacity: 0.7;"></i>
+                    <span style="flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--peak-primary);">${displayTitle}</span>
+                    <span style="font-size: 9px; opacity: 0.6;">${timeAgo}</span>
+                `;
+
+                item.onmouseover = () => {
+                    item.style.background = 'var(--control-background-color)';
+                    item.style.color = 'var(--peak-primary)';
+                };
+                item.onmouseout = () => {
+                    item.style.background = 'transparent';
+                    item.style.color = 'var(--peak-secondary)';
+                };
+                item.onclick = () => {
+                    if (window.loadChatSession) window.loadChatSession(session.id);
+                };
+                list.appendChild(item);
+            });
+
+            // Clear button logic
+            const clearBtn = bottomSection.querySelector('#btn-flush-history');
+            if (clearBtn) {
+                clearBtn.onmouseover = () => clearBtn.style.opacity = '1';
+                clearBtn.onmouseout = () => clearBtn.style.opacity = '0.6';
+                clearBtn.onclick = (e) => {
+                    e.stopPropagation();
+                    if (window.clearChatHistory) {
+                        window.clearChatHistory();
+                        // Re-render handled by clearChatHistory logic or state update usually, but initial view might need manual re-call if not reactive to emptiness immediately
+                        // Actually clearChatHistory reloads or might trigger updates. 
+                        // If we are still "empty", StateStore update should trigger renderMessages -> renderInitialView.
+                    }
+                };
+            }
+
+            wrapper.appendChild(bottomSection);
+        }
+
+        this.container.appendChild(wrapper);
         if (window.lucide) window.lucide.createIcons();
+    }
+
+    getTimeAgo(timestamp) {
+        if (!timestamp) return '';
+        const seconds = Math.floor((Date.now() - timestamp) / 1000);
+        let interval = seconds / 31536000;
+        if (interval > 1) return Math.floor(interval) + "y";
+        interval = seconds / 2592000;
+        if (interval > 1) return Math.floor(interval) + "mo";
+        interval = seconds / 86400;
+        if (interval > 1) return Math.floor(interval) + "d";
+        interval = seconds / 3600;
+        if (interval > 1) return Math.floor(interval) + "h";
+        interval = seconds / 60;
+        if (interval > 1) return Math.floor(interval) + "m";
+        return Math.floor(seconds) + "s";
     }
 
     renderMessages(messages, currentStream) {
@@ -157,85 +310,132 @@ class MessageRenderer {
 
     createMessageElement(message) {
         const messageDiv = document.createElement('div');
+        messageDiv.className = `term-chat-msg ${message.role}`;
 
         if (message.role === 'user') {
-            // User message - clean, full-width minimal design
-            messageDiv.className = 'term-chat-msg user';
+            // New Antigravity User Message Style - Clean, Full Width, No "Bubble" Box
+            messageDiv.style.cssText = `
+                position: relative;
+                margin: 4px 0; /* Minimal vertical spacing */
+                padding: 8px 0; /* Internal breathing room */
+                width: 100%;
+                max-width: 100%;
+                box-sizing: border-box;
+                background: transparent !important; /* Force remove any blue bubble background */
+                border: none !important;
+                box-shadow: none !important;
+            `;
 
-            const isLong = message.content.length > 150;
+            const contentId = `msg-content-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
-            if (isLong) {
-                // Make long user messages collapsible
-                messageDiv.style.cssText = `
-                    background: transparent;
-                    padding: 4px 10px;
-                    margin: 2px 0;
-                    border-left: 2px solid var(--peak-secondary);
-                    font-size: 11px;
-                    line-height: 1.6;
-                    color: var(--peak-secondary);
-                    width: 100%;
-                    box-sizing: border-box;
-                    cursor: pointer;
-                    transition: background 0.2s;
-                `;
+            // Header with Actions
+            const header = document.createElement('div');
+            header.style.cssText = `
+                display: flex; 
+                align-items: center; 
+                gap: 8px; 
+                padding: 0 16px; /* Align with sides */
+                margin-bottom: 2px;
+                opacity: 0.8;
+                transition: opacity 0.2s;
+            `;
 
-                const summary = message.content.length > 80
-                    ? message.content.substring(0, 77) + '...'
-                    : message.content;
+            // Actions (Toggle, Copy, Rewind) - Visible/Subtle
+            // We'll make them always visible but low opacity until hover
+            header.innerHTML = `
+                <div class="user-msg-actions" style="display: flex; gap: 4px; align-items: center;">
+                    <button class="msg-action-btn toggle-btn" title="Toggle Content" data-target="${contentId}" style="padding: 2px; color: var(--peak-secondary); background: none; border: none; cursor: pointer;">
+                         <i data-lucide="chevron-down" style="width: 13px; height: 13px;"></i>
+                    </button>
+                    <div style="font-size: 11px; font-weight: 600; color: var(--peak-primary);">You</div>
+                    <div style="flex: 1;"></div>
+                    <button class="msg-action-btn copy-btn" title="Copy Text" style="padding: 2px; color: var(--peak-secondary); background: none; border: none; cursor: pointer; opacity: 0.6;">
+                         <i data-lucide="copy" style="width: 12px; height: 12px;"></i>
+                    </button>
+                    <button class="msg-action-btn rewind-btn" title="Start from here" style="padding: 2px; color: var(--peak-secondary); background: none; border: none; cursor: pointer; opacity: 0.6;">
+                         <i data-lucide="history" style="width: 12px; height: 12px;"></i>
+                    </button>
+                </div>
+            `;
 
-                messageDiv.innerHTML = `
-                    <div class="message-summary" style="display: flex; align-items: center; gap: 8px;">
-                        <span style="opacity: 0.5;">▸</span>
-                        <span style="flex: 1;">${this._escapeHTML(summary)}</span>
-                        <span style="opacity: 0.3; font-size: 9px;">Click to expand</span>
-                    </div>
-                    <div class="message-content" style="display: none; margin-top: 8px; padding: 6px 0; font-size: 13px; color: var(--peak-primary);">
-                        ${this._renderRichContent(message.content)}
-                    </div>
-                `;
+            // Content Body
+            const body = document.createElement('div');
+            body.id = contentId;
+            body.className = 'message-content';
+            body.style.cssText = `
+                padding: 2px 16px 2px 16px; /* Symmetric padding */
+                font-size: 13px;
+                line-height: 1.6;
+                color: var(--peak-secondary);
+                white-space: pre-wrap;
+                width: 100%;
+                box-sizing: border-box;
+            `;
 
-                // Toggle expand/collapse on click
-                messageDiv.addEventListener('click', (e) => {
-                    const content = messageDiv.querySelector('.message-content');
-                    const arrow = messageDiv.querySelector('.message-summary span:first-child');
-                    const hint = messageDiv.querySelector('.message-summary span:last-child');
+            // Use displayContent (clean) if available, otherwise full content
+            const contentToShow = message.displayContent || message.content;
+            body.innerHTML = this._renderRichContent(contentToShow);
 
-                    if (content.style.display === 'none') {
-                        content.style.display = 'block';
-                        arrow.textContent = '▾';
-                        hint.textContent = 'Click to collapse';
-                        messageDiv.style.background = 'rgba(100, 100, 100, 0.05)';
-                    } else {
-                        content.style.display = 'none';
-                        arrow.textContent = '▸';
-                        hint.textContent = 'Click to expand';
-                        messageDiv.style.background = 'transparent';
-                    }
-                });
-            } else {
-                // Short user messages - display normally
-                messageDiv.style.cssText = `
-                    background: transparent;
-                    padding: 10px 16px;
-                    margin: 6px 0;
-                    border-left: 2px solid var(--peak-secondary);
-                    font-size: 13px;
-                    line-height: 1.6;
-                    color: var(--peak-primary);
-                    width: 100%;
-                    box-sizing: border-box;
-                `;
-                // Use displayContent (clean) if available, otherwise full content
-                const contentToShow = message.displayContent || message.content;
-                messageDiv.innerHTML = this._renderRichContent(contentToShow);
-            }
+            messageDiv.appendChild(header);
+            messageDiv.appendChild(body);
+
+            // Access Buttons
+            const toggleBtn = header.querySelector('.toggle-btn');
+            const copyBtn = header.querySelector('.copy-btn');
+            const rewindBtn = header.querySelector('.rewind-btn'); // Renamed from git-branch/history concept
+
+            // Listeners
+            toggleBtn.addEventListener('click', () => {
+                const isHidden = body.style.display === 'none';
+                body.style.display = isHidden ? 'block' : 'none';
+                toggleBtn.innerHTML = isHidden
+                    ? '<i data-lucide="chevron-down" style="width: 13px; height: 13px;"></i>'
+                    : '<i data-lucide="chevron-right" style="width: 13px; height: 13px;"></i>';
+                if (window.lucide) window.lucide.createIcons({ el: toggleBtn });
+            });
+
+            copyBtn.addEventListener('click', async () => {
+                try {
+                    await navigator.clipboard.writeText(contentToShow);
+                    copyBtn.innerHTML = '<i data-lucide="check" style="width: 12px; height: 12px;"></i>';
+                    if (window.lucide) window.lucide.createIcons({ el: copyBtn });
+                    setTimeout(() => {
+                        copyBtn.innerHTML = '<i data-lucide="copy" style="width: 12px; height: 12px;"></i>';
+                        if (window.lucide) window.lucide.createIcons({ el: copyBtn });
+                    }, 1500);
+                } catch (e) {
+                    console.error('Copy failed', e);
+                }
+            });
+
+            rewindBtn.addEventListener('click', () => {
+                // Emit event for controller to handle
+                const StateStore = require('../core/StateStore');
+                // For now, let's just log or maybe trigger a custom event
+                // Ideally this should call AIExecutor.rewindTo(messageId) but we don't have IDs yet easily
+                // We'll implement a simple confirm for now
+                if (confirm('Start conversation from this step? Future messages will be removed.')) {
+                    // TODO: Implement actual rewind logic in AIExecutor
+                    console.log('Rewind requested to message:', message);
+                    StateStore.emit('ui:rewind-request', { messageContent: message.content });
+                }
+            });
+
+            // Hover effects for the row
+            messageDiv.addEventListener('mouseenter', () => {
+                copyBtn.style.opacity = '1';
+                rewindBtn.style.opacity = '1';
+            });
+            messageDiv.addEventListener('mouseleave', () => {
+                copyBtn.style.opacity = '0.6';
+                rewindBtn.style.opacity = '0.6';
+            });
+
         } else if (message.role === 'assistant') {
-            // Always display normally (no collapsing)
-            messageDiv.className = 'term-chat-msg assistant';
+            // Assistant Message - Clean & Standard
             messageDiv.style.cssText = `
                 background: transparent;
-                padding: 10px 14px;
+                padding: 10px 16px;
                 margin: 4px 0;
                 font-size: 13px;
                 line-height: 1.7;

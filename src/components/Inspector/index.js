@@ -142,7 +142,8 @@ function renderInspector(type) {
             htmlContent = currentFileContentError ? `<div style="padding:20px;">Error: ${currentFileContentError}</div>` : aiAssist.getAIAssistHTML(currentFileContent, currentFilePath);
             displayFileName = currentFilePath ? path.basename(currentFilePath) : (projectTitle || 'Project');
         } else if (type === 'settings') {
-            htmlContent = aiAssist.getSettingsHTML();
+            // Use a placeholder that the controller will hydrate
+            htmlContent = `<div id="ai-assist-settings-content" style="height:100%; overflow-y:auto; padding:0;"></div>`;
             displayFileName = 'Settings';
         } else {
             htmlContent = `<div style="padding:20px;">Unknown Inspector Type: ${type}</div>`;
@@ -156,9 +157,9 @@ function renderInspector(type) {
                         ${type === 'settings' ?
                 `<button class="icon-btn" onclick="window.openInspector('ai')" title="Back to Chat"><i data-lucide="arrow-left"></i></button>` :
                 `<button class="icon-btn" onclick="window.startNewChatSession()" title="New Chat"><i data-lucide="plus"></i></button>
-                 <button id="inspector-settings-btn" class="icon-btn" title="Settings"><i data-lucide="settings"></i></button>`
+             <button class="icon-btn" onclick="window.showChatHistory()" title="Chat History"><i data-lucide="history"></i></button>
+             <button id="inspector-settings-btn" class="icon-btn" title="Settings"><i data-lucide="settings"></i></button>`
             }
-                        <button class="icon-btn" onclick="window.showChatHistory()" title="Chat History"><i data-lucide="history"></i></button>
                         <button class="icon-btn" onclick="window.closeInspector()"><i data-lucide="x"></i></button>
                     </div>
                 </div>
@@ -304,17 +305,28 @@ function renderInspector(type) {
     }
 
     if (type === 'chat-history') {
-        const sessions = window.peakMCPClient ? window.peakMCPClient.getSessions() : [];
-        const currentSessionId = window.peakMCPClient ? window.peakMCPClient.currentSessionId : null;
+        const conversationManager = (aiAssist && aiAssist.ConversationManager) || (window.peakConversationManager);
+
+        let sessions = [];
+        let currentSessionId = null;
+
+        if (conversationManager) {
+            sessions = conversationManager.getSessions();
+            currentSessionId = conversationManager.currentSessionId;
+        }
+
+        // Sort by last modified
+        sessions.sort((a, b) => (b.lastModified || 0) - (a.lastModified || 0));
 
         const listHtml = sessions.map(session => {
             const isActive = session.id === currentSessionId;
-            const dateStr = new Date(session.lastModified).toLocaleDateString();
+            const dateStr = new Date(session.lastModified || session.created).toLocaleDateString();
+            const msgCount = session.messages ? session.messages.length : 0;
             return `
                 <div class="inspector-list-item ${isActive ? 'active' : ''}" onclick="window.loadChatSession('${session.id}')" style="${isActive ? 'background-color:var(--control-background-color);' : ''}">
                     <div class="inspector-item-text">
                         <div class="inspector-item-title">${session.title || 'New Chat'}</div>
-                        <div class="inspector-item-subtitle">${dateStr} • ${session.history.length} msgs</div>
+                        <div class="inspector-item-subtitle">${dateStr} • ${msgCount} msgs</div>
                     </div>
                     <div style="display:flex; align-items:center; gap:4px;">
                         ${isActive ? '<div style="font-size:10px; opacity:0.5; margin-right:4px;">Active</div>' : ''}
@@ -328,10 +340,12 @@ function renderInspector(type) {
             <div class="inspector-inner-wrapper">
                 <div class="inspector-header" style="display:flex; justify-content:space-between; align-items:center;">
                     <h3 style="margin:0; font-size:14px; font-weight:600; color:var(--peak-primary);">Chat History</h3>
-                    <div style="display:flex; gap:4px;">
-                         <button class="icon-btn" onclick="window.startNewChatSession()" title="New Chat"><i data-lucide="plus"></i></button>
-                         <button class="icon-btn" onclick="window.openInspector('ai-assist')"><i data-lucide="arrow-left"></i></button>
-                    </div>
+                     <div style="display:flex; gap:4px;">
+                          <button class="icon-btn" onclick="window.startNewChatSession()" title="New Chat"><i data-lucide="plus"></i></button>
+                          <button class="icon-btn" onclick="window.openInspector('ai-assist')" title="Back to Chat"><i data-lucide="arrow-left"></i></button>
+                          <button class="icon-btn" onclick="window.clearChatHistory()" title="Clear All History"><i data-lucide="trash-2"></i></button>
+                          <button class="icon-btn" onclick="window.closeInspector()"><i data-lucide="x"></i></button>
+                     </div>
                 </div>
                 <div class="inspector-content">
                     ${sessions.length > 0 ? listHtml : '<div class="empty-inspector-state">No history found</div>'}
@@ -455,11 +469,26 @@ function getInspectorConfig(type) {
 
     switch (type) {
         case 'notes': return { title: 'Search Notes', getData: () => tm.noteStore ? tm.noteStore.get('notes', []) : [], filter: (item, f) => (item.title || 'Untitled').toLowerCase().includes(f) || (item.tags || []).some(t => t.toLowerCase().includes(f)), clearAll: () => { tm.noteStore.set('notes', []); }, deleteItem: (id) => { const notes = tm.noteStore.get('notes', []); tm.noteStore.set('notes', notes.filter(n => n.id != id)); }, renderItem: (item) => { const tagHtml = (item.tags && item.tags.length > 0) ? `<div style="display:flex; gap:4px; margin-top:4px;">${item.tags.slice(0, 3).map(t => `<span class="control-pill" style="font-size:10px; padding:2px 6px; background-color:var(--control-background-color); border:none;">${t}</span>`).join('')}</div>` : ''; return `<div class="inspector-list-item" onclick="window.openNoteFromHistory('${item.id}')" data-id="${item.id}"><div class="inspector-item-text"><div class="inspector-item-title">${item.title || 'Untitled'}</div><div class="inspector-item-subtitle">${new Date(item.createdAt).toLocaleDateString()}</div>${tagHtml}</div></div>`; } };
-        case 'chat': return { title: 'Search Chats', getData: () => tm.chatStore ? tm.chatStore.get('sessions', []) : [], filter: (item, f) => (item.title || 'New Chat').toLowerCase().includes(f), clearAll: () => { tm.chatStore.set('sessions', []); }, deleteItem: (id) => { const sessions = tm.chatStore.get('sessions', []); tm.chatStore.set('sessions', sessions.filter(s => s.id != id)); }, renderItem: (item) => `<div class="inspector-list-item" onclick="window.openChatFromHistory('${item.id}')" data-id="${item.id}"><div class="inspector-item-text"><div class="inspector-item-title">${item.title || 'New Chat'}</div><div class="inspector-item-subtitle">${item.model || 'GPT-4o Mini'}</div></div></div>` };
+        // case 'chat': ... removed from here as we moved it down to override ...
         case 'terminal': return { title: 'Terminals', getData: () => tm.terminalStore ? tm.terminalStore.get('items', []) : [], filter: (item, f) => item.title.toLowerCase().includes(f), clearAll: () => { tm.terminalStore.set('items', []); }, deleteItem: (id) => { const i = tm.terminalStore.get('items', []); tm.terminalStore.set('items', i.filter(x => x.id != id)); }, renderItem: (item) => `<div class="inspector-list-item" onclick="window.openTerminalFromHistory('${item.id}')" data-id="${item.id}"><div class="inspector-item-text"><div class="inspector-item-title">${item.title}</div><div class="inspector-item-subtitle">${new Date(item.createdAt).toLocaleString()}</div></div></div>` };
         case 'whiteboard': return { title: 'Whiteboards', getData: () => tm.whiteboardStore ? tm.whiteboardStore.get('items', []) : [], filter: (item, f) => item.title.toLowerCase().includes(f), clearAll: () => { tm.whiteboardStore.set('items', []); }, deleteItem: (id) => { const i = tm.whiteboardStore.get('items', []); tm.whiteboardStore.set('items', i.filter(x => x.id != id)); }, renderItem: (item) => `<div class="inspector-list-item" onclick="window.openWhiteboardFromHistory('${item.id}')" data-id="${item.id}"><div class="inspector-item-text"><div class="inspector-item-title">${item.title}</div><div class="inspector-item-subtitle">${new Date(item.createdAt).toLocaleString()}</div></div></div>` };
 
         // --- ADDED MINDMAP & TASKS SUPPORT ---
+        case 'chat': return {
+            title: 'Search Chats',
+            getData: () => {
+                const cm = (aiAssist && aiAssist.ConversationManager) || window.peakConversationManager;
+                return cm ? cm.getSessions() : [];
+            },
+            filter: (item, f) => (item.title || 'New Chat').toLowerCase().includes(f),
+            clearAll: () => { /* Not implemented for safety */ },
+            deleteItem: (id) => {
+                const cm = (aiAssist && aiAssist.ConversationManager) || window.peakConversationManager;
+                if (cm) cm.deleteSession(id);
+            },
+            renderItem: (item) => `<div class="inspector-list-item" onclick="window.loadChatSession('${item.id}')" data-id="${item.id}"><div class="inspector-item-text"><div class="inspector-item-title">${item.title || 'New Chat'}</div><div class="inspector-item-subtitle">${new Date(item.lastModified).toLocaleDateString()}</div></div></div>`
+        };
+
         case 'mindmap': return {
             title: 'Mind Maps',
             getData: () => tm.mindMapStore ? tm.mindMapStore.get('maps', []) : [],
@@ -512,27 +541,51 @@ window.showChatHistory = () => {
 };
 
 window.loadChatSession = (id) => {
-    if (window.peakMCPClient) {
-        window.peakMCPClient.loadSession(id);
+    const conversationManager = (aiAssist && aiAssist.ConversationManager) || window.peakConversationManager;
+    if (conversationManager) {
+        conversationManager.loadSession(id);
         open('ai-assist');
     }
 };
 
 window.startNewChatSession = () => {
-    if (window.peakMCPClient) {
-        window.peakMCPClient.startNewSession();
+    const conversationManager = (aiAssist && aiAssist.ConversationManager) || window.peakConversationManager;
+    if (conversationManager) {
+        conversationManager.startNewSession(window.currentProjectRoot);
         open('ai-assist');
     }
 };
 
 window.deleteChatSession = (id) => {
     if (confirm('Are you sure you want to delete this chat session?')) {
-        if (window.peakMCPClient) {
-            window.peakMCPClient.deleteSession(id);
+        const conversationManager = (aiAssist && aiAssist.ConversationManager) || window.peakConversationManager;
+        if (conversationManager) {
+            conversationManager.deleteSession(id);
             // Refresh the list if we are still in chat-history mode
             if (currentMode === 'chat-history') {
                 open('chat-history');
             }
+        }
+    }
+};
+
+window.deleteCurrentChatSession = () => {
+    const conversationManager = (aiAssist && aiAssist.ConversationManager) || window.peakConversationManager;
+    if (conversationManager && conversationManager.currentSessionId) {
+        window.deleteChatSession(conversationManager.currentSessionId);
+    }
+};
+
+window.clearChatHistory = () => {
+    if (confirm('Are you sure you want to clear ALL chat history? This cannot be undone.')) {
+        const conversationManager = (aiAssist && aiAssist.ConversationManager) || window.peakConversationManager;
+        if (conversationManager) {
+            // We need a method to clear all sessions. ConversationManager might not have it exposed directly?
+            // Let's check or implement it.
+            // If not, we can iterate and delete.
+            const sessions = conversationManager.getSessions();
+            sessions.forEach(s => conversationManager.deleteSession(s.id));
+            if (open) open('chat-history');
         }
     }
 };

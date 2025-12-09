@@ -20,11 +20,13 @@ class SettingsController {
         this.renderSettings();
 
         // Listen for agent updates to re-render if needed
-        window.addEventListener('peak-agents-updated', () => {
+        this._handleAgentsUpdated = () => {
             if (this.activeTab === 'agents') {
-                this.renderAgentsList(document.getElementById('agents-list'));
+                const list = document.getElementById('agents-list');
+                if (list) this.renderAgentsList(list);
             }
-        });
+        };
+        window.addEventListener('peak-agents-updated', this._handleAgentsUpdated);
     }
 
     render() {
@@ -41,8 +43,13 @@ class SettingsController {
     }
 
     destroy() {
-        // Cleanup listeners if any
-        // window.removeEventListener('peak-agents-updated', ...);
+        if (this._handleAgentsUpdated) {
+            window.removeEventListener('peak-agents-updated', this._handleAgentsUpdated);
+        }
+        if (this.settingsUnsub) {
+            this.settingsUnsub(); // Unsubscribe from SettingsManager
+        }
+        this.container = null;
     }
 
     loadActiveDocs() {
@@ -61,26 +68,52 @@ class SettingsController {
         this.container.innerHTML = '';
         this.container.style.padding = '0'; // Remove default padding if any
 
+        // --- CSS STYLES ---
+        const style = document.createElement('style');
+        style.textContent = `
+            .artifact-pill {
+                padding: 6px 12px;
+                border-radius: 20px;
+                border: 1px solid var(--border-color);
+                background: var(--control-background-color);
+                color: var(--peak-secondary);
+                font-size: 11px;
+                font-weight: 500;
+                cursor: pointer;
+                transition: all 0.2s;
+                white-space: nowrap;
+                display: flex;
+                align-items: center;
+                gap: 6px;
+                outline: none;
+            }
+            .artifact-pill:hover {
+                border-color: var(--peak-secondary);
+                color: var(--peak-primary) !important;
+            }
+            .artifact-pill.active {
+                background: var(--peak-accent);
+                color: #fff !important;
+                border-color: var(--peak-accent) !important;
+            }
+        `;
+        this.container.appendChild(style);
+
         // --- TABS HEADER ---
         const tabsContainer = document.createElement('div');
-        tabsContainer.style.cssText = 'display: flex; border-bottom: 1px solid var(--border-color); margin-bottom: 12px; background: var(--peak-card-bg); padding: 0 8px;';
+        tabsContainer.role = 'tablist';
+        tabsContainer.style.cssText = 'display: flex; gap: 8px; border-bottom: 1px solid var(--border-color); margin-bottom: 12px; background: var(--peak-card-bg); padding: 12px; overflow-x: auto;';
 
         const createTab = (id, label) => {
-            const tab = document.createElement('div');
+            const tab = document.createElement('button');
+            tab.className = `artifact-pill ${this.activeTab === id ? 'active' : ''}`;
             tab.textContent = label;
-            const isActive = this.activeTab === id;
-            tab.style.cssText = `
-                padding: 8px 12px; 
-                cursor: pointer; 
-                font-size: 11px; 
-                font-weight: ${isActive ? '600' : '500'}; 
-                color: ${isActive ? 'var(--peak-primary)' : 'var(--peak-secondary)'};
-                border-bottom: 2px solid ${isActive ? 'var(--peak-accent)' : 'transparent'};
-                transition: all 0.2s;
-                opacity: ${isActive ? '1' : '0.7'};
-            `;
-            tab.onmouseover = () => tab.style.opacity = '1';
-            tab.onmouseout = () => tab.style.opacity = isActive ? '1' : '0.7';
+            tab.role = 'tab';
+            tab.setAttribute('aria-selected', this.activeTab === id);
+            tab.setAttribute('aria-controls', 'settings-tab-content');
+
+            // Inline styles are mostly handled by CSS now, but we ensure button properties
+            tab.style.border = this.activeTab === id ? '1px solid var(--peak-accent)' : '1px solid var(--border-color)';
 
             tab.onclick = () => {
                 this.activeTab = id;
@@ -119,15 +152,28 @@ class SettingsController {
     // =================================================================================================
 
     renderGeneralSettings(container) {
-        // --- Auto-Accept Section ---
-        const generalSettings = [
-            { id: 'peak-auto-accept-list', label: 'Auto-accept List Directory', default: true },
-            { id: 'peak-auto-accept-read', label: 'Auto-accept Read File / URL', default: true },
-            { id: 'peak-auto-accept-create', label: 'Auto-accept Create File', default: false },
-            { id: 'peak-auto-accept-edit', label: 'Auto-accept Edit File', default: false },
-            { id: 'peak-auto-accept-run', label: 'Auto-accept Run Command', default: false },
-            { id: 'peak-auto-accept-plan', label: 'Auto-accept Plan Files', default: false },
+        // --- Automation Section ---
+        const automationSettings = [
+            { id: 'automation.list_dir', key: 'list_directory', label: 'Auto-accept List Directory' },
+            { id: 'automation.read_file', key: 'read_file', label: 'Auto-accept Read File / URL' }, // read_content / read_url
+            { id: 'automation.create_file', key: 'create_file', label: 'Auto-accept Create File' },
+            { id: 'automation.edit_file', key: 'edit_file', label: 'Auto-accept Edit File' },
+            { id: 'automation.run_command', key: 'run_command', label: 'Auto-accept Run Command' },
+            { id: 'automation.plan', key: 'plan', label: 'Auto-accept Plan Files' } // Implementation plan updates
+            // Note: 'plan' isn't in default automation keys yet, but good to have.
+            // Actually SettingsManager defaults show: list_dir isn't there? 
+            // Let's stick to keys present in SettingsManager DEFAULT_SETTINGS if possible, 
+            // or ensure SettingsManager handles extra keys.
+            // Looking at SettingsManager: run_command, create_file, edit_file, delete_file.
+            // It seems list_dir and read_file were legacy defaults or considered safe?
+            // I'll map them to the keys expected by the system or 'automation' object.
         ];
+
+        // Helper to get nested value
+        const getAutomationValue = (key) => {
+            const settings = SettingsManager.getSettings();
+            return settings.automation && settings.automation[key];
+        };
 
         const sectionHeader = (text) => {
             const h = document.createElement('div');
@@ -136,18 +182,23 @@ class SettingsController {
             return h;
         };
 
-        container.appendChild(sectionHeader('Automation'));
-
         // --- Model Configuration Section ---
-        const modelHeader = sectionHeader('AI Model');
-        container.appendChild(modelHeader);
+        container.appendChild(sectionHeader('AI Model'));
 
         const modelContainer = document.createElement('div');
         modelContainer.style.cssText = 'margin-bottom: 20px;';
 
         const currentSettings = SettingsManager.getSettings();
 
+        // Ensure valid model
+        let activeModel = currentSettings.model || 'google/gemini-2.5-pro';
+        if (activeModel.includes('auto') && !activeModel.includes('google')) {
+            // Safety double-check for legacy auto
+            activeModel = 'google/gemini-2.5-pro';
+        }
+
         const modelSelect = document.createElement('select');
+        modelSelect.id = 'setting-model-select';
         modelSelect.style.cssText = `
             width: 100%;
             padding: 6px 8px;
@@ -163,7 +214,7 @@ class SettingsController {
             const option = document.createElement('option');
             option.value = m.id;
             option.textContent = `${m.name} ${m.isPremium ? '(Premium)' : ''}`;
-            if (m.id === currentSettings.model) option.selected = true;
+            if (m.id === activeModel) option.selected = true;
             modelSelect.appendChild(option);
         });
 
@@ -174,16 +225,31 @@ class SettingsController {
         modelContainer.appendChild(modelSelect);
         container.appendChild(modelContainer);
 
-        // --- Automation Section ---
+        // --- Automation Rules Section ---
         container.appendChild(sectionHeader('Automation Rules'));
 
         const settingsGrid = document.createElement('div');
         settingsGrid.style.cssText = 'display: grid; grid-template-columns: 1fr; gap: 4px; margin-bottom: 20px;';
 
-        generalSettings.forEach(setting => {
+        // Define the mapping explicitly to match SettingsManager structure
+        const rules = [
+            // Safe tools (often defaulted to true in past, but let's make them config)
+            // SettingsManager defaults don't list them, implying they might be always allowed or handled elsewhere?
+            // Ref: SettingsManager.js lines 26-31. Only run, create, edit, delete are there.
+            // I will add list/read for completeness if the system supports them, or assume they are 'safe' by default.
+            // For now, let's map the Critical ones that require approval.
+
+            { key: 'run_command', label: 'Auto-accept Run Command' },
+            { key: 'create_file', label: 'Auto-accept Create File' },
+            { key: 'edit_file', label: 'Auto-accept Edit File' },
+            { key: 'delete_file', label: 'Auto-accept Delete File' }
+        ];
+
+        rules.forEach(rule => {
             const item = document.createElement('div');
             item.className = 'settings-item';
             item.style.cssText = 'display: flex; align-items: center; padding: 4px 8px; border-radius: 4px; cursor: pointer; transition: background 0.1s; border: 1px solid transparent;';
+
             item.onmouseover = () => {
                 item.style.background = 'var(--hover-color)';
                 item.style.borderColor = 'var(--border-color)';
@@ -195,8 +261,12 @@ class SettingsController {
 
             const checkbox = document.createElement('input');
             checkbox.type = 'checkbox';
-            checkbox.id = setting.id;
-            checkbox.checked = localStorage.getItem(setting.id) === null ? setting.default : localStorage.getItem(setting.id) === 'true';
+            checkbox.id = `setting-auto-${rule.key}`;
+
+            // Initial State from Manager
+            const currentVal = SettingsManager.getSettings().automation?.[rule.key] || false;
+            checkbox.checked = currentVal;
+
             checkbox.style.marginRight = '8px';
             checkbox.style.accentColor = 'var(--peak-accent)';
             checkbox.style.cursor = 'pointer';
@@ -204,19 +274,15 @@ class SettingsController {
             checkbox.addEventListener('change', (e) => {
                 const checked = e.target.checked;
                 const { automation } = SettingsManager.getSettings();
-                const newAutomation = { ...automation };
-
-                if (setting.id === 'peak-auto-accept-run') newAutomation.run_command = checked;
-                else if (setting.id === 'peak-auto-accept-create') newAutomation.create_file = checked;
-                else if (setting.id === 'peak-auto-accept-edit') newAutomation.edit_file = checked;
-
+                // Create clean copy
+                const newAutomation = { ...automation, [rule.key]: checked };
                 SettingsManager.updateSettings({ automation: newAutomation });
             });
 
             const label = document.createElement('label');
-            label.htmlFor = setting.id;
+            label.htmlFor = checkbox.id;
             label.style.cssText = 'display: flex; align-items: center; cursor: pointer; flex: 1; font-size: 11px; color: var(--peak-primary); user-select: none;';
-            label.textContent = setting.label;
+            label.textContent = rule.label;
 
             item.appendChild(checkbox);
             item.appendChild(label);
@@ -230,27 +296,34 @@ class SettingsController {
             settingsGrid.appendChild(item);
         });
 
-        // Sync visual state from SettingsManager
-        const syncCheckboxes = () => {
-            const { automation } = SettingsManager.getSettings();
-            if (!automation) return;
-
-            const mapping = {
-                'peak-auto-accept-create': automation.create_file,
-                'peak-auto-accept-edit': automation.edit_file,
-                'peak-auto-accept-run': automation.run_command,
-            };
-
-            Object.keys(mapping).forEach(id => {
-                const cb = container.querySelector('#' + id);
-                if (cb) cb.checked = mapping[id];
-            });
-        };
-        syncCheckboxes();
-
-        // Listen to updates from other sources
-        this.settingsUnsub = SettingsManager.subscribe(() => syncCheckboxes());
         container.appendChild(settingsGrid);
+
+        // --- Sync Handler ---
+        const syncUI = () => {
+            const settings = SettingsManager.getSettings();
+            if (!settings) return;
+
+            // Sync Model
+            if (modelSelect && modelSelect.value !== settings.model) {
+                // Verify it's not a legacy auto value we are trying to sync TO
+                if (!settings.model.includes('auto') || settings.model.includes('google')) {
+                    modelSelect.value = settings.model;
+                }
+            }
+
+            // Sync Automation Checkboxes
+            if (settings.automation) {
+                rules.forEach(rule => {
+                    const cb = container.querySelector(`#setting-auto-${rule.key}`);
+                    if (cb) {
+                        cb.checked = settings.automation[rule.key] === true;
+                    }
+                });
+            }
+        };
+
+        // Subscribe
+        this.settingsUnsub = SettingsManager.subscribe(syncUI);
 
         // --- Project Memory Section ---
         container.appendChild(document.createElement('hr')).style.cssText = 'border: 0; border-top: 1px solid var(--border-color); margin: 0 0 16px 0; opacity: 0.5;';
@@ -287,7 +360,7 @@ class SettingsController {
         memoryTextarea.onfocus = () => memoryTextarea.style.borderColor = 'var(--peak-accent)';
         memoryTextarea.onblur = () => memoryTextarea.style.borderColor = 'var(--border-color)';
 
-        // Load current memory
+        // Load current memory directly from MCP Client if available
         const client = window.peakMCPClient;
         const currentRoot = window.currentProjectRoot || (client && client.currentProjectRoot);
 
@@ -763,7 +836,7 @@ class SettingsController {
                 title.textContent = 'Create Agent';
                 inputId.value = '';
                 inputName.value = 'New Agent';
-                inputModel.value = 'openrouter/auto';
+                inputModel.value = 'google/gemini-2.5-pro';
                 inputPrompt.value = 'You are a helpful assistant.';
                 if (chainCheckbox) chainCheckbox.checked = false;
             }

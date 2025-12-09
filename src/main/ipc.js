@@ -1021,6 +1021,22 @@ function setupIpcHandlers(context) {
         }
     });
 
+    // Delete File Handler (event-based for AI tools)
+    ipcMain.on('project:delete-file', async (event, filePath) => {
+        try {
+            // Resolve path against current project root
+            const fullPath = path.isAbsolute(filePath) ? filePath : path.join(state.currentProject || '', filePath);
+
+            // Use trashItem for safety (recoverable)
+            await shell.trashItem(fullPath);
+
+            event.sender.send('project:delete-file-reply', null, { success: true, path: fullPath });
+        } catch (error) {
+            console.error('[Main] delete-file error:', error);
+            event.sender.send('project:delete-file-reply', error.message, null);
+        }
+    });
+
     // Edit File Handler (event-based for AI tools) - Robust Implementation
     ipcMain.on('project:edit-file', async (event, filePath, search, replace) => {
         try {

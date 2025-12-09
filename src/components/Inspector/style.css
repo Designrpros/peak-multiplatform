@@ -269,8 +269,8 @@
 .term-chat-msg.ai>blockquote,
 .term-chat-msg.ai>table,
 .term-chat-msg.ai>img {
-    padding-left: 12px;
-    padding-right: 12px;
+    padding-left: 0;
+    padding-right: 0;
 }
 
 /* Tool & Block Styles - Extreme Minimal (Barely Visible) */
