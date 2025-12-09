@@ -36,6 +36,15 @@ class InputBar {
                 <div id="ai-assist-docs-menu" class="tools-menu"></div>
 
                 <div class="inspector-input-box">
+                    <!-- Review Controls (Moved to Top) -->
+                    <div id="ai-review-controls" style="display:none; width:100%; justify-content:space-between; align-items:center; margin-bottom: 8px; background: var(--peak-hover-bg, rgba(255,255,255,0.03)); padding: 6px 8px; border-radius: 6px; box-sizing: border-box;">
+                        <span style="font-size:10px; font-weight:600; opacity:0.7; color:var(--peak-secondary);">PENDING ACTIONS</span>
+                        <div style="display:flex; gap:6px;">
+                            <button id="ai-review-reject-btn" class="review-btn reject">Reject All</button>
+                            <button id="ai-review-accept-btn" class="review-btn accept">Accept All</button>
+                        </div>
+                    </div>
+
                     <div id="ai-assist-attachments" class="attachments-container" style="display:none; gap:6px; padding:4px 0 8px 0; flex-wrap:wrap;"></div>
                     <div id="ai-assist-file-chips" class="file-chips-container"></div>
                     
@@ -44,13 +53,13 @@ class InputBar {
                         rows="1"></textarea>
                     
                     <div class="chat-controls" style="margin-top: 4px; padding-top: 0px;">
-                        <div class="left-controls" style="display:flex; gap:8px; align-items:center;">
+                        <div class="left-controls" style="display:flex; gap:4px; align-items:center;">
                              <!-- Add File -->
                              <button id="ai-assist-add-file-btn" class="icon-btn-plain" title="Add File Context">
                                 <i data-lucide="plus" style="width:14px; height:14px;"></i>
                              </button>
 
-                             <div class="model-selector-wrapper" style="position:relative; display:flex; gap:8px; align-items:center;">
+                             <div class="model-selector-wrapper" style="position:relative; display:flex; gap:4px; align-items:center;">
                                 <select id="ai-assist-mode-select" class="model-select-plain" title="Select Mode">
                                     <option value="planning" selected>Planning</option>
                                     <option value="fast">Fast</option>
@@ -61,16 +70,11 @@ class InputBar {
                                 </select>
                              </div>
                         </div>
-                        <div class="right-controls" style="display:flex; gap:6px; align-items:center;">
-                            <span id="ai-status-indicator" style="font-size:9px; font-weight:500; color:var(--peak-secondary); display:none; align-items:center; gap:4px; margin-right:8px;">
+                        <div class="right-controls" style="display:flex; gap:4px; align-items:center;">
+                            <span id="ai-status-indicator" style="font-size:9px; font-weight:500; color:var(--peak-secondary); display:none; align-items:center; gap:4px; margin-right:4px;">
                                 <span style="width:5px; height:5px; border-radius:50%; background:var(--peak-secondary);"></span> Ready
                             </span>
                             
-                            <div id="ai-review-controls" style="display:none; align-items:center; gap:6px;">
-                                <button id="ai-review-reject-btn" class="review-btn reject">Reject All</button>
-                                <button id="ai-review-accept-btn" class="review-btn accept">Accept All</button>
-                            </div>
-
                             <button id="ai-assist-submit-btn" class="chat-submit-btn" title="Send (Enter)">
                                 <i data-lucide="arrow-up" style="width: 14px; height: 14px; stroke-width: 3px;"></i>
                             </button>
@@ -92,7 +96,7 @@ class InputBar {
                 }
 
                 .inspector-input-box {
-                    padding: 12px 12px 8px 12px; /* Top padding increased as requested */
+                    padding: 8px 8px 4px 8px; /* Tighter padding overall */
                     display: flex;
                     flex-direction: column;
                     width: 100%;
@@ -109,9 +113,10 @@ class InputBar {
                     padding: 0px; /* Zero padding for tight alignment */
                     display: flex;
                     align-items: center;
-                    justify-content: center;
+                    justify-content: flex-start; /* Align icon to the left, matching text */
                     transition: all 0.2s;
                     opacity: 0.7;
+                    text-align: left;
                 }
                 .icon-btn-plain:hover {
                     color: var(--peak-primary);
@@ -125,28 +130,29 @@ class InputBar {
                     width: 100%;
                     max-height: 200px;
                     overflow-y: auto;
-                    background: var(--peak-background, #1e1e1e);
+                    background: var(--window-background-color);
+                    color: var(--foreground-color, var(--peak-foreground));
                     border: 1px solid var(--border-color);
                     border-bottom: none;
                     z-index: 1000; /* Increased z-index */
                     display: none;
                     flex-direction: column;
                     padding: 2px 0; /* Reduced vertical padding */
-                    box-shadow: 0 -4px 12px rgba(0,0,0,0.2);
+                    box-shadow: 0 -4px 12px rgba(0,0,0,0.1);
                 }
 
                 .menu-item, .popover-item {
                     display: flex;
                     align-items: center;
                     gap: 8px;
-                    padding: 4px 12px; /* aligned with input text */
+                    padding: 6px 12px; /* aligned with input text */
                     cursor: pointer;
                     font-size: 13px;
-                    color: var(--peak-secondary);
+                    color: var(--foreground-color, var(--peak-foreground)); 
                     transition: all 0.2s;
                 }
                 .menu-item:hover, .popover-item:hover, .popover-item.active {
-                    background: var(--peak-hover-bg, rgba(255,255,255,0.05));
+                    background: var(--list-hover-background, rgba(127,127,127,0.1));
                     color: var(--peak-primary);
                 }
                 .popover-item-content {
@@ -187,18 +193,19 @@ class InputBar {
                 }
 
                 .chat-textarea-plain {
-                    flex: 1;
+                    width: 100%;
                     background: transparent;
                     border: none;
                     color: var(--peak-primary);
                     font-size: 13px;
                     line-height: 1.5;
-                    padding: 0;
+                    padding: 4px 0; /* Slight padding for comfort */
                     resize: none;
                     outline: none;
                     font-family: inherit;
-                    min-height: 40px; 
-                    max-height: 200px;
+                    height: 28px; /* Initial height */
+                    min-height: 28px; /* Starts as single line */
+                    max-height: 300px; /* Allow more growth */
                     margin-bottom: 0px; 
                     overflow-y: hidden; 
                     box-sizing: border-box;
@@ -855,13 +862,21 @@ class InputBar {
     adjustHeight() {
         if (!this.inputArea) return;
 
+        // If empty, force to min-height
+        if (!this.inputArea.value) {
+            this.inputArea.style.height = '28px';
+            this.inputArea.style.overflowY = 'hidden';
+            return;
+        }
+
         // Reset height to allow shrink
         this.inputArea.style.height = 'auto';
 
         // Calculate new height
         const newHeight = this.inputArea.scrollHeight;
-        const maxHeight = 200; // Match CSS
+        const maxHeight = 300; // Match CSS
 
+        // Apply new height
         this.inputArea.style.height = Math.min(newHeight, maxHeight) + 'px';
 
         // Show scrollbar only if max height reached
