@@ -28,6 +28,12 @@ class MessageRenderer {
         // Initial render
         this.renderInitialView();
 
+        // Hydrate from current state immediately
+        const currentState = StateStore.getState();
+        if (currentState.conversation && (currentState.conversation.messages.length > 0 || currentState.conversation.currentStream)) {
+            this.renderMessages(currentState.conversation.messages, currentState.conversation.currentStream);
+        }
+
         // Listen for tool execution completion to clean up confirmation cards
         StateStore.on('tool:execution-completed', (data) => {
             const card = this.container.querySelector(`#tool-confirm-${data.executionId}`);
@@ -39,8 +45,8 @@ class MessageRenderer {
         this.container.innerHTML = '';
 
         const wrapper = document.createElement('div');
-        // Flex column with space-between to push history to bottom
-        wrapper.style.cssText = 'padding: 20px; height: 100%; min-height: 100%; display: flex; flex-direction: column; justify-content: space-between; overflow-y: auto; box-sizing: border-box;';
+        // Use min-height to allow growth, and let parent handle scrolling
+        wrapper.style.cssText = 'padding: 20px; min-height: 100%; display: flex; flex-direction: column; justify-content: flex-end; box-sizing: border-box; gap: 24px;';
 
         // --- TOP SECTION: HEADER & INFO ---
         const topSection = document.createElement('div');
@@ -199,6 +205,10 @@ class MessageRenderer {
     }
 
     renderMessages(messages, currentStream) {
+        // Enforce container padding for "edge-to-edge" feel with slight bezel
+        this.container.style.padding = '10px 12px';
+        this.container.style.boxSizing = 'border-box';
+
         // If no messages and no stream, show welcome
         if (messages.length === 0 && !currentStream) {
             this.renderInitialView();
@@ -270,18 +280,41 @@ class MessageRenderer {
     }
 
     _attachCardListeners() {
-        // Toggle code buttons (for collapsing card content)
-        this.container.querySelectorAll('.toggle-code-btn-compact').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                const card = e.target.closest('.file-edit-card-compact, .tool-card-compact');
+        // Toggle Code Block listener (Compact)
+        this.container.addEventListener('click', (e) => {
+            const toggleBtn = e.target.closest('.toggle-code-btn-compact');
+            if (toggleBtn) {
+                const card = toggleBtn.closest('.file-edit-card-compact') || toggleBtn.closest('.tool-card-compact');
                 if (card) {
                     const codeBlock = card.querySelector('.file-code-collapsed');
                     if (codeBlock) {
                         const isHidden = codeBlock.style.display === 'none';
                         codeBlock.style.display = isHidden ? 'block' : 'none';
+                        // Update icon only if needed, or purely visual toggle state
+                        toggleBtn.style.opacity = isHidden ? '1' : '0.6';
                     }
                 }
-            });
+            }
+
+            // Open File listener (ViewFileCard)
+            const viewBtn = e.target.closest('.tool-view-btn');
+            if (viewBtn) {
+                const path = decodeURIComponent(viewBtn.dataset.path);
+                if (path) {
+                    const StateStore = require('../core/StateStore');
+                    StateStore.emit('ui:open-file', path);
+
+                    // Visual feedback
+                    const originalIcon = viewBtn.innerHTML;
+                    viewBtn.innerHTML = '<i data-lucide="check" style="width:11px; height:11px;"></i>';
+                    if (window.lucide) window.lucide.createIcons({ el: viewBtn });
+
+                    setTimeout(() => {
+                        viewBtn.innerHTML = originalIcon;
+                        if (window.lucide) window.lucide.createIcons({ el: viewBtn });
+                    }, 2000);
+                }
+            }
         });
 
         // Copy buttons
@@ -313,88 +346,122 @@ class MessageRenderer {
         messageDiv.className = `term-chat-msg ${message.role}`;
 
         if (message.role === 'user') {
-            // New Antigravity User Message Style - Clean, Full Width, No "Bubble" Box
+            // New Antigravity User Message Style - Unified Bubble
+            // "User chat message needs outside margin" -> We'll add margin-bottom for separation
             messageDiv.style.cssText = `
                 position: relative;
-                margin: 4px 0; /* Minimal vertical spacing */
-                padding: 8px 0; /* Internal breathing room */
+                margin: 0 0 8px 0; /* Outside margin */
                 width: 100%;
                 max-width: 100%;
                 box-sizing: border-box;
-                background: transparent !important; /* Force remove any blue bubble background */
-                border: none !important;
+                background: transparent !important;
+                border: 1px solid var(--border-color);
+                border-radius: 6px;
                 box-shadow: none !important;
+                overflow: hidden;
+                display: flex;
+                flex-direction: column;
             `;
 
             const contentId = `msg-content-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
-            // Header with Actions
-            const header = document.createElement('div');
-            header.style.cssText = `
-                display: flex; 
-                align-items: center; 
-                gap: 8px; 
-                padding: 0 16px; /* Align with sides */
-                margin-bottom: 2px;
-                opacity: 0.8;
-                transition: opacity 0.2s;
-            `;
+            // Auto-collapse logic
+            const contentToShow = message.displayContent || message.content;
+            const isLongMessage = contentToShow.length > 500;
+            const initialDisplay = isLongMessage ? 'none' : 'block';
 
-            // Actions (Toggle, Copy, Rewind) - Visible/Subtle
-            // We'll make them always visible but low opacity until hover
-            header.innerHTML = `
-                <div class="user-msg-actions" style="display: flex; gap: 4px; align-items: center;">
-                    <button class="msg-action-btn toggle-btn" title="Toggle Content" data-target="${contentId}" style="padding: 2px; color: var(--peak-secondary); background: none; border: none; cursor: pointer;">
-                         <i data-lucide="chevron-down" style="width: 13px; height: 13px;"></i>
-                    </button>
-                    <div style="font-size: 11px; font-weight: 600; color: var(--peak-primary);">You</div>
-                    <div style="flex: 1;"></div>
-                    <button class="msg-action-btn copy-btn" title="Copy Text" style="padding: 2px; color: var(--peak-secondary); background: none; border: none; cursor: pointer; opacity: 0.6;">
-                         <i data-lucide="copy" style="width: 12px; height: 12px;"></i>
-                    </button>
-                    <button class="msg-action-btn rewind-btn" title="Start from here" style="padding: 2px; color: var(--peak-secondary); background: none; border: none; cursor: pointer; opacity: 0.6;">
-                         <i data-lucide="history" style="width: 12px; height: 12px;"></i>
-                    </button>
-                </div>
-            `;
-
-            // Content Body
+            // Content Body - Text on left
             const body = document.createElement('div');
             body.id = contentId;
             body.className = 'message-content';
             body.style.cssText = `
-                padding: 2px 16px 2px 16px; /* Symmetric padding */
+                padding: 6px 10px 8px 10px; /* Tighter padding */
                 font-size: 13px;
-                line-height: 1.6;
+                line-height: 1.5;
                 color: var(--peak-secondary);
                 white-space: pre-wrap;
                 width: 100%;
                 box-sizing: border-box;
+                display: block; /* Always block, use maxHeight for collapse */
             `;
-
-            // Use displayContent (clean) if available, otherwise full content
-            const contentToShow = message.displayContent || message.content;
             body.innerHTML = this._renderRichContent(contentToShow);
 
-            messageDiv.appendChild(header);
-            messageDiv.appendChild(body);
+            // Actions - Icons right bottom side
+            // We use absolute positioning to place them in the corner
+            const actionsContainer = document.createElement('div');
+            actionsContainer.className = 'user-msg-actions';
+            actionsContainer.style.cssText = `
+                position: absolute;
+                bottom: 4px;
+                right: 6px;
+                display: flex;
+                align-items: center;
+                gap: 6px;
+                padding: 2px;
+                background: transparent;
+                opacity: 0.8;
+            `;
 
-            // Access Buttons
-            const toggleBtn = header.querySelector('.toggle-btn');
-            const copyBtn = header.querySelector('.copy-btn');
-            const rewindBtn = header.querySelector('.rewind-btn'); // Renamed from git-branch/history concept
+            actionsContainer.innerHTML = `
+                <button class="msg-action-btn toggle-btn" title="Toggle Content" data-target="${contentId}" style="display: ${isLongMessage ? 'flex' : 'none'}; padding: 2px; color: var(--peak-secondary); background: none; border: none; cursor: pointer; align-items: center;">
+                     <i data-lucide="${initialDisplay === 'none' ? 'chevron-right' : 'chevron-down'}" style="width: 13px; height: 13px;"></i>
+                </button>
+                <button class="msg-action-btn copy-btn" title="Copy Text" style="padding: 2px; color: var(--peak-secondary); background: none; border: none; cursor: pointer;">
+                     <i data-lucide="copy" style="width: 12px; height: 12px;"></i>
+                </button>
+                <button class="msg-action-btn rewind-btn" title="Start from here" style="padding: 2px; color: var(--peak-secondary); background: none; border: none; cursor: pointer;">
+                     <i data-lucide="history" style="width: 12px; height: 12px;"></i>
+                </button>
+            `;
+
+            // Append children
+            // Note: No separate header div anymore
+            messageDiv.appendChild(body);
+            messageDiv.appendChild(actionsContainer);
 
             // Listeners
-            toggleBtn.addEventListener('click', () => {
-                const isHidden = body.style.display === 'none';
-                body.style.display = isHidden ? 'block' : 'none';
-                toggleBtn.innerHTML = isHidden
-                    ? '<i data-lucide="chevron-down" style="width: 13px; height: 13px;"></i>'
-                    : '<i data-lucide="chevron-right" style="width: 13px; height: 13px;"></i>';
-                if (window.lucide) window.lucide.createIcons({ el: toggleBtn });
-            });
+            const toggleBtn = actionsContainer.querySelector('.toggle-btn');
+            const copyBtn = actionsContainer.querySelector('.copy-btn');
+            const rewindBtn = actionsContainer.querySelector('.rewind-btn');
 
-            copyBtn.addEventListener('click', async () => {
+            // Toggle Logic
+            if (isLongMessage) {
+                // If long, we need a way to show the "Show More" if it's hidden
+                // But if display is none, where do we click? 
+                // Ah, if display is none, the body is hidden.
+                // We need a "Collapsed Placeholder" or keep the toggle button visible.
+                // Since actions are absolute, they might be visible? 
+                // But if body height is 0, container height is minimal? 
+                // Let's ensure container has min-height or placeholder.
+
+                // If collapsed, we show a preview line?
+                if (initialDisplay === 'none') {
+                    body.style.maxHeight = '60px'; // Show a bit
+                    body.style.overflow = 'hidden';
+                    body.style.maskImage = 'linear-gradient(to bottom, black 50%, transparent 100%)';
+                    body.style.webkitMaskImage = 'linear-gradient(to bottom, black 50%, transparent 100%)';
+                }
+            }
+
+            // Fixed Toggle Logic for collapsible view
+            toggleBtn.onclick = () => {
+                if (body.style.maxHeight) {
+                    // Expand
+                    body.style.maxHeight = '';
+                    body.style.maskImage = '';
+                    body.style.webkitMaskImage = '';
+                    toggleBtn.innerHTML = '<i data-lucide="chevron-down" style="width: 13px; height: 13px;"></i>';
+                } else {
+                    // Collapse
+                    body.style.maxHeight = '60px';
+                    body.style.maskImage = 'linear-gradient(to bottom, black 50%, transparent 100%)';
+                    body.style.webkitMaskImage = 'linear-gradient(to bottom, black 50%, transparent 100%)';
+                    toggleBtn.innerHTML = '<i data-lucide="chevron-right" style="width: 13px; height: 13px;"></i>';
+                }
+                if (window.lucide) window.lucide.createIcons({ el: toggleBtn });
+            };
+
+            copyBtn.onclick = async () => {
                 try {
                     await navigator.clipboard.writeText(contentToShow);
                     copyBtn.innerHTML = '<i data-lucide="check" style="width: 12px; height: 12px;"></i>';
@@ -403,52 +470,36 @@ class MessageRenderer {
                         copyBtn.innerHTML = '<i data-lucide="copy" style="width: 12px; height: 12px;"></i>';
                         if (window.lucide) window.lucide.createIcons({ el: copyBtn });
                     }, 1500);
-                } catch (e) {
-                    console.error('Copy failed', e);
-                }
-            });
+                } catch (e) { console.error(e); }
+            };
 
-            rewindBtn.addEventListener('click', () => {
-                // Emit event for controller to handle
+            rewindBtn.onclick = () => {
                 const StateStore = require('../core/StateStore');
-                // For now, let's just log or maybe trigger a custom event
-                // Ideally this should call AIExecutor.rewindTo(messageId) but we don't have IDs yet easily
-                // We'll implement a simple confirm for now
-                if (confirm('Start conversation from this step? Future messages will be removed.')) {
-                    // TODO: Implement actual rewind logic in AIExecutor
-                    console.log('Rewind requested to message:', message);
+                if (confirm('Start conversation from this step?')) {
                     StateStore.emit('ui:rewind-request', { messageContent: message.content });
                 }
-            });
-
-            // Hover effects for the row
-            messageDiv.addEventListener('mouseenter', () => {
-                copyBtn.style.opacity = '1';
-                rewindBtn.style.opacity = '1';
-            });
-            messageDiv.addEventListener('mouseleave', () => {
-                copyBtn.style.opacity = '0.6';
-                rewindBtn.style.opacity = '0.6';
-            });
+            };
 
         } else if (message.role === 'assistant') {
             // Assistant Message - Clean & Standard
+            // "make them expand full with aliging with the user chat messagee"
             messageDiv.style.cssText = `
                 background: transparent;
-                padding: 10px 16px;
-                margin: 4px 0;
+                padding: 0 4px; /* Align text start with user message text (which has 10px padding - 1px border = 9px visual?) Let's try matching visually. */
+                margin: 0 0 8px 0; /* Tight spacing */
                 font-size: 13px;
-                line-height: 1.7;
+                line-height: 1.6;
                 color: var(--peak-primary);
+                width: 100%;
+                box-sizing: border-box;
             `;
             messageDiv.innerHTML = this._renderRichContent(message.content);
-
-            // Streaming indicator if active
-            if (message.isStreaming) {
-                const indicator = this._createStreamIndicator();
-                messageDiv.appendChild(indicator);
-            }
+        }     // Streaming indicator if active
+        if (message.isStreaming) {
+            const indicator = this._createStreamIndicator();
+            messageDiv.appendChild(indicator);
         }
+
 
         return messageDiv;
     }
@@ -634,12 +685,31 @@ class MessageRenderer {
                         cardHTML = renderListDirectoryCard(args.path || '.', args.recursive === 'true');
                         break;
                     case 'view_file':
-                        cardHTML = renderViewFileCard(args.path, '', {});
+                        cardHTML = renderViewFileCard(args.path, args.content || '', {});
                         break;
                     case 'create_file':
                     case 'update_file':
                     case 'edit_file':
-                        cardHTML = renderFileEditCard(args.path || 'unknown', args.content || '', toolName);
+                        let stats = { additions: 0, deletions: 0 };
+                        try {
+                            if (toolName === 'create_file' || toolName === 'update_file' || toolName === 'write_to_file') {
+                                if (args.content) stats.additions = args.content.split('\n').length;
+                            } else {
+                                if (args.search && args.replace) {
+                                    stats.deletions = args.search.split('\n').length;
+                                    stats.additions = args.replace.split('\n').length;
+                                } else if (args.content) {
+                                    const searchBlocks = args.content.match(/<{7}\s*SEARCH\s*([\s\S]*?)={7}/g);
+                                    const replaceBlocks = args.content.match(/={7}\s*([\s\S]*?)>{7}\s*REPLACE/g);
+                                    if (searchBlocks) searchBlocks.forEach(b => stats.deletions += b.replace(/<{7}\s*SEARCH\s*/, '').replace(/={7}/, '').split('\n').length);
+                                    if (replaceBlocks) replaceBlocks.forEach(b => stats.additions += b.replace(/={7}\s*/, '').replace(/>{7}\s*REPLACE/, '').split('\n').length);
+                                }
+                            }
+                        } catch (e) {
+                            console.error('Error calculating stats:', e);
+                        }
+
+                        cardHTML = renderFileEditCard(args.path || 'unknown', args.content || '', toolName, stats);
                         break;
                     case 'run_command':
                         cardHTML = renderCommandCard(args.command || '', args.cwd || '.');
@@ -1029,6 +1099,7 @@ class MessageRenderer {
             this.unsubscribe();
         }
     }
+
 }
 
 module.exports = MessageRenderer;

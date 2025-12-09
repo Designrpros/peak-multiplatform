@@ -12,11 +12,11 @@ function renderLivePreviewCard(url = 'http://localhost:3000') {
         <div class="live-preview-card" style="
             width: 100%;
             box-sizing: border-box;
-            border: 1px solid var(--border-color);
-            border-radius: 8px;
+            border-left: 3px solid var(--peak-accent);
+            padding-left: 8px; /* Matches standard */
             overflow: hidden;
             background: var(--card-background);
-            margin: 8px 0;
+            margin: 2px 0; /* Matches standard */
             display: flex;
             flex-direction: column;
         ">

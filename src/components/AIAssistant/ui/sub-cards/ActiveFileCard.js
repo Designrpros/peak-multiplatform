@@ -5,12 +5,15 @@ function renderActiveFileCard(path, content) {
     const preview = cleanContent.slice(0, 80) + (cleanContent.length > 80 ? '…' : '');
 
     return `
-        <div class="tool-card-compact">
-            <div class="tool-line">
-                <i data-lucide="file-code" style="width:10px; height:10px; flex-shrink:0; color:var(--peak-accent); opacity:0.8;"></i>
-                <span class="tool-label-compact">Context</span>
-                <span class="tool-content-compact">${fileName}</span>
-                <span class="file-meta-compact">Auto-included</span>
+        <div class="file-edit-card-compact" style="border-left: 3px solid var(--peak-accent); padding-left: 8px;">
+            <div class="file-edit-line" style="display: flex; align-items: center; gap: 8px;">
+                <i data-lucide="file-code" style="width:10px; height:10px; flex-shrink:0; color:var(--peak-accent);"></i>
+                <span class="file-path-compact">Context</span>
+                <span class="file-meta-compact" style="margin-left:auto;">${fileName}</span>
+                
+                <button class="copy-btn-compact" title="Copy Path" onclick="navigator.clipboard.writeText('${path}')" style="margin-left: 8px; background: transparent; border: none; padding: 4px; cursor: pointer; color: var(--peak-secondary); opacity: 0.6; transition: opacity 0.2s;">
+                    <i data-lucide="copy" style="width:9px; height:9px;"></i>
+                </button>
             </div>
         </div>
     `;

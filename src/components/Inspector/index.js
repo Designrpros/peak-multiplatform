@@ -150,8 +150,8 @@ function renderInspector(type) {
         }
 
         container.innerHTML = `
-            <div class="inspector-inner-wrapper">
-                <div class="inspector-header" style="display:flex; justify-content:space-between; align-items:center;">
+            <div class="inspector-inner-wrapper" style="height: 100%; display: flex; flex-direction: column; overflow: hidden;">
+                <div class="inspector-header" style="display:flex; justify-content:space-between; align-items:center; flex-shrink: 0;">
                     <h3 style="margin:0; font-size:14px; font-weight:600; color:var(--peak-primary);">Peak Assistant <span style="opacity:0.5; font-weight:400;">(${displayFileName})</span></h3>
                     <div style="display:flex; gap:4px;">
                         ${type === 'settings' ?
@@ -163,7 +163,10 @@ function renderInspector(type) {
                         <button class="icon-btn" onclick="window.closeInspector()"><i data-lucide="x"></i></button>
                     </div>
                 </div>
-                ${htmlContent}
+                <!-- Content Wrapper (Flex 1) -->
+                <div style="flex: 1; overflow: hidden; position: relative; display: flex; flex-direction: column;">
+                    ${htmlContent}
+                </div>
             </div>
         `;
         if (window.lucide) window.lucide.createIcons();

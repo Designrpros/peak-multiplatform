@@ -7,7 +7,7 @@ function renderWebviewCard(url) {
     const webviewId = `webview-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
 
     return `
-        <div class="tool-card-compact webview-card" style="border: 1px solid var(--border-color); border-radius: 8px; overflow: hidden; margin-top: 8px; background: var(--peak-card-bg);">
+        <div class="tool-card-compact webview-card" style="border-left: 3px solid var(--peak-accent); padding-left: 8px; overflow: hidden; margin-top: 8px; background: var(--peak-card-bg);">
             <div class="card-header" style="display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: var(--peak-card-header-bg); border-bottom: 1px solid var(--border-color);">
                 <div style="display: flex; align-items: center; gap: 8px; overflow: hidden;">
                     <i data-lucide="globe" style="width: 14px; height: 14px; color: var(--peak-accent);"></i>

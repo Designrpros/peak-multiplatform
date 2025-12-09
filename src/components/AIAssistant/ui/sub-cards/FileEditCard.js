@@ -10,14 +10,10 @@ function escapeHTML(str) {
         .replace(/'/g, "&#039;");
 }
 
-function renderFileEditCard(path, content, type, titleOverride) {
-    // SAFEGUARD: Prevent undefined or null content from being encoded
-    if (content === undefined || content === null) {
-        console.warn('[FileEditCard] Received undefined/null content for path:', path);
-        content = '';  // Use empty string as fallback
-    }
+function renderFileEditCard(path, content, type = 'edit', stats = null) {
+    const isEdit = type === 'edit_file';
 
-    // Detect language from path extension
+    // Determine language from extension
     const ext = path.split('.').pop().toLowerCase();
     const langMap = {
         'js': 'javascript', 'jsx': 'javascript', 'ts': 'typescript', 'tsx': 'typescript',
@@ -25,64 +21,57 @@ function renderFileEditCard(path, content, type, titleOverride) {
     };
     const lang = langMap[ext] || 'plaintext';
 
-    // Strip markdown code fences if present
-    let rawContent = content;
-    const fenceRegex = /^```[a-zA-Z0-9]*\n([\s\S]*?)\n```$/;
-    const match = rawContent.trim().match(fenceRegex);
-    if (match) {
-        rawContent = match[1];
-    } else {
-        rawContent = rawContent.replace(/^```[a-zA-Z0-9]*\n/, '').replace(/\n```$/, '');
+    // Prevent undefined/null content
+    if (content === undefined || content === null) {
+        content = '';
     }
 
-    // Highlight Code
-    let highlightedCode;
+    // Escape content for attribute
+    const encodedContent = encodeURIComponent(content);
+    const encodedPath = encodeURIComponent(path);
+
+    // Highlight code
+    let highlightedCode = '';
     try {
         if (lang !== 'plaintext' && hljs.getLanguage(lang)) {
-            highlightedCode = hljs.highlight(rawContent, { language: lang }).value;
+            highlightedCode = hljs.highlight(content, { language: lang }).value;
         } else {
-            highlightedCode = hljs.highlightAuto(rawContent).value;
+            highlightedCode = hljs.highlightAuto(content).value;
         }
     } catch (e) {
-        highlightedCode = escapeHTML(rawContent);
+        highlightedCode = escapeHTML(content);
     }
 
-    const lineCount = rawContent.split('\n').length;
-    const icon = type === 'create' ? 'file-plus' : 'pencil';
-    const actionLabel = type === 'create' ? 'Create' : 'Apply';
+    // Icon selection
+    let icon = 'file-code';
+    if (type === 'create_file') icon = 'file-plus';
+    if (type === 'update_file') icon = 'file-edit';
+    if (type === 'edit_file') icon = 'file-diff';
 
-    const encodedPath = encodeURIComponent(path);
-    const encodedContent = encodeURIComponent(rawContent);
+    // Stats HTML
+    let statsHtml = '';
+    if (stats) {
+        if (stats.additions > 0) {
+            statsHtml += `<span style="color:var(--peak-success, #22c55e); font-family:monospace; font-size:10px; margin-left:6px;">+${stats.additions}</span>`;
+        }
+        if (stats.deletions > 0) {
+            statsHtml += `<span style="color:var(--peak-error-text, #ef4444); font-family:monospace; font-size:10px; margin-left:4px;">-${stats.deletions}</span>`;
+        }
+    }
 
     // Ultra-compact single-line design
     return `
-        <div class="file-edit-card-compact" style="border-left:3px solid var(--peak-accent);">
-            <div class="file-edit-line">
+        <div class="file-edit-card-compact" style="border-left:3px solid var(--peak-accent); padding-left: 8px;">
+            <div class="file-edit-line" style="display: flex; align-items: center; gap: 8px;">
                 <i data-lucide="${icon}" style="width:10px; height:10px; flex-shrink:0; color:var(--peak-accent);"></i>
                 <span class="file-path-compact">${path}</span>
+                ${statsHtml}
                 <span class="file-meta-compact" style="margin-left:auto;">${lang}</span>
                 <button class="toggle-code-btn-compact" title="Toggle Code" style="margin-left:8px;">
                     <i data-lucide="code" style="width:9px; height:9px;"></i>
                 </button>
-                <button class="copy-btn-compact" title="Copy Content" onclick="navigator.clipboard.writeText(decodeURIComponent(this.dataset.content))" data-content="${encodedContent}" style="margin-left:4px;">
+                <button class="copy-btn-compact" title="Copy Content" onclick="navigator.clipboard.writeText(decodeURIComponent('${encodedContent}'))" style="margin-left:4px; background: transparent; border: none; padding: 4px; cursor: pointer; color: var(--peak-secondary); opacity: 0.6; transition: opacity 0.2s;">
                     <i data-lucide="copy" style="width:9px; height:9px;"></i>
-                </button>
-                <div style="width:1px; height:10px; background:var(--border-color); margin:0 4px;"></div>
-                <button class="file-action-btn-compact tool-create-btn" 
-                        data-path="${encodedPath}" 
-                        data-content="${encodedContent}" 
-                        data-type="${type}"
-                        title="Apply Changes">
-                    <i data-lucide="check" style="width:9px; height:9px;"></i>
-                    Apply
-                </button>
-                <button class="file-action-btn-compact reject-btn" 
-                        data-path="${encodedPath}" 
-                        data-content="" 
-                        data-type="reject"
-                        title="Reject Changes"
-                        style="color:var(--peak-error-text);">
-                    <i data-lucide="x" style="width:9px; height:9px;"></i>
                 </button>
             </div>
             <div class="file-code-collapsed" style="display:none;">
@@ -98,7 +87,6 @@ function renderGeneratingFileCard(path, content) {
         content = '';
     }
 
-
     // Detect language
     const ext = path.split('.').pop().toLowerCase();
     const langMap = {
@@ -110,7 +98,6 @@ function renderGeneratingFileCard(path, content) {
     // Highlight Code
     let highlightedCode;
     try {
-        // For generating, content might be incomplete, so highlightAuto might be safer or just basic escape if it fails
         if (lang !== 'plaintext' && hljs.getLanguage(lang)) {
             highlightedCode = hljs.highlight(content, { language: lang }).value;
         } else {
@@ -119,7 +106,6 @@ function renderGeneratingFileCard(path, content) {
     } catch (e) {
         highlightedCode = escapeHTML(content);
     }
-
 
     return `
         <div class="file-edit-card-compact generating" style="border-left:3px solid var(--peak-accent);">
