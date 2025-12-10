@@ -192,8 +192,23 @@ class AIExecutor {
         }
 
         if (data.type === 'data') {
-            // Append to buffer
-            this.streamBuffer += data.content;
+            // Handle Reasoning (Thinking)
+            if (data.reasoning) {
+                if (!this.isReasoning) {
+                    this.streamBuffer += '<thinking>';
+                    this.isReasoning = true;
+                }
+                this.streamBuffer += data.reasoning;
+            }
+
+            // Handle Content
+            if (data.content) {
+                if (this.isReasoning) {
+                    this.streamBuffer += '</thinking>';
+                    this.isReasoning = false;
+                }
+                this.streamBuffer += data.content;
+            }
 
             // Update state with new stream content
             StateStore.setState(prevState => ({
@@ -207,6 +222,12 @@ class AIExecutor {
             }));
 
         } else if (data.type === 'end') {
+            // Close thinking tag if still open
+            if (this.isReasoning) {
+                this.streamBuffer += '</thinking>';
+                this.isReasoning = false;
+            }
+
             // console.log('[AIExecutor] Stream completed, processing tools...');
             await this._completeStream();
 

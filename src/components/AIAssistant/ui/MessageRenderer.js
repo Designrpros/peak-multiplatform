@@ -753,8 +753,43 @@ class MessageRenderer {
             return `\n**📍 ${title}**\n${stepContent}`;
         });
 
-        // 4. Remove thinking/incomplete tags before markdown
-        processed = processed.replace(/<thinking>[\s\S]*?<\/thinking>/gi, '');
+        // 4. Extract and replace <thinking> tags
+        // Handle completed thinking blocks
+        const thinkingRegex = /<thinking>([\s\S]*?)<\/thinking>/gi;
+        processed = processed.replace(thinkingRegex, (match, content) => {
+            const cardHTML = `
+                <div class="thinking-minimal" style="margin: 2px 0 8px 0;">
+                    <div class="thinking-header" style="display: flex; align-items: center; gap: 4px; cursor: pointer; font-size: 13px; color: var(--peak-secondary); opacity: 0.8; user-select: none;" onclick="this.nextElementSibling.style.display = this.nextElementSibling.style.display === 'none' ? 'block' : 'none'; this.querySelector('.chevron').style.transform = this.nextElementSibling.style.display === 'none' ? 'rotate(0deg)' : 'rotate(90deg)';">
+                        <i class="chevron" data-lucide="chevron-right" style="width: 14px; height: 14px; transition: transform 0.2s;"></i>
+                        <span style="font-style: italic;">thinking...</span>
+                    </div>
+                    <div class="thinking-content" style="display: none; padding-left: 20px; border-left: 1px solid var(--border-color); margin-left: 6px; margin-top: 4px; font-size: 12px; color: var(--peak-secondary);">
+                        ${marked.parse(content)}
+                    </div>
+                </div>
+            `;
+            return createPlaceholder(cardHTML);
+        });
+
+        // Handle incomplete (streaming) thinking blocks
+        const openThinkingIndex = processed.lastIndexOf('<thinking>');
+        const closeThinkingIndex = processed.lastIndexOf('</thinking>');
+
+        if (openThinkingIndex > -1 && openThinkingIndex > closeThinkingIndex) {
+            // For streaming, just show the minimal label, no content preview to keep it "nothing more"
+            const cardHTML = `
+                <div class="thinking-streaming" style="margin: 2px 0 8px 0; display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--peak-secondary); opacity: 0.7;">
+                    <span style="display: inline-block; width: 6px; height: 6px; background: currentColor; border-radius: 50%; animation: pulse 1s infinite;"></span>
+                    <span style="font-style: italic;">thinking...</span>
+                </div>
+             `;
+            processed = processed.substring(0, openThinkingIndex);
+            const placeholderId = createPlaceholder(cardHTML);
+            processed += placeholderId;
+        }
+
+        // Clean up any stray tags if standard regex didn't catch them (safety)
+        // processed = processed.replace(/<thinking>[\s\S]*?<\/thinking>/gi, ''); // Removed strip logic
         processed = processed.replace(/<tool\s+name="([^"]+)"[^>]*$/gi, ''); // Incomplete tool
         processed = processed.replace(/USER QUESTION:\s*/gi, '');
 

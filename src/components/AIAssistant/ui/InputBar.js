@@ -1037,55 +1037,30 @@ class InputBar {
 
     _showFileMenu(e, files) {
         // Close existing if any
-        const existingMenu = document.getElementById('ai-review-file-menu');
+        const existingMenu = this.container.querySelector('#ai-review-file-menu');
         if (existingMenu) existingMenu.remove();
 
         // Create menu
         const menu = document.createElement('div');
         menu.id = 'ai-review-file-menu';
-        menu.style.cssText = `
-            position: fixed;
-            z-index: 2000;
-            background: var(--window-background-color);
-            border: 1px solid var(--border-color);
-            border-radius: 6px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
-            padding: 4px 0;
-            min-width: 200px;
-            max-height: 300px;
-            overflow-y: auto;
-            color: var(--foreground-color);
-            font-size: 12px;
-        `;
+        // Reuse .tools-menu styling logic (absolute, bottom: 100%)
+        menu.className = 'tools-menu';
+        menu.style.display = 'flex';
+        menu.style.maxHeight = '300px';
 
-        // Position menu near cursor but safely
-        const x = Math.min(e.clientX, window.innerWidth - 220);
-        const y = Math.min(e.clientY, window.innerHeight - 300);
-        menu.style.left = x + 'px';
-        menu.style.top = y + 'px';
+        menu.innerHTML = `<div class="menu-section-header">Review Changed Files</div>`;
 
         files.forEach(file => {
             const filePath = file.path || file.args?.path || 'Unknown file';
             const fileName = filePath.split('/').pop() || filePath;
 
             const item = document.createElement('div');
-            item.textContent = fileName;
-            item.title = filePath;
-            item.style.cssText = `
-                padding: 6px 12px;
-                cursor: pointer;
-                display: flex;
-                align-items: center;
-                gap: 8px;
+            item.className = 'menu-item';
+            item.innerHTML = `
+                <i data-lucide="file-edit" style="width: 14px; height: 14px;"></i>
+                <span title="${filePath}">${fileName}</span>
             `;
-            item.onmouseover = () => {
-                item.style.background = 'var(--list-hover-background, rgba(127,127,127,0.1))';
-                item.style.color = 'var(--peak-primary)';
-            };
-            item.onmouseout = () => {
-                item.style.background = 'transparent';
-                item.style.color = 'var(--foreground-color)';
-            };
+
             item.onclick = (ev) => {
                 ev.stopPropagation();
                 this._openDiffForFile(file);
@@ -1095,11 +1070,14 @@ class InputBar {
             menu.appendChild(item);
         });
 
-        document.body.appendChild(menu);
+        // Initialize icons
+        if (window.lucide) window.lucide.createIcons({ root: menu });
+
+        this.container.appendChild(menu);
 
         // Click outside to close
         const closeMenu = (ev) => {
-            if (!menu.contains(ev.target)) {
+            if (!menu.contains(ev.target) && !ev.target.closest('#ai-review-label')) {
                 menu.remove();
                 document.removeEventListener('click', closeMenu);
             }

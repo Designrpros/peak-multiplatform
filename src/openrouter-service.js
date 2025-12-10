@@ -26,6 +26,7 @@ function streamChatCompletion(model, messages, apiKey, referer, title) {
         temperature: 0.7, // Lower for Gemini stability (1.0 can cause empty responses)
         max_tokens: 8192, // Generous token limit
         top_p: 0.9, // Better sampling for Gemini
+        include_reasoning: true, // Enable thinking/reasoning for supported models
     };
 
     console.log('[OpenRouter] Request payload:', JSON.stringify({

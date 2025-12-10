@@ -1539,7 +1539,14 @@ function setupIpcHandlers(context) {
                     try {
                         const p = JSON.parse(msg);
                         const content = p.choices[0]?.delta?.content || '';
-                        if (content) event.sender.send('llm-stream-data', sId, { type: 'data', content: content });
+                        const reasoning = p.choices[0]?.delta?.reasoning || '';
+                        if (content || reasoning) {
+                            event.sender.send('llm-stream-data', sId, {
+                                type: 'data',
+                                content: content,
+                                reasoning: reasoning
+                            });
+                        }
                     } catch (e) { console.error('[Main] JSON Parse Error:', e.message, 'Line:', line); }
                 }
             });
