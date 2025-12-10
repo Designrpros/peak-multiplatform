@@ -13,7 +13,7 @@ const {
     setSearchMode,
     getSearchMode
 } = require('./sidebar.js');
-const { setupCodeMirror, disposeEditor, setupDiffEditor, getDiffContent, disposeDiffEditor, scanFileForErrors } = require('./editor.js');
+const { setupCodeMirror, disposeEditor, setupDiffEditor, setupUnifiedDiffEditor, getDiffContent, disposeDiffEditor, scanFileForErrors } = require('./editor.js');
 const TerminalView = require('../TerminalView/index.js');
 const { getFileIconHTML } = require('./icons.js');
 const path = require('path');
@@ -158,6 +158,7 @@ async function attachProjectViewListeners(projectData, container) {
     // --- DIFF VIEW LOGIC ---
     let isDiffMode = false;
     let currentDiffFilePath = null; // Track the file being diffed
+    let currentDiffExecutionId = null; // Track the tool execution ID
     const diffContainer = document.createElement('div');
     diffContainer.className = 'diff-view-container';
     diffContainer.style.display = 'none';
@@ -182,6 +183,32 @@ async function attachProjectViewListeners(projectData, container) {
         </div>
     `;
     diffContainer.appendChild(diffToolbar);
+
+    // --- DIFF ACTION LISTENERS ---
+    const diffAcceptBtn = diffToolbar.querySelector('#diff-accept-btn');
+    const diffRejectBtn = diffToolbar.querySelector('#diff-reject-btn');
+
+    if (diffAcceptBtn) {
+        diffAcceptBtn.onclick = () => {
+            if (currentDiffExecutionId) {
+                window.dispatchEvent(new CustomEvent('peak-diff-action', {
+                    detail: { action: 'accept', executionId: currentDiffExecutionId }
+                }));
+                closeDiffView();
+            }
+        };
+    }
+
+    if (diffRejectBtn) {
+        diffRejectBtn.onclick = () => {
+            if (currentDiffExecutionId) {
+                window.dispatchEvent(new CustomEvent('peak-diff-action', {
+                    detail: { action: 'reject', executionId: currentDiffExecutionId }
+                }));
+                closeDiffView();
+            }
+        };
+    }
 
     // Diff Editor Host
     const diffEditorHost = document.createElement('div');
@@ -272,7 +299,35 @@ async function attachProjectViewListeners(projectData, container) {
         }
     };
 
+    const onOpenDiff = (e) => {
+        const { filePath, modifiedContent, executionId } = e.detail;
+        if (!filePath || !modifiedContent) return;
+
+        currentDiffExecutionId = executionId || null;
+
+        // Ensure path is absolute
+        let fullPath = filePath;
+        if (window.currentProjectRoot && !path.isAbsolute(filePath)) {
+            fullPath = path.join(window.currentProjectRoot, filePath);
+        }
+
+        // Load the original file first to get baseline
+        loadFile(fullPath).then(() => {
+            isDiffMode = true;
+            editorPane.style.display = 'none';
+            diffContainer.style.display = 'flex';
+
+            // Get original content from the just-loaded editor
+            const originalContent = editorView ? editorView.state.doc.toString() : '';
+            currentDiffFilePath = fullPath;
+
+            // Use Unified Diff (Inline)
+            setupUnifiedDiffEditor(diffEditorHost, originalContent, modifiedContent, fullPath);
+        });
+    };
+
     // --- AGENTIC TOOL LISTENERS ---
+
 
     // Dedicated AI Terminal (hidden, for AI command execution only)
     let aiTerminalId = null;
@@ -383,7 +438,9 @@ async function attachProjectViewListeners(projectData, container) {
     window.addEventListener('peak-insert-code', onInsertCode);
     window.addEventListener('peak-apply-file', onApplyFile);
     window.addEventListener('peak-run-command', onRunCommand);
+    window.addEventListener('peak-run-command', onRunCommand);
     window.addEventListener('peak-open-file', onOpenFile);
+    window.addEventListener('peak-open-diff', onOpenDiff);
 
     // NEW: Inline Chat Handler
     const onInlineChatSubmit = async (e) => {

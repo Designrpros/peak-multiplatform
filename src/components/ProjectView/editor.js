@@ -468,9 +468,10 @@ function disposeEditor(view) {
 }
 
 // --- DIFF VIEW ---
-const { MergeView } = getModule('@codemirror/merge');
+const { MergeView, unifiedMergeView } = getModule('@codemirror/merge');
 
 let diffView = null;
+let unifiedDiffView = null;
 
 function setupDiffEditor(container, originalContent, modifiedContent, filePath) {
     if (!MergeView) {
@@ -539,6 +540,63 @@ function setupDiffEditor(container, originalContent, modifiedContent, filePath) 
     return diffView;
 }
 
+function setupUnifiedDiffEditor(container, originalContent, modifiedContent, filePath) {
+    if (!unifiedMergeView) {
+        container.innerHTML = `<div class="project-editor-placeholder error">Error: unifiedMergeView failed to load.</div>`;
+        return null;
+    }
+
+    // Cleanup existing
+    if (unifiedDiffView) {
+        unifiedDiffView.destroy();
+        unifiedDiffView = null;
+    }
+
+    const isDarkMode = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    const extensions = [
+        ...getBaseExtensions(),
+        getLanguageExtension(filePath),
+        loadVSCodeTheme(isDarkMode),
+        View.EditorView.editable.of(false), // Unified view usually read-only for comparison?
+        View.EditorView.lineWrapping
+    ];
+
+    // Create a new EditorView with the unifiedMergeView extension
+    const mergeExtension = unifiedMergeView({
+        original: originalContent,
+        highlightChanges: true,
+        mergeControls: false, // We probably just want to see it, not merge interactions yet?
+        gutter: true
+    });
+
+    const startState = State.EditorState.create({
+        doc: modifiedContent, // The MAIN doc is the modified one
+        extensions: [
+            ...extensions,
+            mergeExtension
+        ]
+    });
+
+    unifiedDiffView = new View.EditorView({
+        state: startState,
+        parent: container
+    });
+
+    // Ensure height for scrolling
+    let style = container.querySelector('#unified-diff-style');
+    if (!style) {
+        style = document.createElement('style');
+        style.id = 'unified-diff-style';
+        style.textContent = `
+            .cm-editor { height: 100% !important; }
+            .cm-scroller { overflow: auto !important; }
+        `;
+        container.appendChild(style);
+    }
+
+    return unifiedDiffView;
+}
+
 function getDiffContent() {
     if (!diffView) return null;
     return diffView.b.state.doc.toString();
@@ -548,6 +606,13 @@ function disposeDiffEditor() {
     if (diffView) {
         diffView.destroy();
         diffView = null;
+    }
+}
+
+function disposeUnifiedDiffEditor() {
+    if (unifiedDiffView) {
+        unifiedDiffView.destroy();
+        unifiedDiffView = null;
     }
 }
 
@@ -570,17 +635,6 @@ function scanFileForErrors(content, filePath) {
         // because syntaxLinter expects { state: ... }
         const mockView = { state };
 
-        // We can't use syntaxLinter directly if it relies on view.state.doc.toString() for debug checks
-        // But our syntaxLinter implementation is:
-        /*
-        const syntaxLinter = (view) => {
-            // ...
-            const tree = syntaxTree(view.state);
-            // ...
-        }
-        */
-        // So passing { state } should work.
-
         return syntaxLinter(mockView);
     } catch (e) {
         console.error("Scan error:", e);
@@ -588,4 +642,13 @@ function scanFileForErrors(content, filePath) {
     }
 }
 
-module.exports = { setupCodeMirror, disposeEditor, setupDiffEditor, getDiffContent, disposeDiffEditor, scanFileForErrors };
+module.exports = {
+    setupCodeMirror,
+    disposeEditor,
+    setupDiffEditor,
+    getDiffContent,
+    disposeDiffEditor,
+    setupUnifiedDiffEditor,
+    disposeUnifiedDiffEditor,
+    scanFileForErrors
+};

@@ -38,6 +38,23 @@ class MessageRenderer {
         StateStore.on('tool:execution-completed', (data) => {
             const card = this.container.querySelector(`#tool-confirm-${data.executionId}`);
             if (card) card.remove();
+
+            // Remove from pending map
+            if (this.pendingConfirmations.has(data.executionId)) {
+                this.pendingConfirmations.delete(data.executionId);
+                this._emitPendingUpdates();
+            }
+        });
+
+        // Listen for tool cancellation
+        StateStore.on('tool:cancelled', (data) => {
+            const card = this.container.querySelector(`#tool-confirm-${data.executionId}`);
+            if (card) card.remove();
+
+            if (this.pendingConfirmations.has(data.executionId)) {
+                this.pendingConfirmations.delete(data.executionId);
+                this._emitPendingUpdates();
+            }
         });
     }
 
@@ -1089,9 +1106,19 @@ class MessageRenderer {
         this.container.appendChild(confirmCard);
         this.container.scrollTop = this.container.scrollHeight;
 
-        // Notify that a tool needs confirmation (for InputBar)
+        // Track pending confirmation
+        this.pendingConfirmations.set(executionId, { executionId, toolName, args });
+        this._emitPendingUpdates();
+
+        // Notify that a tool needs confirmation (Legacy/Fallback)
         StateStore.emit('tool:pending-confirmation', { executionId, toolName });
 
+    }
+
+    _emitPendingUpdates() {
+        // Emit the full list of pending confirmations to the UI (e.g., InputBar)
+        const pendingList = Array.from(this.pendingConfirmations.values());
+        StateStore.emit('ui:pending-tools-update', pendingList);
     }
 
     destroy() {

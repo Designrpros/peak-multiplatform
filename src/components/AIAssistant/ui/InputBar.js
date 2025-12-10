@@ -1,5 +1,6 @@
 const ToolRegistry = require('../tools/ToolRegistry');
 const AgentRegistry = require('../core/AgentRegistry');
+const StateStore = require('../core/StateStore');
 
 class InputBar {
     constructor() {
@@ -11,6 +12,11 @@ class InputBar {
         this.triggerChar = null; // '@' or '/'
         this.triggerIndex = -1;
         this.attachments = []; // { type: 'image'|'file', name: string, content: string (base64/text), preview: string (url) }
+
+        // Subscription for pending tools
+        this.unsubscribe = StateStore.on('ui:pending-tools-update', (tools) => {
+            this._handlePendingUpdates(tools);
+        });
     }
 
     render(isFileContextUsable, selectedAgentId, isAgentMode = false) {
@@ -38,7 +44,7 @@ class InputBar {
                 <div class="inspector-input-box">
                     <!-- Review Controls (Moved to Top) -->
                     <div id="ai-review-controls" style="display:none; width:100%; justify-content:space-between; align-items:center; margin-bottom: 8px; background: var(--peak-hover-bg, rgba(255,255,255,0.03)); padding: 6px 8px; border-radius: 6px; box-sizing: border-box;">
-                        <span style="font-size:10px; font-weight:600; opacity:0.7; color:var(--peak-secondary);">PENDING ACTIONS</span>
+                        <span id="ai-review-label" style="font-size:10px; font-weight:600; opacity:0.7; color:var(--peak-secondary); cursor: pointer; transition: opacity 0.2s;">Pending</span>
                         <div style="display:flex; gap:6px;">
                             <button id="ai-review-reject-btn" class="review-btn reject">Reject All</button>
                             <button id="ai-review-accept-btn" class="review-btn accept">Accept All</button>
@@ -286,60 +292,26 @@ class InputBar {
 
         this.container = container;
         this.callbacks = callbacks || {};
-        this.pendingTools = new Set(); // Track pending tool confirmations
 
         this.inputArea = container.querySelector('#ai-assist-input-textarea');
         this.submitBtn = container.querySelector('#ai-assist-submit-btn');
         this.stopBtn = container.querySelector('#ai-assist-stop-btn');
         this.agentSelect = container.querySelector('#ai-assist-agent-select');
         this.modeSelect = container.querySelector('#ai-assist-mode-select');
-        this.toolsBtn = container.querySelector('#ai-assist-tools-btn');
-        this.toolsMenu = container.querySelector('#ai-assist-tools-menu');
-        this.docsBtn = container.querySelector('#ai-assist-docs-btn');
-        this.docsMenu = container.querySelector('#ai-assist-docs-menu');
         this.addFileBtn = container.querySelector('#ai-assist-add-file-btn');
         this.addActiveFileBtn = container.querySelector('#ai-assist-add-active-file-btn');
         this.agentModeBtn = container.querySelector('#ai-assist-agent-mode-btn');
         this.popover = container.querySelector('#ai-suggestion-popover');
 
-        // Listen for tool confirmation events
-        StateStore.on('tool:pending-confirmation', (data) => {
-            this.pendingTools.add(data.executionId);
-            this._updateReviewControls();
+        // Listen for diff actions (Accept/Reject from Diff View)
+        window.addEventListener('peak-diff-action', (e) => {
+            const { action, executionId } = e.detail;
+            if (action === 'accept') {
+                ToolExecutor.confirmExecution(executionId).catch(console.error);
+            } else if (action === 'reject') {
+                ToolExecutor.cancelExecution(executionId);
+            }
         });
-
-        StateStore.on('tool:execution-completed', (data) => {
-            this.pendingTools.delete(data.executionId);
-            this._updateReviewControls();
-        });
-
-        // Accept All / Reject All buttons
-        const acceptAllBtn = container.querySelector('#ai-review-accept-btn');
-        const rejectAllBtn = container.querySelector('#ai-review-reject-btn');
-
-        if (acceptAllBtn) {
-            acceptAllBtn.addEventListener('click', () => {
-                // Approve all pending tools
-                const allTools = Array.from(this.pendingTools);
-                allTools.forEach(executionId => {
-                    ToolExecutor.confirmExecution(executionId);
-                });
-                this.pendingTools.clear();
-                this._updateReviewControls();
-            });
-        }
-
-        if (rejectAllBtn) {
-            rejectAllBtn.addEventListener('click', () => {
-                // Reject all pending tools
-                const allTools = Array.from(this.pendingTools);
-                allTools.forEach(executionId => {
-                    ToolExecutor.cancelExecution(executionId);
-                });
-                this.pendingTools.clear();
-                this._updateReviewControls();
-            });
-        }
 
         // Mode Select Listener
         if (this.modeSelect) {
@@ -936,14 +908,50 @@ class InputBar {
         }
     }
 
-    showReviewControls(count, onAccept, onReject) {
+    showReviewControls(count, onAccept, onReject, files = []) {
+        this.pendingFiles = files; // Store files for navigation
         const indicator = this.container.querySelector('#ai-status-indicator');
         const controls = this.container.querySelector('#ai-review-controls');
+        const label = this.container.querySelector('#ai-review-label');
         const acceptBtn = this.container.querySelector('#ai-review-accept-btn');
         const rejectBtn = this.container.querySelector('#ai-review-reject-btn');
 
         if (indicator) indicator.style.display = 'none';
         if (controls) controls.style.display = 'flex';
+
+        if (label) {
+            const fileCount = (this.pendingFiles && this.pendingFiles.length) || 0;
+
+            if (fileCount > 0) {
+                label.textContent = `${fileCount} File${fileCount !== 1 ? 's' : ''} With Changes`;
+                label.title = "Click to review changes";
+                label.style.cursor = 'pointer';
+                label.style.opacity = '0.7';
+                label.onmouseover = () => label.style.opacity = '1';
+                label.onmouseout = () => label.style.opacity = '0.7';
+
+                label.onclick = (e) => {
+                    e.stopPropagation();
+                    if (this.pendingFiles && this.pendingFiles.length > 0) {
+                        if (this.pendingFiles.length === 1) {
+                            // Single file: open directly
+                            this._openDiffForFile(this.pendingFiles[0]);
+                        } else {
+                            // Multiple files: show menu
+                            this._showFileMenu(e, this.pendingFiles);
+                        }
+                    }
+                };
+            } else {
+                label.textContent = `${count} Pending Action${count !== 1 ? 's' : ''}`;
+                label.title = "Pending Actions";
+                label.style.cursor = 'default';
+                label.style.opacity = '0.7';
+                label.onmouseover = null;
+                label.onmouseout = null;
+                label.onclick = null;
+            }
+        }
 
         if (acceptBtn) {
             acceptBtn.textContent = `Accept All (${count})`;
@@ -967,17 +975,139 @@ class InputBar {
 
         if (indicator) indicator.style.display = 'flex';
         if (controls) controls.style.display = 'none';
+
+        // Clear pending files
+        this.pendingFiles = [];
     }
 
-    _updateReviewControls() {
-        const count = this.pendingTools.size;
+    async _handlePendingUpdates(tools) {
+        const count = tools.length;
 
         if (count > 0) {
-            this.showReviewControls(count, null, null);
+            const ToolExecutor = require('../core/ToolExecutor');
+
+            // Filter for tools that actually modify files
+            const fileModTools = ['update_file', 'create_file', 'edit_file', 'write_to_file', 'replace_file_content', 'multi_replace_file_content'];
+            const fileTools = tools.filter(tool => fileModTools.includes(tool.toolName));
+
+            this.showReviewControls(
+                count,
+                async () => { // Accept All
+                    // Execute valid confirmations
+                    const promises = tools.map(tool => ToolExecutor.confirmExecution(tool.executionId).catch(console.error));
+                    await Promise.all(promises);
+                },
+                () => { // Reject All
+                    tools.forEach(tool => ToolExecutor.cancelExecution(tool.executionId));
+                },
+                fileTools
+            );
         } else {
             this.hideReviewControls();
         }
     }
+
+    destroy() {
+        if (this.unsubscribe) {
+            this.unsubscribe();
+        }
+    }
+
+    _openDiffForFile(file) {
+        if (!file || (!file.path && !file.args?.path)) return;
+
+        const path = file.path || file.args.path;
+        const newContent = file.content || file.args?.content || null;
+        const search = file.args?.search || null;
+        const replace = file.args?.replace || null;
+        const executionId = file.executionId;
+
+        // Dispatch event for ProjectView to handle
+        const event = new CustomEvent('peak-open-diff', {
+            detail: {
+                filePath: path,
+                modifiedContent: newContent,
+                search: search,
+                replace: replace,
+                executionId: executionId
+            }
+        });
+        window.dispatchEvent(event);
+    }
+
+    _showFileMenu(e, files) {
+        // Close existing if any
+        const existingMenu = document.getElementById('ai-review-file-menu');
+        if (existingMenu) existingMenu.remove();
+
+        // Create menu
+        const menu = document.createElement('div');
+        menu.id = 'ai-review-file-menu';
+        menu.style.cssText = `
+            position: fixed;
+            z-index: 2000;
+            background: var(--window-background-color);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+            padding: 4px 0;
+            min-width: 200px;
+            max-height: 300px;
+            overflow-y: auto;
+            color: var(--foreground-color);
+            font-size: 12px;
+        `;
+
+        // Position menu near cursor but safely
+        const x = Math.min(e.clientX, window.innerWidth - 220);
+        const y = Math.min(e.clientY, window.innerHeight - 300);
+        menu.style.left = x + 'px';
+        menu.style.top = y + 'px';
+
+        files.forEach(file => {
+            const filePath = file.path || file.args?.path || 'Unknown file';
+            const fileName = filePath.split('/').pop() || filePath;
+
+            const item = document.createElement('div');
+            item.textContent = fileName;
+            item.title = filePath;
+            item.style.cssText = `
+                padding: 6px 12px;
+                cursor: pointer;
+                display: flex;
+                align-items: center;
+                gap: 8px;
+            `;
+            item.onmouseover = () => {
+                item.style.background = 'var(--list-hover-background, rgba(127,127,127,0.1))';
+                item.style.color = 'var(--peak-primary)';
+            };
+            item.onmouseout = () => {
+                item.style.background = 'transparent';
+                item.style.color = 'var(--foreground-color)';
+            };
+            item.onclick = (ev) => {
+                ev.stopPropagation();
+                this._openDiffForFile(file);
+                menu.remove();
+                document.removeEventListener('click', closeMenu);
+            };
+            menu.appendChild(item);
+        });
+
+        document.body.appendChild(menu);
+
+        // Click outside to close
+        const closeMenu = (ev) => {
+            if (!menu.contains(ev.target)) {
+                menu.remove();
+                document.removeEventListener('click', closeMenu);
+            }
+        };
+        // Delay slightly to avoid immediate trigger
+        setTimeout(() => document.addEventListener('click', closeMenu), 50);
+    }
+
 }
 
 module.exports = InputBar;
