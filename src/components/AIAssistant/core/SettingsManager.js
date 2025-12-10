@@ -21,7 +21,9 @@ const DEFAULT_SETTINGS = {
     autoExecute: false, // Changed to false so tools require approval
     showThinking: true,
     darkMode: true,
+    darkMode: true,
     compactView: false,
+    inlineSuggestions: false, // Ghost Text (Disabled by default)
     // Granular automation permissions (overrides 'assisted' mode)
     automation: {
         run_command: false,
@@ -162,7 +164,7 @@ class SettingsManager {
         }
 
         // Validate boolean settings
-        const boolSettings = ['streaming', 'autoExecute', 'showThinking', 'darkMode', 'compactView'];
+        const boolSettings = ['streaming', 'autoExecute', 'showThinking', 'darkMode', 'compactView', 'inlineSuggestions'];
         for (const key of boolSettings) {
             if (typeof validated[key] !== 'boolean') {
                 validated[key] = DEFAULT_SETTINGS[key];

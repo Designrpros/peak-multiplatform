@@ -6,6 +6,7 @@ const { autocompletion } = require('@codemirror/autocomplete');
 const { linter } = require('@codemirror/lint');
 const { hoverTooltip } = require('@codemirror/view');
 const { keymap } = require('@codemirror/view');
+const { marked } = require('marked'); // Fix: Import marked for rendering
 
 /**
  * Create LSP-powered autocomplete source for CodeMirror
@@ -199,10 +200,27 @@ function createLSPHover(filePath, languageId) {
             let content = '';
             if (typeof hover.contents === 'string') {
                 content = hover.contents;
-            } else if (hover.contents.value) {
-                content = hover.contents.value;
-            } else if (Array.isArray(hover.contents)) {
-                content = hover.contents.map(c => c.value || c).join('\n\n');
+            } else if (hover.contents && typeof hover.contents === 'object') {
+                if (hover.contents.value) {
+                    content = hover.contents.value;
+                } else if (Array.isArray(hover.contents)) {
+                    content = hover.contents.map(c => {
+                        if (typeof c === 'string') return c;
+                        if (c.value) return c.value;
+                        // Handle MarkdownString object structure from VS Code
+                        if (c.language) return '```' + c.language + '\n' + c.value + '\n```';
+
+                        // Fallback processing for other objects to avoid [object Object]
+                        try {
+                            // If it's a known object structure with 'value', use it.
+                            if (c.value) return c.value;
+                            // Last resort: JSON stringify if it looks like data,
+                            // but for hover it's usually MarkdownString.
+                            // If we don't know what it is, ignore it or show simplified view.
+                            return '';
+                        } catch (e) { return ''; }
+                    }).filter(s => s).join('\n\n');
+                }
             }
 
             if (!content) return null;
@@ -218,10 +236,13 @@ function createLSPHover(filePath, languageId) {
                     dom.style.fontSize = '12px';
                     dom.style.lineHeight = '1.4';
 
-                    // Render markdown if available
-                    if (window.marked) {
-                        dom.innerHTML = window.marked.parse(content);
-                    } else {
+                    // Convert content to string and parse markdown
+                    try {
+                        // marked.parse returns a string (HTML)
+                        // marked (v12+) might be async or require specific usage, but usually marked.parse(str) works
+                        dom.innerHTML = marked.parse(String(content));
+                    } catch (e) {
+                        console.error('[LSP] Markdown parsing failed:', e);
                         dom.textContent = content;
                     }
 

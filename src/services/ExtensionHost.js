@@ -11,6 +11,16 @@ const { EventEmitter } = require('events');
 const VSCodeAPI = require('./VSCodeAPI');
 const LSPClient = require('./LSPClient');
 
+// FIX: Polyfill crypto for extensions (like Jupyter) that rely on it
+const crypto = require('crypto');
+if (!global.crypto) {
+    global.crypto = {
+        getRandomValues: (buffer) => crypto.randomFillSync(buffer),
+        randomUUID: () => crypto.randomUUID(),
+        ...crypto
+    };
+}
+
 /**
  * Extension Host
  * Manages loading, activation, and lifecycle of VSCode extensions
@@ -21,6 +31,11 @@ class ExtensionHost extends EventEmitter {
         this.extensions = new Map(); // extensionId -> ExtensionDescriptor
         this.activatedExtensions = new Set();
         this.api = new VSCodeAPI(this);
+
+        console.log('[ExtensionHost] Methods check:', {
+            sendRegisteredViews: typeof this.sendRegisteredViews,
+            activateExtensionByView: typeof this.activateExtensionByView
+        });
         this.commandRegistry = new Map();
         this.lspClient = new LSPClient(); // Initialize LSPClient
         this.extensionsDir = path.join(os.homedir(), '.peak', 'extensions');
@@ -63,6 +78,56 @@ class ExtensionHost extends EventEmitter {
 
     // ... (existing methods)
 
+    sendRegisteredViews() {
+        const containers = [];
+        const views = {}; // containerId -> views[]
+        this.viewToExtensionMap = new Map(); // viewId -> extensionId
+
+        for (const [id, ext] of this.extensions) {
+            if (this.disabledExtensions.has(id)) continue;
+            const contrib = ext.manifest.contributes;
+            if (contrib) {
+                if (contrib.viewsContainers && contrib.viewsContainers.activitybar) {
+                    contrib.viewsContainers.activitybar.forEach(vc => {
+                        containers.push({
+                            id: vc.id,
+                            title: vc.title,
+                            icon: vc.icon ? path.join(ext.extensionPath, vc.icon) : null,
+                            extensionId: id
+                        });
+                    });
+                }
+                if (contrib.views) {
+                    for (const [containerId, viewList] of Object.entries(contrib.views)) {
+                        if (!views[containerId]) views[containerId] = [];
+                        viewList.forEach(v => {
+                            views[containerId].push({
+                                id: v.id,
+                                name: v.name,
+                                extensionId: id
+                            });
+                            this.viewToExtensionMap.set(v.id, id);
+                        });
+                    }
+                }
+            }
+        }
+
+        if (this.api && global.mainWindow && !global.mainWindow.isDestroyed()) {
+            global.mainWindow.webContents.send('vscode:views-contribution', { containers, views });
+        }
+    }
+
+    async activateExtensionByView(viewId) {
+        const extensionId = this.viewToExtensionMap.get(viewId);
+        if (extensionId) {
+            console.log(`[ExtensionHost] Activating extension ${extensionId} for view ${viewId}`);
+            await this.activateExtension(extensionId);
+            return true;
+        }
+        return false;
+    }
+
     ensureExtensionsDirectory() {
         if (!fs.existsSync(this.extensionsDir)) {
             fs.mkdirSync(this.extensionsDir, { recursive: true });
@@ -78,10 +143,10 @@ class ExtensionHost extends EventEmitter {
         try {
             if (fs.existsSync(this.disabledExtensionsFile)) {
                 const disabledList = JSON.parse(fs.readFileSync(this.disabledExtensionsFile, 'utf8'));
-                // FORCE ENABLE TYPESCRIPT: Filter it out of the disabled list
-                const filteredList = disabledList.filter(id => id !== 'vscode.typescript-language-features');
+                // FORCE ENABLE TYPESCRIPT & LLAMA: Filter it out of the disabled list
+                const filteredList = disabledList.filter(id => id !== 'vscode.typescript-language-features' && id !== 'ggml-org.llama-vscode');
                 if (filteredList.length !== disabledList.length) {
-                    console.log('[ExtensionHost] Force-enabled vscode.typescript-language-features');
+                    console.log('[ExtensionHost] Force-enabled vscode.typescript-language-features / ggml-org.llama-vscode');
                 }
                 this.disabledExtensions = new Set(filteredList);
                 console.log(`[ExtensionHost] Loaded ${this.disabledExtensions.size} disabled extensions`);
@@ -171,6 +236,13 @@ class ExtensionHost extends EventEmitter {
         };
     }
 
+    // FIX: Add resolveWebviewView method
+    async resolveWebviewView(viewId, webviewView) {
+        if (this.api) {
+            await this.api.resolveWebviewView(viewId, webviewView);
+        }
+    }
+
     setWorkspaceRoot(rootPath) {
         if (this.workspaceRoot !== rootPath) {
             console.log(`[ExtensionHost] Workspace root changed: ${this.workspaceRoot} -> ${rootPath}`);
@@ -211,6 +283,8 @@ class ExtensionHost extends EventEmitter {
             if (this.api) {
                 this.api.emitExtensionsChange();
             }
+
+            this.sendRegisteredViews();
 
             return descriptor;
         } catch (err) {
@@ -253,6 +327,18 @@ class ExtensionHost extends EventEmitter {
                         storageUri: Uri.file(path.join(this.storageDir, descriptor.id, 'workspace')),
                         globalStorageUri: Uri.file(path.join(this.storageDir, descriptor.id, 'global')),
                         logUri: Uri.file(path.join(this.storageDir, descriptor.id, 'log')),
+                        // FIX: Add legacy string paths for compatibility
+                        storagePath: path.join(this.storageDir, descriptor.id, 'workspace'),
+                        globalStoragePath: path.join(this.storageDir, descriptor.id, 'global'),
+                        // FIX: Add extensionMode (Production = 1)
+                        extensionMode: 1,
+                        // FIX: Add secrets mock
+                        secrets: {
+                            get: async (key) => { return undefined; },
+                            store: async (key, value) => { },
+                            delete: async (key) => { },
+                            onDidChange: (listener) => { return { dispose: () => { } }; }
+                        },
                         globalState: {
                             get: (key, defaultValue) => this.globalState?.get(key) ?? defaultValue,
                             update: (key, value) => {
@@ -288,7 +374,7 @@ class ExtensionHost extends EventEmitter {
                         descriptor.exports = await extensionModule.activate(context);
                         console.log(`[ExtensionHost] Successfully activated ${extensionId}`);
                     } catch (activationError) {
-                        console.error(`[ExtensionHost] Error during ${extensionId} activation (allowing partial initialization):`, activationError.message);
+                        console.error(`[ExtensionHost] Error during ${extensionId} activation (allowing partial initialization):`, activationError);
                         // Don't rethrow - allow extension to be marked as active even if activation had errors
                         descriptor.exports = {}; // Provide empty exports
                     }
@@ -543,7 +629,6 @@ class ExtensionHost extends EventEmitter {
 
     /**
      * Get icon theme definition
-     * @param {string} themeId
      */
     async getIconTheme(themeId) {
         // Find extension that contributes this theme
@@ -575,6 +660,7 @@ class ExtensionHost extends EventEmitter {
         }
         return null;
     }
+
 
     /**
      * Dispose all extensions and clean up

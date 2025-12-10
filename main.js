@@ -1,5 +1,9 @@
-// src/main.js
-const { app, BrowserWindow, Tray, globalShortcut, ipcMain, dialog, Menu, shell, clipboard, nativeImage } = require('electron');
+const { app, BrowserWindow, Tray, globalShortcut, ipcMain, dialog, Menu, shell, clipboard, nativeImage, protocol } = require('electron');
+
+// Register custom protocol privileges
+protocol.registerSchemesAsPrivileged([
+    { scheme: 'vscode-resource', privileges: { secure: true, standard: true, supportFetchAPI: true, corsEnabled: true } }
+]);
 const path = require('path');
 const os = require('os');
 const fs = require('fs');
@@ -210,6 +214,20 @@ app.whenReady().then(() => {
         const v = settingsStore.get('isDockVisible', false);
         app.setActivationPolicy(v ? 'regular' : 'accessory');
     }
+
+    // Register vscode-resource protocol
+    protocol.registerFileProtocol('vscode-resource', (request, callback) => {
+        // Handle vscode-resource:// and vscode-resource: (some environments strip slashes)
+        const url = request.url.replace(/^vscode-resource:(\/\/)?/, '');
+        const decodedUrl = decodeURIComponent(url);
+        console.log('[Main] vscode-resource request:', request.url, '->', decodedUrl);
+        try {
+            return callback(decodedUrl);
+        } catch (error) {
+            console.error('[Main] Failed to handle vscode-resource request:', error);
+        }
+    });
+
     createTray();
     registerHotKey();
     createWindow();

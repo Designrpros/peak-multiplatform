@@ -19,7 +19,9 @@ class ExtensionMarketplace {
         console.log('[ExtensionMarketplace] Constructor called', container);
         this.container = container;
         this.extensions = [];
-        this.activeTab = 'installed'; // 'installed' or 'browse'
+        this.activeTab = 'installed'; // 'installed', 'browse', or 'previews'
+        this.activeViews = new Map(); // viewId -> { viewId, title, containerId }
+        this.activePreviewId = null;
 
         // Only initialize BundledExtensions if it loaded successfully
         if (BundledExtensions) {
@@ -136,6 +138,10 @@ class ExtensionMarketplace {
                             <i data-lucide="search" style="width:14px; height:14px;"></i>
                             Browse
                         </button>
+                        <button class="extension-tab" data-tab="previews" style="flex:1; justify-content:center;">
+                            <i data-lucide="eye" style="width:14px; height:14px;"></i>
+                            Previews
+                        </button>
                     </div>
                 </div>
 
@@ -170,6 +176,17 @@ class ExtensionMarketplace {
                                     </div>
                                 </div>
                             </div>
+                        </div>
+                    </div>
+
+                    <!-- Previews Tab -->
+                    <div class="extension-tab-content" id="ext-previews" style="height:100%; flex-direction:column;">
+                        <div class="previews-tab-bar" style="display:flex; overflow-x:auto; padding:8px 8px 0 8px; border-bottom:1px solid var(--border-color); gap:4px; flex-shrink:0; white-space:nowrap; background:var(--header-background);">
+                            <!-- Dynamic Preview Tabs -->
+                            <div class="no-previews-msg" style="padding:8px; font-size:11px; color:var(--peak-secondary);">No active extension views</div>
+                        </div>
+                        <div class="previews-container" style="flex:1; position:relative; overflow:hidden;">
+                            <!-- Webviews will be injected here -->
                         </div>
                     </div>
                 </div>
@@ -213,6 +230,11 @@ class ExtensionMarketplace {
                 flex-direction: column;
                 background: var(--window-background-color);
                 position: relative;
+            }
+
+            /* Custom display for Previews tab */
+            #ext-previews.active {
+                display: flex !important;
             }
 
             .extension-modal {
@@ -603,10 +625,21 @@ class ExtensionMarketplace {
     attachListeners() {
         // Tab switching
         this.container.addEventListener('click', (e) => {
+            // Main Tabs
             const tab = e.target.closest('.extension-tab');
             if (tab) {
                 const tabName = tab.dataset.tab;
                 this.switchTab(tabName);
+                if (tabName === 'previews' && !this.activePreviewId && this.activeViews.size > 0) {
+                    // Activate first preview if none active
+                    this._activatePreview(this.activeViews.keys().next().value);
+                }
+            }
+
+            // Preview Tabs (Horizontal Scroll)
+            const previewTab = e.target.closest('.preview-tab-btn');
+            if (previewTab) {
+                this._activatePreview(previewTab.dataset.viewId);
             }
 
             // Install from .vsix
@@ -655,6 +688,142 @@ class ExtensionMarketplace {
                 this.closeModal();
             }
         });
+
+        // --- Webview Listeners (Moved from ProjectView) ---
+
+        // 1. Views Contribution
+        ipcRenderer.on('vscode:views-contribution', (e, { containers, views }) => {
+            console.log('[ExtensionMarketplace] Received views contribution:', { containers, views });
+
+            // Collect all views that should be in Previews
+            // Typically these are sidebar views not in Explorer
+            containers.forEach(container => {
+                if (container.id === 'workbench.view.explorer') return;
+
+                const containerViews = views[container.id] || [];
+                // Handle complex IDs logic if needed (borrowed from ProjectView)
+                if (containerViews.length === 0) {
+                    // Check fallbacks...
+                }
+
+                containerViews.forEach(view => {
+                    if (!this.activeViews.has(view.id)) {
+                        this.activeViews.set(view.id, {
+                            id: view.id,
+                            title: container.title || view.name || view.id,
+                            html: '' // Cache HTML
+                        });
+
+                        // Request Activation
+                        ipcRenderer.invoke('vscode:activate-view', view.id);
+                        ipcRenderer.send('vscode:resolve-webview-view', view.id);
+                    }
+                });
+            });
+            this._updatePreviewTabs();
+        });
+
+        // 1b. Webview Panels (Dynamic, e.g. Jupyter Variable Explorer)
+        ipcRenderer.on('vscode:create-webview-panel', (e, { panelId, viewType, title }) => {
+            console.log('[ExtensionMarketplace] Received create-webview-panel:', { panelId, title });
+
+            if (!this.activeViews.has(panelId)) {
+                this.activeViews.set(panelId, {
+                    id: panelId,
+                    title: title || viewType,
+                    html: '',
+                    isPanel: true // Mark as panel
+                });
+                this._updatePreviewTabs();
+
+                // Auto-switch to new panel
+                this._activatePreview(panelId);
+
+                // Ensure Previews tab is active
+                this.switchTab('previews');
+            }
+        });
+
+        ipcRenderer.on('vscode:dispose-webview-panel', (e, { panelId }) => {
+            console.log('[ExtensionMarketplace] Received dispose-webview-panel:', panelId);
+            if (this.activeViews.has(panelId)) {
+                this.activeViews.delete(panelId);
+                if (this.activePreviewId === panelId) {
+                    this.activePreviewId = null;
+                    this._renderPreviewContent(null, '');
+                }
+                this._updatePreviewTabs();
+            }
+        });
+
+        ipcRenderer.on('vscode:reveal-webview-panel', (e, { panelId, preserveFocus }) => {
+            console.log('[ExtensionMarketplace] Received reveal-webview-panel:', panelId);
+            if (this.activeViews.has(panelId)) {
+                this._activatePreview(panelId);
+                this.switchTab('previews');
+            }
+        });
+
+        // 2. Webview HTML Update
+        ipcRenderer.on('vscode:webview-update', (e, { viewId, html }) => {
+            console.log(`[ExtensionMarketplace] Webview Update for ${viewId}`);
+
+            if (!this.activeViews.has(viewId)) {
+                // If we get an update for an unknown view, add it (e.g. dynamic)
+                this.activeViews.set(viewId, { id: viewId, title: viewId, html: '' });
+                this._updatePreviewTabs();
+            }
+
+            const viewState = this.activeViews.get(viewId);
+            viewState.html = html;
+
+            // Update DOM if this is the active view (or if it's the first one and none active)
+            if (this.activePreviewId === viewId || !this.activePreviewId) {
+                this._renderPreviewContent(viewId, html);
+                if (!this.activePreviewId) this._activatePreview(viewId);
+            }
+        });
+
+        // 3. Webview IPC (Extension -> Webview)
+        ipcRenderer.on('vscode:webview-post-message', (e, { viewId, message }) => {
+            // Forward to iframe
+            const iframe = this.container.querySelector(`#preview-iframe-${viewId}`);
+            if (iframe && iframe.contentWindow) {
+                iframe.contentWindow.postMessage(message, '*');
+            }
+        });
+
+        ipcRenderer.on('vscode:webview-view-registered', (e, { viewId }) => {
+            console.log('[ExtensionMarketplace] Received webview-view-registered:', viewId);
+            if (!this.activeViews.has(viewId)) {
+                this.activeViews.set(viewId, { id: viewId, title: viewId, html: '' });
+                this._updatePreviewTabs();
+
+                // FIX: Trigger resolution of the view content (this was missing!)
+                ipcRenderer.send('vscode:resolve-webview-view', viewId);
+
+                // If this is the only view, activate it
+                if (!this.activePreviewId) {
+                    this._activatePreview(viewId);
+                }
+            }
+        });
+
+        // 4. Listen for iframe messages (Webview -> Extension)
+        window.addEventListener('message', (event) => {
+            if (event.data) {
+                if (event.data.type === 'vscode:msg') {
+                    const { viewId, data } = event.data;
+                    ipcRenderer.send(`vscode:webview-message:${viewId}`, data);
+                } else if (event.data.type === 'vscode:log') {
+                    const { level, message } = event.data;
+                    ipcRenderer.send('vscode:log', { level, message });
+                }
+            }
+        });
+
+        // Initial Request
+        ipcRenderer.send('vscode:request-views');
     }
 
     async showExtensionDetails(extensionId) {
@@ -789,83 +958,109 @@ class ExtensionMarketplace {
         }
     }
 
-    async showExtensionDetails(extensionId) {
-        const readme = await ipcRenderer.invoke('extensions:get-readme', extensionId);
+    // --- Helper Methods ---
 
-        // Remove existing modal if any
-        const existingModal = this.container.querySelector('.extension-details-modal');
-        if (existingModal) existingModal.remove();
+    _updatePreviewTabs() {
+        const tabBar = this.container.querySelector('.previews-tab-bar');
+        if (!tabBar) return;
 
-        const modal = document.createElement('div');
-        modal.className = 'extension-details-modal';
-        modal.style.cssText = `
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(0, 0, 0, 0.5);
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            z-index: 1000;
+        if (this.activeViews.size === 0) {
+            tabBar.innerHTML = `<div class="no-previews-msg" style="padding:8px; font-size:11px; color:var(--peak-secondary);">No active extension views</div>`;
+            return;
+        }
+
+        tabBar.innerHTML = '';
+        this.activeViews.forEach((view, id) => {
+            const btn = document.createElement('button');
+            btn.className = `preview-tab-btn ${this.activePreviewId === id ? 'active' : ''}`;
+            btn.dataset.viewId = id;
+            btn.textContent = view.title;
+            btn.style.cssText = `
+                padding: 6px 12px;
+                background: ${this.activePreviewId === id ? 'var(--peak-accent)' : 'transparent'};
+                color: ${this.activePreviewId === id ? 'white' : 'var(--peak-secondary)'};
+                border: none;
+                border-radius: 4px; /* Pill shape handled by borderRadius */
+                font-size: 11px;
+                cursor: pointer;
+                border-bottom: ${this.activePreviewId === id ? 'none' : '2px solid transparent'}; 
+                /* Actually pill style is requested? "horizontal scrollable tabbar" usually implies pills or tabs. */
+                white-space: nowrap;
+            `;
+            tabBar.appendChild(btn);
+        });
+    }
+
+    _activatePreview(viewId) {
+        if (!this.activeViews.has(viewId)) return;
+        this.activePreviewId = viewId;
+
+        // Update Tabs
+        this._updatePreviewTabs();
+
+        // Show Content
+        const viewState = this.activeViews.get(viewId);
+        if (viewState.html) {
+            this._renderPreviewContent(viewId, viewState.html);
+        } else {
+            const container = this.container.querySelector('.previews-container');
+            container.innerHTML = `<div style="padding:20px; text-align:center;">Loading ${viewState.title}...</div>`;
+        }
+    }
+
+    _renderPreviewContent(viewId, html) {
+        const container = this.container.querySelector('.previews-container');
+        if (!container) return;
+
+        // Bridge Script (Same as ProjectView)
+        const bridgeScript = `
+            <script>
+                window.acquireVsCodeApi = () => {
+                    return {
+                        postMessage: (msg) => {
+                            window.parent.postMessage({ type: 'vscode:msg', viewId: '${viewId}', data: msg }, '*');
+                        },
+                        setState: () => {},
+                        getState: () => ({})
+                    };
+                };
+                
+                window.onerror = (message, source, lineno, colno, error) => {
+                    window.parent.postMessage({ type: 'vscode:log', level: 'error', viewId: '${viewId}', message: \`[Webview Error] \${message}\` }, '*');
+                };
+
+                const _log = console.log;
+                console.log = (...args) => {
+                    _log(...args);
+                    window.parent.postMessage({ type: 'vscode:log', level: 'info', viewId: '${viewId}', message: args.join(' ') }, '*');
+                };
+            </script>
         `;
 
-        const content = document.createElement('div');
-        content.className = 'extension-details-content';
-        content.style.cssText = `
-            background: var(--bg-primary);
-            width: 80%;
-            height: 80%;
-            border-radius: 8px;
-            padding: 20px;
-            display: flex;
-            flex-direction: column;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
-            border: 1px solid var(--border-color);
-        `;
+        // Check if iframe exists to prevent full reload flickers
+        let iframe = container.querySelector(`#preview-iframe-${viewId}`);
+        if (!iframe) {
+            // Clear container (assuming one view at a time for now)
+            container.innerHTML = '';
 
-        const header = document.createElement('div');
-        header.style.cssText = `
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 15px;
-            padding-bottom: 15px;
-            border-bottom: 1px solid var(--border-color);
-        `;
-        header.innerHTML = `
-            <h2 style="margin: 0;">Extension Details: ${extensionId}</h2>
-            <button class="btn-close" style="background: none; border: none; cursor: pointer; color: var(--text-primary);">
-                <i data-lucide="x"></i>
-            </button>
-        `;
+            iframe = document.createElement('iframe');
+            iframe.id = `preview-iframe-${viewId}`;
+            iframe.style.cssText = "width:100%; height:100%; border:none; display:block;";
+            iframe.setAttribute('sandbox', 'allow-scripts allow-forms allow-same-origin allow-popups allow-downloads');
+            container.appendChild(iframe);
+        }
 
-        const body = document.createElement('div');
-        body.style.cssText = `
-            flex: 1;
-            overflow-y: auto;
-            white-space: pre-wrap;
-            font-family: monospace;
-            padding: 10px;
-            background: var(--bg-secondary);
-            border-radius: 4px;
-        `;
-        body.textContent = readme || 'No README available.';
+        // Logic to update srcdoc
+        let safeHtml = html.replace(/<meta\s+http-equiv=["']Content-Security-Policy["'][^>]*>/gi, '<!-- CSP Stripped -->');
 
-        content.appendChild(header);
-        content.appendChild(body);
-        modal.appendChild(content);
-        this.container.appendChild(modal);
+        // Inject Permissive CSP
+        const cspMeta = `<meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: vscode-resource: https:; img-src 'self' vscode-resource: https: data: blob:; font-src 'self' vscode-resource: data: https:;">`;
+        safeHtml = cspMeta + safeHtml;
 
-        if (window.lucide) window.lucide.createIcons();
+        safeHtml = safeHtml.replace(/src="file:\/\/vscode-resource/g, 'src="vscode-resource');
+        safeHtml = safeHtml.replace(/href="file:\/\/vscode-resource/g, 'href="vscode-resource');
 
-        // Close handlers
-        const closeBtn = header.querySelector('.btn-close');
-        closeBtn.onclick = () => modal.remove();
-        modal.onclick = (e) => {
-            if (e.target === modal) modal.remove();
-        };
+        iframe.srcdoc = bridgeScript + safeHtml;
     }
 }
 

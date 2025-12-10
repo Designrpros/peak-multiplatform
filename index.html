@@ -3,11 +3,12 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; 
-                   script-src 'self' https://unpkg.com https://cdn.jsdelivr.net 'unsafe-eval' 'unsafe-inline'; 
-                   style-src 'self' 'unsafe-inline' 'unsafe-hashes'; 
-                   img-src 'self' data: https: blob:; 
-                   frame-src 'self' https:;">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self' vscode-resource:; 
+                   script-src 'self' https://unpkg.com https://cdn.jsdelivr.net 'unsafe-eval' 'unsafe-inline' vscode-resource:; 
+                   style-src 'self' 'unsafe-inline' 'unsafe-hashes' vscode-resource:; 
+                   img-src 'self' data: https: blob: vscode-resource:; 
+                   font-src 'self' vscode-resource:;
+                   frame-src 'self' https: vscode-resource:;">
 
     <title>Peak Browser</title>
 

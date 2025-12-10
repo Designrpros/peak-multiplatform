@@ -1,1 +1,1 @@
-Setup LSP for /Users/vegarberentsen/keep/studio-test-2/TODO.md at 2025-12-10T01:03:49.846Z
+Setup LSP for /Users/vegarberentsen/keep/studio-test-2/src/app/layout.tsx at 2025-12-10T18:34:31.115Z

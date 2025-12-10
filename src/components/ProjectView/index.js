@@ -14,6 +14,7 @@ const {
     getSearchMode
 } = require('./sidebar.js');
 const { setupCodeMirror, disposeEditor, setupDiffEditor, setupUnifiedDiffEditor, getDiffContent, disposeDiffEditor, scanFileForErrors } = require('./editor.js');
+const { renderNotebookEditor } = require('./NotebookEditor.js');
 const TerminalView = require('../TerminalView/index.js');
 const { getFileIconHTML } = require('./icons.js');
 const path = require('path');
@@ -39,8 +40,8 @@ function renderProjectViewHTML(projectData, container) {
                 <div class="sidebar-progress-container">
                     <div class="sidebar-progress-line"></div>
                 </div>
-                <div class="file-tree-container file-tree-scroll-container">
-                </div>
+                
+                <div id="sidebar-view-files" class="file-tree-container file-tree-scroll-container"></div>
                 <div class="project-sidebar-footer" style="display:flex; align-items:center; gap:6px; padding: 8px;">
                     <input type="text" placeholder="Search files..." class="sidebar-filter-input" style="flex:1;">
                     <button id="search-options-btn" class="sidebar-icon-btn" title="Search Mode: Files" style="background:transparent; border:none; cursor:pointer; color:var(--peak-secondary); padding:4px; display:flex; align-items:center; justify-content:center; border-radius: 4px; transition: background 0.2s;">
@@ -459,23 +460,40 @@ async function attachProjectViewListeners(projectData, container) {
         const systemInstruction = `
 You are an expert coding assistant.
 The user wants to edit the following file: "${context.filePath}".
+
+FILE CONTENT:
+\`\`\`
+${context.fileContent}
+\`\`\`
+
 ${context.selection ? `They have selected this code:\n\`\`\`\n${context.selection}\n\`\`\`\n` : ''}
 ${diagnosticsInfo}
 
 USER PROMPT: ${prompt}
 
-INSTRUCTIONS:
-1. Output ONLY the new code for the file (or the replacement for the selection).
-2. Do NOT use <thinking> tags.
-3. Do NOT use markdown code blocks. Just raw code.
-4. If the file is large, output the FULL file content with changes applied.
+CRITICAL INSTRUCTIONS:
+1. You must output the **FULL CONTENT** of the file, not just the changes. The system uses a diff view that requires the complete file to function correctly.
+2. Even if the change is small (e.g., fixing a typo), you MUST output the entire file with the fix applied.
+3. Do NOT use <thinking> tags.
+4. Do NOT use markdown code blocks. Just raw code.
+5. Do NOT include conversational text.
 `;
 
         const inlineSessionId = 'inline-' + Date.now();
         console.log("Inline Chat Request:", prompt);
 
+        // Get Model from Settings (via localStorage shared with AIAssistant)
+        let model = 'openrouter/auto';
+        try {
+            const settings = JSON.parse(localStorage.getItem('peak-ai-settings') || '{}');
+            if (settings.model) model = settings.model;
+        } catch (e) {
+            console.warn('[ProjectView] Failed to read AI settings:', e);
+        }
+        console.log('[ProjectView] Using model for inline edit:', model);
+
         // Send request
-        window.ipcRenderer.send('llm-stream-request', inlineSessionId, 'openrouter/auto', [
+        window.ipcRenderer.send('llm-stream-request', inlineSessionId, model, [
             { role: 'system', content: systemInstruction },
             { role: 'user', content: "Generate the code." }
         ]);
@@ -492,6 +510,7 @@ INSTRUCTIONS:
 
                 // Trigger Diff View with the result
                 let cleanCode = accumulatedCode.trim();
+                // Strip markdown code blocks if AI ignored instructions
                 if (cleanCode.startsWith('```')) {
                     cleanCode = cleanCode.replace(/^```[a-z]*\n/, '').replace(/```$/, '');
                 }
@@ -499,9 +518,17 @@ INSTRUCTIONS:
                 window.dispatchEvent(new CustomEvent('peak-apply-file', {
                     detail: cleanCode
                 }));
+
+                // Signal UI to close (and stop loading)
+                window.dispatchEvent(new CustomEvent('peak-inline-chat-complete', { detail: { success: true } }));
+
             } else if (data.type === 'error') {
                 console.error("Inline Chat Error:", data.message);
                 window.ipcRenderer.removeListener('llm-stream-data', onStreamData);
+
+                // Signal UI to close (or maybe keep open with error? For now close to reset state)
+                window.dispatchEvent(new CustomEvent('peak-inline-chat-complete', { detail: { success: false, error: data.message } }));
+                alert(`AI Generation Failed: ${data.message}`);
             }
         };
 
@@ -509,6 +536,74 @@ INSTRUCTIONS:
     };
 
     window.addEventListener('peak-inline-chat-submit', onInlineChatSubmit);
+
+    // NEW: Inline Suggestion (Ghost Text) Handler
+    const onFetchSuggestion = async (e) => {
+        const { prefix, suffix, filePath, callback } = e.detail;
+        if (!callback) return;
+
+        // Use a simpler prompting strategy for completion
+        const systemInstruction = `
+You are a code completion engine. 
+Your task is to complete the code at the cursor position.
+You are provided with the text BEFORE the cursor (PREFIX) and AFTER the cursor (SUFFIX).
+Output ONLY the code required to fill the gap.
+Do NOT repeat the prefix or suffix.
+Do NOT use markdown blocks.
+Do NOT allow conversational text.
+If no completion is needed (e.g. valid end of statement), output empty string.
+`;
+
+        const userPrompt = `
+PREFIX:
+${prefix}
+
+SUFFIX:
+${suffix}
+
+COMPLETE:
+`;
+
+        const suggestionSessionId = 'suggest-' + Date.now();
+
+        // Get Model
+        let model = 'openrouter/auto';
+        try {
+            const settings = JSON.parse(localStorage.getItem('peak-ai-settings') || '{}');
+            if (settings.model) model = settings.model;
+        } catch (e) { }
+
+        // Send request
+        window.ipcRenderer.send('llm-stream-request', suggestionSessionId, model, [
+            { role: 'system', content: systemInstruction },
+            { role: 'user', content: userPrompt }
+        ]);
+
+        let accumulatedCode = '';
+        const onStreamData = (event, id, data) => {
+            if (id !== suggestionSessionId) return;
+
+            if (data.type === 'data') {
+                accumulatedCode += data.content;
+            } else if (data.type === 'end') {
+                window.ipcRenderer.removeListener('llm-stream-data', onStreamData);
+                let cleanCode = accumulatedCode;
+                // Basic cleanup
+                if (cleanCode.startsWith('```')) {
+                    cleanCode = cleanCode.replace(/^```[a-z]*\n?/, '').replace(/```$/, '');
+                }
+                callback(cleanCode);
+            } else if (data.type === 'error') {
+                window.ipcRenderer.removeListener('llm-stream-data', onStreamData);
+                console.warn("Suggestion failed:", data.message);
+                callback(null);
+            }
+        };
+
+        window.ipcRenderer.on('llm-stream-data', onStreamData);
+    };
+
+    window.addEventListener('peak-fetch-suggestion', onFetchSuggestion);
 
     // onCreateFile is deprecated/removed
     // window.addEventListener('peak-create-file', onCreateFile);
@@ -747,7 +842,18 @@ INSTRUCTIONS:
                 el.id = `term-instance-${t.id}`;
                 el.style.cssText = "width:100%;height:100%;";
                 terminalContentArea.appendChild(el);
-                const vTab = { id: t.id, content: { type: 'terminal', data: { cwd: projectData.path, initialCommand: '' } } };
+
+                // Use options if provided (from extension), otherwise defaults
+                const opts = t.options || {};
+                const termData = {
+                    cwd: opts.cwd || projectData.path,
+                    initialCommand: '',
+                    shellPath: opts.shellPath,
+                    shellArgs: opts.shellArgs,
+                    env: opts.env
+                };
+
+                const vTab = { id: t.id, content: { type: 'terminal', data: termData } };
                 TerminalView.renderTerminalHTML(vTab, el);
                 const termObj = TerminalView.attachTerminalListeners(vTab, el);
                 terminalCleanups[t.id] = termObj; // Store the whole object
@@ -775,6 +881,7 @@ INSTRUCTIONS:
         if (cb) {
             e.stopPropagation();
             const id = cb.dataset.id;
+            // Support both internal numeric IDs and extension string IDs
             const idx = terminalState.terminals.findIndex(t => t.id === id);
             if (idx > -1) {
                 if (terminalCleanups[id] && terminalCleanups[id].cleanup) terminalCleanups[id].cleanup();
@@ -793,13 +900,223 @@ INSTRUCTIONS:
         }
     });
 
+    // --- VSCODE EXTENSION TERMINAL EVENTS ---
+    const onCreateExtensionTerminal = (e, options) => {
+        const { id, name, shellPath, shellArgs, cwd, env } = options;
+        console.log('[ProjectView] Creating extension terminal:', options);
+
+        // Add to state
+        terminalState.terminals.push({
+            id: id,
+            name: name || 'Ext Term'
+        });
+
+        // Ensure panel is visible
+        if (terminalPanel.style.display === 'none') {
+            document.querySelector('.link-toggle-terminal')?.click();
+        }
+
+        // Render and show
+        const idx = terminalState.terminals.length - 1;
+
+        // Helper to delay showing until element is created by showTerminal logic or manual create here
+        // Actually showTerminal handles creating the element if it doesn't exist
+
+        // But showTerminal expects the element to NOT exist if it's new.
+        // Wait, showTerminal(idx) creates the element `term-instance-${t.id}`.
+        // We need to pass the custom shell/args to it.
+        // Currently showTerminal uses:
+        // const vTab = { id: t.id, content: { type: 'terminal', data: { cwd: projectData.path, initialCommand: '' } } };
+
+        // WE NEED TO OVERRIDE THIS for extension terminals.
+        // Let's store the options in a map or on the terminal object in state.
+        terminalState.terminals[idx].options = { shellPath, shellArgs, cwd: cwd || projectData.path, env };
+
+        showTerminal(idx);
+    };
+
+    const onExtensionTerminalSendText = (e, { id, text }) => {
+        if (terminalCleanups[id]) {
+            // Access the terminal instance directly if possible, or send via IPC if it's just a proxy
+            // terminalCleanups[id] is the return from attachTerminalListeners
+            // It might have a `sendText` method? 
+            // Looking at TerminalView logic (which I need to check), usually it connects to xterm.
+            // Usually we send data to the backend PTY.
+            window.ipcRenderer.send('terminal-write', id, text);
+        }
+    };
+
+    const onExtensionTerminalShow = (e, { id, preserveFocus }) => {
+        const idx = terminalState.terminals.findIndex(t => t.id === id);
+        if (idx > -1) {
+            showTerminal(idx);
+            if (!preserveFocus) {
+                // user wants focus
+                // terminalCleanups[id]?.focus();
+            }
+        }
+    };
+
+    const onExtensionTerminalDispose = (e, { id }) => {
+        const idx = terminalState.terminals.findIndex(t => t.id === id);
+        if (idx > -1) {
+            // Close logic
+            if (terminalCleanups[id] && terminalCleanups[id].cleanup) terminalCleanups[id].cleanup();
+            delete terminalCleanups[id];
+            document.getElementById(`term-instance-${id}`)?.remove();
+            terminalState.terminals.splice(idx, 1);
+            if (terminalState.terminals.length === 0) terminalState.activeIndex = -1;
+            else if (idx <= terminalState.activeIndex) terminalState.activeIndex = Math.max(0, terminalState.activeIndex - 1);
+            showTerminal(terminalState.activeIndex);
+        }
+    };
+
+    if (window.ipcRenderer) {
+        window.ipcRenderer.on('vscode:create-terminal', onCreateExtensionTerminal);
+        window.ipcRenderer.on('vscode:terminal-send-text', onExtensionTerminalSendText);
+        window.ipcRenderer.on('vscode:terminal-show', onExtensionTerminalShow);
+        window.ipcRenderer.on('vscode:terminal-dispose', onExtensionTerminalDispose);
+    }
+
+    // --- Sidebar View Switching has been removed --- 
+    // Extensions are now handled in AI Assistant -> Extensions -> Previews
+
+
     tabButtons.forEach(btn => btn.addEventListener('click', () => {
         const target = btn.dataset.target;
         tabButtons.forEach(b => b.classList.toggle('active', b.dataset.target === target));
-        views.forEach(v => v.classList.toggle('active', v.id === `view-${target}`));
-        if (target === 'terminal' && terminalState.activeIndex >= 0) showTerminal(terminalState.activeIndex);
+
+        document.querySelectorAll('.panel-view').forEach(v => v.classList.remove('active'));
+        document.getElementById(`view-${target}`).classList.add('active');
+
+        if (target === 'terminal' && terminalState.activeIndex >= 0) {
+            const t = terminalState.terminals[terminalState.activeIndex];
+            if (t && terminalCleanups[t.id]) terminalCleanups[t.id].fit();
+        }
     }));
 
+
+    // --- Editor Webview Panels ---
+    // Minimal implementation: Overlay editor with webview
+
+    window.ipcRenderer.on('vscode:create-webview-panel', (e, { panelId, viewType, title }) => {
+        console.log('[ProjectView] Creating webview panel:', title);
+
+        // 1. Hide Editor / Show Webview Container
+        const editorPane = container.querySelector('.project-editor-pane');
+        const titleBarPath = container.querySelector('.current-file-path');
+
+        // Create container if not exists
+        let panelContainer = document.getElementById(`panel-container-${panelId}`);
+        if (!panelContainer) {
+            // Check if we have a wrapper for panels
+            let wrapper = container.querySelector('#webview-panels-wrapper');
+            if (!wrapper) {
+                wrapper = document.createElement('div');
+                wrapper.id = 'webview-panels-wrapper';
+                wrapper.style.cssText = "flex:1; display:flex; flex-direction:column; overflow:hidden; display:none;";
+                // Insert after editor pane
+                editorPane.parentNode.appendChild(wrapper);
+            }
+
+            panelContainer = document.createElement('div');
+            panelContainer.id = `panel-container-${panelId}`; // Use consistent naming
+            // Map this ID to what update expects (viewId). update uses EXT-VIEW by default? 
+            // Wait, the update listener uses `ext-view-${viewId}`.
+            // I should probably use `ext-view-${panelId}` to reuse the update logic!
+            // Update logic: `const viewDiv = document.getElementById(ext-view-${viewId});`
+
+            panelContainer.id = `ext-view-${panelId}`;
+            panelContainer.className = 'webview-panel';
+            panelContainer.style.cssText = "flex:1; width:100%; height:100%; display:flex; flex-direction:column; background:var(--bg-color);";
+
+            const iframe = document.createElement('iframe');
+            iframe.style.cssText = "flex:1; width:100%; height:100%; border:none;";
+            iframe.sandbox = "allow-scripts allow-same-origin allow-forms allow-popups allow-downloads"; // Relaxed sandbox for panels
+            panelContainer.appendChild(iframe);
+
+            wrapper.appendChild(panelContainer);
+
+            // Add close button to title bar when active
+            // For now, simpler: Just show it.
+        }
+
+        // Switch to this panel
+        showWebviewPanel(panelId, title);
+    });
+
+    window.ipcRenderer.on('vscode:reveal-webview-panel', (e, { panelId }) => {
+        showWebviewPanel(panelId);
+    });
+
+    window.ipcRenderer.on('vscode:dispose-webview-panel', (e, { panelId }) => {
+        const el = document.getElementById(`ext-view-${panelId}`);
+        if (el) el.remove();
+        // If it was active, switch back to code
+        if (activeWebviewPanel === panelId) {
+            closeWebviewPanel();
+        }
+    });
+
+    let activeWebviewPanel = null;
+
+    const showWebviewPanel = (panelId, title) => {
+        activeWebviewPanel = panelId;
+        const editorPane = container.querySelector('.project-editor-pane');
+        const wrapper = container.querySelector('#webview-panels-wrapper');
+        const titleBarPath = container.querySelector('.current-file-path');
+
+        if (editorPane) editorPane.style.display = 'none';
+        if (wrapper) {
+            wrapper.style.display = 'flex';
+            Array.from(wrapper.children).forEach(el => {
+                el.style.display = el.id === `ext-view-${panelId}` ? 'flex' : 'none';
+            });
+        }
+
+        if (titleBarPath && title) {
+            titleBarPath.dataset.originalText = titleBarPath.innerText;
+            titleBarPath.innerText = `Preview: ${title}`;
+            // Add close button capability
+            const actions = container.querySelector('.editor-actions');
+            let closeBtn = actions.querySelector('.close-webview-btn');
+            if (!closeBtn) {
+                closeBtn = document.createElement('a');
+                closeBtn.href = '#';
+                closeBtn.className = 'editor-action-link close-webview-btn';
+                closeBtn.innerHTML = '<i data-lucide="x"></i>';
+                closeBtn.onclick = (ev) => {
+                    ev.preventDefault();
+                    // Dispose on close? Or just hide? VS Code disposes usually on tab close.
+                    // For now, let's just hide and let extension manage lifecycle or user explicit close.
+                    // Actually, if user clicks close, we should dispose.
+                    window.ipcRenderer.send('vscode:dispose-webview-panel-req', { panelId });
+                    closeWebviewPanel();
+                };
+                actions.prepend(closeBtn);
+                if (window.lucide) window.lucide.createIcons();
+            }
+        }
+    };
+
+    const closeWebviewPanel = () => {
+        activeWebviewPanel = null;
+        const editorPane = container.querySelector('.project-editor-pane');
+        const wrapper = container.querySelector('#webview-panels-wrapper');
+        const titleBarPath = container.querySelector('.current-file-path');
+
+        if (editorPane) editorPane.style.display = 'block'; // Or flex/whatever
+        // Check computed style of editorPane to be sure, usually block or flex
+
+        if (wrapper) wrapper.style.display = 'none';
+
+        if (titleBarPath && titleBarPath.dataset.originalText) {
+            titleBarPath.innerText = titleBarPath.dataset.originalText;
+        }
+
+        // Remove close btn
+        container.querySelector('.close-webview-btn')?.remove();
+    };
     const toggleTerminal = () => {
         const isVisible = terminalPanel.style.display !== 'none';
         terminalPanel.style.display = isVisible ? 'none' : 'flex';
@@ -896,6 +1213,7 @@ INSTRUCTIONS:
                 return;
             }
 
+
             if (videoExts.includes(ext)) {
                 activeFilePath = filePath; window.currentFilePath = filePath;
                 // Render Video
@@ -905,6 +1223,22 @@ INSTRUCTIONS:
                     </div>
                 `;
                 updateGlobalContext();
+                return;
+            }
+
+            // NEW: Jupyter Notebook Support (and .peak format)
+            if (ext === '.ipynb' || ext === '.peak') {
+                const content = await window.ipcRenderer.invoke('project:read-file', filePath);
+                activeFilePath = filePath; window.currentFilePath = filePath;
+
+                if (typeof content === 'string') {
+                    renderNotebookEditor(editorPane, content, filePath);
+                    // Still update context but maybe not as "text" for AI
+                    currentFileContent = content;
+                    updateGlobalContext();
+                } else {
+                    editorPane.innerHTML = '<div class="error">Error reading notebook</div>';
+                }
                 return;
             }
 

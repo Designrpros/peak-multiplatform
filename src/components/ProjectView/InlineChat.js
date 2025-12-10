@@ -16,6 +16,7 @@ class InlineChatWidget extends WidgetType {
 
     toDOM() {
         const container = document.createElement('div');
+        this.container = container; // key for access
         container.className = 'inline-chat-widget';
         container.style.cssText = `
             position: absolute;
@@ -60,7 +61,7 @@ class InlineChatWidget extends WidgetType {
 
         const btnSubmit = document.createElement('button');
         btnSubmit.textContent = "Generate";
-        btnSubmit.className = "msg-action-btn"; // Reuse existing class
+        btnSubmit.className = "msg-action-btn btn-submit";
         btnSubmit.style.background = "var(--peak-accent)";
         btnSubmit.style.color = "white";
         btnSubmit.onclick = () => this.submit(input.value);
@@ -78,11 +79,43 @@ class InlineChatWidget extends WidgetType {
         // Auto-focus
         setTimeout(() => input.focus(), 50);
 
+        // Listen for completion to close
+        this.completionHandler = () => this.close();
+        window.addEventListener('peak-inline-chat-complete', this.completionHandler);
+
         return container;
+    }
+
+    setLoading(isLoading) {
+        if (!this.container) return;
+        const btn = this.container.querySelector('.btn-submit');
+        const input = this.container.querySelector('textarea');
+
+        if (btn) {
+            if (isLoading) {
+                btn.textContent = 'Generating...';
+                btn.disabled = true;
+                btn.style.opacity = '0.7';
+                btn.style.cursor = 'wait';
+            } else {
+                btn.textContent = 'Generate';
+                btn.disabled = false;
+                btn.style.opacity = '1';
+                btn.style.cursor = 'pointer';
+            }
+        }
+        if (input) {
+            input.disabled = isLoading;
+            if (isLoading) input.style.opacity = '0.7';
+            else input.style.opacity = '1';
+        }
     }
 
     submit(prompt) {
         if (!prompt.trim()) return;
+
+        // Set Loading State
+        this.setLoading(true);
 
         // Get context
         const state = this.view.state;
@@ -101,7 +134,13 @@ class InlineChatWidget extends WidgetType {
             detail: { prompt, context }
         }));
 
-        this.close();
+        // DO NOT CLOSE IMMEDIATELY - Wait for 'peak-inline-chat-complete'
+    }
+
+    destroy(dom) {
+        if (this.completionHandler) {
+            window.removeEventListener('peak-inline-chat-complete', this.completionHandler);
+        }
     }
 
     close() {

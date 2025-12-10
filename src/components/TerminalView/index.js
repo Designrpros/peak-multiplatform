@@ -216,8 +216,13 @@ function attachTerminalListeners(tab, containerWrapper) {
     console.log(`[Terminal] Requesting terminal creation for ID: ${tabId}, CWD: ${tab.content.data.cwd}`);
     try {
         const cwd = (tab.content && tab.content.data && tab.content.data.cwd) || '';
+        const shellPath = (tab.content && tab.content.data && tab.content.data.shellPath);
+        const shellArgs = (tab.content && tab.content.data && tab.content.data.shellArgs);
+        const env = (tab.content && tab.content.data && tab.content.data.env);
+
         window.ipcRenderer.send('log:info', `[Terminal] Requesting terminal creation for ID: ${tabId}, CWD: ${cwd}`);
-        window.ipcRenderer.send('terminal-create', tabId, cwd);
+        // Send all options to main process
+        window.ipcRenderer.send('terminal-create', tabId, cwd, shellPath, shellArgs, env);
     } catch (err) {
         window.ipcRenderer.send('log:info', `[Terminal] Failed to request terminal creation: ${err.message}`);
         console.error(err);

@@ -202,12 +202,54 @@ class VSCodeAPI {
             extensions: this.getExtensionsAPI(),
             languages: this.getLanguagesAPI(),
             tasks: this.getTasksAPI(),
+            // FIX: Mock SCM (Source Control) namespace
+            scm: {
+                createSourceControl: (id, label, rootUri) => ({
+                    dispose: () => { },
+                    inputBox: { value: '' },
+                    count: 0,
+                    statusBarCommands: [],
+                    acceptInputCommand: undefined,
+                    quickDiffProvider: undefined,
+                    commitTemplate: '',
+                    createResourceGroup: (id, label) => ({
+                        dispose: () => { },
+                        resourceStates: []
+                    })
+                }),
+                inputBox: { value: '' }
+            },
             chat: {
                 registerMappedEditsProvider: () => ({ dispose: () => { } })
             }, // FIX: Mock chat namespace
             notebooks: {
-                createRendererMessaging: () => ({ postMessage: () => { }, onDidReceiveMessage: () => ({ dispose: () => { } }) })
-            }, // FIX: Mock notebooks namespace
+                createRendererMessaging: () => ({ postMessage: () => { }, onDidReceiveMessage: () => ({ dispose: () => { } }) }),
+                registerSignatureHelpProvider: (selector, provider, ...triggerCharacters) => ({ dispose: () => { } }),
+                registerDocumentSemanticTokensProvider: (selector, provider, legend) => ({ dispose: () => { } }),
+                registerCodeLensProvider: (selector, provider) => ({ dispose: () => { } }),
+                getLanguages: () => Promise.resolve(['python', 'javascript', 'json']),
+                registerDocumentLinkProvider: (selector, provider) => ({ dispose: () => { } }),
+                createNotebookControllerDetectionTask: (type) => ({ dispose: () => { } }),
+                registerKernelSourceActionProvider: (selector, provider) => ({ dispose: () => { } }),
+                createNotebookController: (id, notebookType, label) => {
+                    return {
+                        dispose: () => { },
+                        updateNotebookAffinity: (notebook, affinity) => { }
+                    };
+                }
+            },
+            // FIX: Mock debug namespace for Jupyter
+            debug: {
+                onDidTerminateDebugSession: () => ({ dispose: () => { } }),
+                onDidStartDebugSession: () => ({ dispose: () => { } }),
+                onDidChangeActiveDebugSession: () => ({ dispose: () => { } }),
+                onDidReceiveDebugSessionCustomEvent: () => ({ dispose: () => { } }),
+                startDebugging: () => Promise.resolve(false),
+                registerDebugAdapterDescriptorFactory: () => ({ dispose: () => { } }),
+                registerDebugAdapterTrackerFactory: () => ({ dispose: () => { } }),
+                activeDebugSession: undefined,
+                breakpoints: [] // Added breakpoints array
+            },
             // Types and enums
             StatusBarAlignment: { Left: 1, Right: 2 },
             OverviewRulerLane: { Left: 1, Center: 2, Right: 4, Full: 7 },
@@ -249,6 +291,12 @@ class VSCodeAPI {
             l10n: {
                 t: (message, ...args) => {
                     // Simple placeholder replacement
+                    if (typeof message === 'string') return message;
+                    if (message && message.message) return message.message;
+                    return '';
+                },
+                // FIX: Add translate alias for compatibility with some extensions/polyfills
+                translate: (message, ...args) => {
                     if (typeof message === 'string') return message;
                     if (message && message.message) return message.message;
                     return '';
@@ -345,7 +393,7 @@ class VSCodeAPI {
 
                 lineAt(lineOrPosition) {
                     const line = typeof lineOrPosition === 'number' ? lineOrPosition : lineOrPosition.line;
-                    const text = this._getText();
+                    const text = this._getText() || '';
                     const lines = text.split(/\r\n|\r|\n/);
                     const lineText = lines[line] || '';
 
@@ -453,6 +501,37 @@ class VSCodeAPI {
             TabInputNotebook: class TabInputNotebook { constructor(uri, notebookType) { this.uri = uri; this.notebookType = notebookType; } },
             TabInputNotebookDiff: class TabInputNotebookDiff { constructor(original, modified, notebookType) { this.original = original; this.modified = modified; this.notebookType = notebookType; } },
             TabInputTerminal: class TabInputTerminal { constructor() { } },
+            TabInputInteractiveWindow: class TabInputInteractiveWindow { constructor(uri, inputBoxUri) { this.uri = uri; this.inputBoxUri = inputBoxUri; } },
+
+            // FIX: Add WebviewPanel and WebviewView classes
+            WebviewPanel: class WebviewPanel {
+                constructor(viewType, title, viewColumn, options) {
+                    this.viewType = viewType;
+                    this.title = title;
+                    this.webview = {
+                        html: '',
+                        onDidReceiveMessage: () => ({ dispose: () => { } }),
+                        postMessage: () => Promise.resolve(true),
+                        asWebviewUri: (uri) => uri
+                    };
+                    this.onDidDispose = () => ({ dispose: () => { } });
+                    this.onDidChangeViewState = () => ({ dispose: () => { } });
+                }
+                dispose() { }
+            },
+            WebviewView: class WebviewView {
+                constructor(viewType) {
+                    this.viewType = viewType;
+                    this.webview = {
+                        html: '',
+                        onDidReceiveMessage: () => ({ dispose: () => { } }),
+                        postMessage: () => Promise.resolve(true),
+                        asWebviewUri: (uri) => uri
+                    };
+                    this.onDidDispose = () => ({ dispose: () => { } });
+                    this.onDidChangeVisibility = () => ({ dispose: () => { } });
+                }
+            },
             Range: class Range {
                 constructor(startLine, startChar, endLine, endChar) {
                     this.start = { line: startLine, character: startChar };
@@ -689,15 +768,17 @@ class VSCodeAPI {
             });
         };
 
-        const proxiedAPI = createDeepProxy(api, 'vscode');
+        const proxy = createDeepProxy(api, 'vscode');
 
-        // FIX: Cache the API for future calls
-        this._cachedAPI = proxiedAPI;
-        return proxiedAPI;
+        // FIX: Add default property for ESM interop (bundled extensions often check .default)
+        proxy.default = proxy;
+
+        this._cachedAPI = proxy;
+        return proxy;
     }
 
     /**
-     * vscode.window namespace
+     * getExtension implementation
      */
     getWindowAPI() {
         const self = this;
@@ -740,6 +821,22 @@ class VSCodeAPI {
                 return Promise.resolve(items[0]);
             },
 
+            // FIX: Mock createTextEditorDecorationType for Jupyter
+            createTextEditorDecorationType: (options) => {
+                return {
+                    key: 'mock-decoration-type-' + Math.random().toString(36),
+                    dispose: () => { }
+                };
+            },
+
+            // FIX: Mock onDidChangeActiveNotebookEditor for Jupyter
+            onDidChangeActiveNotebookEditor: (listener) => {
+                return { dispose: () => { } };
+            },
+
+            // FIX: Mock activeNotebookEditor
+            activeNotebookEditor: undefined,
+
             createStatusBarItem: (alignment = 1, priority = 0) => {
                 const item = {
                     text: '',
@@ -750,7 +847,15 @@ class VSCodeAPI {
                     show: function () {
                         self._statusBarItems.push(this);
                         if (global.mainWindow && !global.mainWindow.isDestroyed()) {
-                            global.mainWindow.webContents.send('vscode:status-bar-update', self._statusBarItems);
+                            // FIX: Map to DTO to avoid "Failed to serialize arguments" with circular function refs
+                            const statusBarsDTO = self._statusBarItems.map(sb => ({
+                                text: sb.text,
+                                tooltip: sb.tooltip,
+                                command: sb.command,
+                                alignment: sb.alignment,
+                                priority: sb.priority
+                            }));
+                            global.mainWindow.webContents.send('vscode:status-bar-update', statusBarsDTO);
                         }
                     },
                     hide: function () {
@@ -759,7 +864,15 @@ class VSCodeAPI {
                             self._statusBarItems.splice(index, 1);
                         }
                         if (global.mainWindow && !global.mainWindow.isDestroyed()) {
-                            global.mainWindow.webContents.send('vscode:status-bar-update', self._statusBarItems);
+                            // FIX: Map to DTO
+                            const statusBarsDTO = self._statusBarItems.map(sb => ({
+                                text: sb.text,
+                                tooltip: sb.tooltip,
+                                command: sb.command,
+                                alignment: sb.alignment,
+                                priority: sb.priority
+                            }));
+                            global.mainWindow.webContents.send('vscode:status-bar-update', statusBarsDTO);
                         }
                     },
                     dispose: function () {
@@ -767,27 +880,80 @@ class VSCodeAPI {
                     }
                 };
                 return item;
-                return item;
             },
 
             createWebviewPanel: (viewType, title, showOptions, options) => {
                 console.log('[VSCode Window] createWebviewPanel:', viewType, title);
-                return {
-                    webview: {
-                        html: '',
-                        onDidReceiveMessage: (listener) => ({ dispose: () => { } }),
-                        postMessage: (message) => Promise.resolve(true),
-                        asWebviewUri: (uri) => uri,
-                        cspSource: 'vscode-webview-resource:'
+                const panelId = self._cachedAPI.idGenerator ? self._cachedAPI.idGenerator() : Date.now().toString();
+
+                // Notify Renderer to create a tab
+                if (global.mainWindow && !global.mainWindow.isDestroyed()) {
+                    global.mainWindow.webContents.send('vscode:create-webview-panel', {
+                        panelId,
+                        viewType,
+                        title,
+                        showOptions
+                    });
+                }
+
+                const webview = {
+                    html: '',
+                    options: options || {},
+                    asWebviewUri: (uri) => self._cachedAPI.Uri.parse(`vscode-resource://${uri.path}`),
+                    cspSource: 'vscode-webview-resource:',
+                    onDidReceiveMessage: (listener) => {
+                        const channel = `vscode:webview-message:${panelId}`;
+                        const handler = (event, data) => listener(data);
+                        if (global.mainWindow) {
+                            const { ipcMain } = require('electron');
+                            ipcMain.on(channel, handler);
+                        }
+                        return {
+                            dispose: () => {
+                                const { ipcMain } = require('electron');
+                                ipcMain.removeListener(channel, handler);
+                            }
+                        };
                     },
+                    postMessage: (message) => {
+                        if (global.mainWindow && !global.mainWindow.isDestroyed()) {
+                            global.mainWindow.webContents.send('vscode:webview-post-message', { viewId: panelId, message });
+                        }
+                        return Promise.resolve(true);
+                    }
+                };
+
+                // Proxy HTML
+                let currentHtml = '';
+                Object.defineProperty(webview, 'html', {
+                    get: () => currentHtml,
+                    set: (val) => {
+                        currentHtml = val;
+                        if (global.mainWindow && !global.mainWindow.isDestroyed()) {
+                            // Reuse unified update channel
+                            global.mainWindow.webContents.send('vscode:webview-update', { viewId: panelId, html: val });
+                        }
+                    }
+                });
+
+                return {
+                    webview,
                     title,
                     viewType,
                     active: true,
                     visible: true,
                     onDidChangeViewState: (listener) => ({ dispose: () => { } }),
                     onDidDispose: (listener) => ({ dispose: () => { } }),
-                    reveal: (column, preserveFocus) => { },
-                    dispose: () => { }
+                    reveal: (column, preserveFocus) => {
+                        if (global.mainWindow && !global.mainWindow.isDestroyed()) {
+                            global.mainWindow.webContents.send('vscode:reveal-webview-panel', { panelId, column, preserveFocus });
+                        }
+                    },
+                    dispose: () => {
+                        if (global.mainWindow && !global.mainWindow.isDestroyed()) {
+                            global.mainWindow.webContents.send('vscode:dispose-webview-panel', { panelId });
+                        }
+                    }
                 };
             },
 
@@ -799,6 +965,108 @@ class VSCodeAPI {
             registerCustomEditorProvider: (viewType, provider, options) => {
                 console.log('[VSCode Window] registerCustomEditorProvider:', viewType);
                 return { dispose: () => { } };
+            },
+
+            registerWebviewViewProvider: (viewId, provider, options) => {
+                console.log('[VSCode Window] registerWebviewViewProvider:', viewId);
+
+                // Store provider
+                if (!self._webviewViewProviders) {
+                    self._webviewViewProviders = new Map();
+                }
+                self._webviewViewProviders.set(viewId, provider);
+
+                // Notify Renderer that a view provider is registered
+                // This allows the UI to decide if it should show a button/tab for this view
+                if (global.mainWindow && !global.mainWindow.isDestroyed()) {
+                    global.mainWindow.webContents.send('vscode:webview-view-registered', { viewId });
+                }
+
+                return {
+                    dispose: () => {
+                        self._webviewViewProviders.delete(viewId);
+                    }
+                };
+            },
+
+
+            // Internal helper to trigger view resolution
+            _resolveWebviewView: (viewId) => {
+                console.log('[VSCode Window] _resolveWebviewView called for:', viewId);
+                const provider = self._webviewViewProviders ? self._webviewViewProviders.get(viewId) : null;
+                if (!provider) {
+                    console.warn(`[VSCode Window] No provider found for viewId: ${viewId}`);
+                    return;
+                }
+
+                // Create WebviewView object
+                const webviewView = {
+                    viewType: viewId,
+                    webview: {
+                        html: '',
+                        options: {},
+                        asWebviewUri: (uri) => {
+                            // Basic transform
+                            return self._cachedAPI.Uri.parse(`vscode-resource://${uri.path}`);
+                        },
+                        cspSource: 'vscode-webview-resource:',
+                        onDidReceiveMessage: (listener) => {
+                            // Listen for messages from Renderer -> Extension
+                            const channel = `vscode:webview-message:${viewId}`;
+                            const handler = (event, data) => {
+                                console.log(`[VSCode Webview ${viewId}] Received message:`, data);
+                                listener(data);
+                            };
+                            if (global.mainWindow) {
+                                const { ipcMain } = require('electron');
+                                ipcMain.on(channel, handler);
+                            }
+                            return {
+                                dispose: () => {
+                                    const { ipcMain } = require('electron');
+                                    ipcMain.removeListener(channel, handler);
+                                }
+                            };
+                        },
+                        postMessage: (message) => {
+                            // Send message Extension -> Renderer
+                            console.log(`[VSCode Webview ${viewId}] Posting message:`, message);
+                            if (global.mainWindow && !global.mainWindow.isDestroyed()) {
+                                global.mainWindow.webContents.send('vscode:webview-post-message', { viewId, message });
+                            }
+                            return Promise.resolve(true);
+                        }
+                    },
+                    visible: true,
+                    onDidDispose: (listener) => ({ dispose: () => { } }),
+                    onDidChangeVisibility: (listener) => ({ dispose: () => { } }),
+                    show: (preserveFocus) => { }
+                };
+
+                // Proxy html setter to send updates to Renderer
+                let currentHtml = '';
+                Object.defineProperty(webviewView.webview, 'html', {
+                    get: () => currentHtml,
+                    set: (val) => {
+                        currentHtml = val;
+                        console.log(`[VSCode Webview ${viewId}] HTML set (length: ${val.length})`);
+                        if (global.mainWindow && !global.mainWindow.isDestroyed()) {
+                            // Send unified event
+                            global.mainWindow.webContents.send('vscode:webview-update', { viewId, html: val });
+                        }
+                    }
+                });
+
+                // Call provider
+                const context = { state: undefined };
+                const token = { isCancellationRequested: false, onCancellationRequested: () => ({ dispose: () => { } }) };
+
+                try {
+                    provider.resolveWebviewView(webviewView, context, token);
+                    console.log(`[VSCode Window] resolveWebviewView resolved for ${viewId}`);
+                } catch (err) {
+                    console.error(`[VSCode Window] Error resolving webview view ${viewId}:`, err);
+                }
             },
 
             createLogOutputChannel: (name, options) => {
@@ -841,17 +1109,123 @@ class VSCodeAPI {
                 });
             },
 
-            activeTextEditor: null, // Will be set by editor integration
+            activeTextEditor: undefined, // Will be set by editor integration
+            activeTextEditor: undefined, // Will be set by editor integration
+            // FIX: explicitly define activeNotebookEditor as undefined for now, 
+            // but ensure it's not null to match some checks, or use a getter if we want to mock one
+            get activeNotebookEditor() {
+                return undefined;
+            },
+
+            // FIX: Add visibleNotebookEditors
+            get visibleNotebookEditors() {
+                return [];
+            },
+
 
             visibleTextEditors: [],
             terminals: [], // FIX: Add terminals array
             activeTerminal: undefined,
+
+            // Implement createTerminal
+            createTerminal: (nameOrOptions, shellPath, shellArgs) => {
+                console.log('[VSCode Window] createTerminal called:', nameOrOptions);
+                const self = this;
+
+                let name, shell, args, cwd, env;
+                if (typeof nameOrOptions === 'object') {
+                    name = nameOrOptions.name;
+                    shell = nameOrOptions.shellPath;
+                    args = nameOrOptions.shellArgs;
+                    cwd = nameOrOptions.cwd;
+                    env = nameOrOptions.env;
+                } else {
+                    name = nameOrOptions;
+                    shell = shellPath;
+                    args = shellArgs;
+                }
+
+                // Generate a unique ID for this terminal
+                const termId = `ext-term-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+
+                // Create the Terminal object that the extension interacts with
+                const terminal = {
+                    name: name || 'Extension Terminal',
+                    processId: Promise.resolve(undefined), // Will be updated if possible
+                    creationOptions: typeof nameOrOptions === 'object' ? nameOrOptions : { name, shellPath, shellArgs },
+                    exitStatus: undefined,
+                    state: { isInteractedWith: false },
+
+                    // Methods
+                    sendText: (text, addNewLine = true) => {
+                        console.log(`[VSCode Terminal ${name}] sendText:`, text);
+                        if (global.mainWindow && !global.mainWindow.isDestroyed()) {
+                            global.mainWindow.webContents.send('vscode:terminal-send-text', {
+                                id: termId,
+                                text: text + (addNewLine ? '\n' : '') // Add newline if requested (default true)
+                            });
+                        }
+                    },
+                    show: (preserveFocus) => {
+                        console.log(`[VSCode Terminal ${name}] show`);
+                        if (global.mainWindow && !global.mainWindow.isDestroyed()) {
+                            global.mainWindow.webContents.send('vscode:terminal-show', { id: termId, preserveFocus });
+                        }
+                    },
+                    hide: () => {
+                        console.log(`[VSCode Terminal ${name}] hide`);
+                        if (global.mainWindow && !global.mainWindow.isDestroyed()) {
+                            global.mainWindow.webContents.send('vscode:terminal-hide', { id: termId });
+                        }
+                    },
+                    dispose: () => {
+                        console.log(`[VSCode Terminal ${name}] dispose`);
+                        // Remove from terminals list
+                        const idx = self.getWindowAPI().terminals.indexOf(terminal);
+                        if (idx > -1) self.getWindowAPI().terminals.splice(idx, 1);
+
+                        if (global.mainWindow && !global.mainWindow.isDestroyed()) {
+                            global.mainWindow.webContents.send('vscode:terminal-dispose', { id: termId });
+                        }
+                    }
+                };
+
+                // Add to managed list
+                self.getWindowAPI().terminals.push(terminal);
+                // Set as active (extensions usually expect this, or we track focus)
+                self.getWindowAPI().activeTerminal = terminal;
+
+                // Send request to Renderer to create the actual terminal UI
+                if (global.mainWindow && !global.mainWindow.isDestroyed()) {
+                    global.mainWindow.webContents.send('vscode:create-terminal', {
+                        id: termId,
+                        name: terminal.name,
+                        shellPath: shell,
+                        shellArgs: args,
+                        cwd: cwd,
+                        env: env
+                    });
+                }
+
+                return terminal;
+            },
 
             // TODO: Implement proper event emitter logic for these if needed
             onDidChangeActiveTextEditor: (listener, thisArgs, disposables) => ({ dispose: () => { } }),
             onDidChangeVisibleTextEditors: (listener, thisArgs, disposables) => ({ dispose: () => { } }),
             onDidChangeTextEditorVisibleRanges: (listener, thisArgs, disposables) => ({ dispose: () => { } }),
             onDidChangeTextEditorSelection: (listener, thisArgs, disposables) => ({ dispose: () => { } }),
+
+            // Terminal events
+            onDidOpenTerminal: (listener) => ({ dispose: () => { } }),
+            onDidCloseTerminal: (listener) => ({ dispose: () => { } }),
+            onDidChangeActiveTerminal: (listener) => ({ dispose: () => { } }),
+
+            // Notebook events
+            onDidChangeVisibleNotebookEditors: (listener) => ({ dispose: () => { } }),
+            onDidChangeActiveNotebookEditor: (listener) => ({ dispose: () => { } }),
+            onDidChangeNotebookEditorSelection: (listener) => ({ dispose: () => { } }),
+
 
 
             withProgress: (options, task) => {
@@ -990,6 +1364,26 @@ class VSCodeAPI {
             },
             getConfiguration: (section, resource) => {
                 console.log(`[VSCodeAPI] getConfiguration called for section: '${section}'`);
+                // FIX: Look up configuration defaults from loaded extensions
+                const getConfigurationDefault = (key) => {
+                    const fullKey = section ? `${section}.${key}` : key;
+                    if (self.extensionHost && self.extensionHost.extensions) {
+                        for (const ext of self.extensionHost.extensions.values()) {
+                            const configContrib = ext.manifest.contributes?.configuration;
+                            if (configContrib) {
+                                // Configuration can be object (single) or array (multiple scopes)
+                                const configs = Array.isArray(configContrib) ? configContrib : [configContrib];
+                                for (const config of configs) {
+                                    if (config.properties && config.properties[fullKey] && config.properties[fullKey].default !== undefined) {
+                                        return config.properties[fullKey].default;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    return undefined;
+                };
+
                 const config = {
                     // Default TypeScript configuration to enable features
                     'typescript.suggest.completeFunctionCalls': true,
@@ -1009,13 +1403,35 @@ class VSCodeAPI {
                         if (fullKey in config) {
                             return config[fullKey];
                         }
+                        // Try to find default in extensions
+                        const extDefault = getConfigurationDefault(key);
+                        if (extDefault !== undefined) return extDefault;
+
                         return defaultValue;
                     },
                     has: (key) => {
                         const fullKey = section ? `${section}.${key}` : key;
-                        return fullKey in config;
+                        if (fullKey in config) return true;
+                        // Check defaults
+                        return getConfigurationDefault(key) !== undefined;
                     },
-                    inspect: (key) => undefined,
+                    inspect: (key) => {
+                        const fullKey = section ? `${section}.${key}` : key;
+                        const value = config[fullKey];
+                        const defaultValue = getConfigurationDefault(key);
+                        return {
+                            key: fullKey,
+                            defaultValue,
+                            globalValue: value,
+                            workspaceValue: undefined,
+                            workspaceFolderValue: undefined,
+                            defaultLanguageValue: undefined,
+                            globalLanguageValue: undefined,
+                            workspaceLanguageValue: undefined,
+                            workspaceFolderLanguageValue: undefined,
+                            languageIds: undefined
+                        };
+                    },
                     update: (key, value) => Promise.resolve()
                 };
             },
@@ -1110,7 +1526,8 @@ class VSCodeAPI {
             },
             get rootPath() {
                 return self.extensionHost.workspaceRoot;
-            }
+            },
+
         };
     }
     /**
@@ -1274,7 +1691,14 @@ class VSCodeAPI {
                     };
                 }
 
-                const descriptor = self.extensionHost.getExtension(extensionId);
+                let descriptor = self.extensionHost.getExtension(extensionId);
+
+                // FIX: Alias ms-python.python to vscode.python if missing
+                if (!descriptor && extensionId === 'ms-python.python') {
+                    console.log('[VSCodeAPI] Aliasing ms-python.python to vscode.python');
+                    descriptor = self.extensionHost.getExtension('vscode.python');
+                }
+
                 if (!descriptor) {
                     console.warn(`[VSCodeAPI] Extension not found: ${extensionId}. Available:`, self.extensionHost.getExtensions().map(e => e.id));
                     // Return dummy to prevent crash
@@ -1288,6 +1712,40 @@ class VSCodeAPI {
                         activate: () => Promise.resolve()
                     };
                 }
+
+                // FIX: Mock Python extension exports if they don't support Jupyter
+                if (descriptor.id === 'vscode.python' || descriptor.id === 'ms-python.python') {
+                    if (!descriptor.exports) descriptor.exports = {};
+
+                    // Helper: Ensure packageJSON exists for version checks
+                    if (!descriptor.packageJSON) descriptor.packageJSON = {};
+                    if (!descriptor.packageJSON.version) descriptor.packageJSON.version = '2023.0.0';
+
+                    if (!descriptor.exports.jupyter) {
+                        console.log('[VSCodeAPI] Injecting mock Jupyter API into Python extension exports');
+                        descriptor.exports.jupyter = {
+                            registerHooks: () => ({ dispose: () => { } })
+                        };
+                    }
+
+                    if (!descriptor.exports.settings) {
+                        descriptor.exports.settings = {
+                            getExecutionDetails: () => ({ execCommand: ['python3'] })
+                        };
+                    }
+
+                    // Always ensure environments mocking, merging with existing if present
+                    console.log('[VSCodeAPI] Injecting/Updating mock Environments API');
+                    descriptor.exports.environments = {
+                        ...(descriptor.exports.environments || {}),
+                        known: descriptor.exports.environments?.known || [],
+                        resolveEnvironment: descriptor.exports.environments?.resolveEnvironment || (() => undefined),
+                        onDidChangeEnvironments: descriptor.exports.environments?.onDidChangeEnvironments || (() => ({ dispose: () => { } })),
+                        onDidEnvironmentVariablesChange: descriptor.exports.environments?.onDidEnvironmentVariablesChange || (() => ({ dispose: () => { } })),
+                        getEnvironmentVariables: descriptor.exports.environments?.getEnvironmentVariables || (() => Promise.resolve(undefined)),
+                    };
+                }
+
                 console.log(`[VSCodeAPI] getExtension: Found '${extensionId}'`);
 
                 const result = {
@@ -1295,7 +1753,7 @@ class VSCodeAPI {
                     extensionPath: descriptor.extensionPath,
                     extensionUri: self._cachedAPI.Uri.file(descriptor.extensionPath),
                     isActive: descriptor.isActive,
-                    packageJSON: descriptor.manifest || {},
+                    packageJSON: descriptor.packageJSON || descriptor.manifest || {},
                     exports: descriptor.exports,
                     activate: () => self.extensionHost.activateExtension(descriptor.id)
                 };
@@ -1388,6 +1846,12 @@ class VSCodeAPI {
                         }
                     }
                 };
+            },
+            // FIX: Add registerInlineCompletionItemProvider
+            registerInlineCompletionItemProvider: (selector, provider) => {
+                console.log('[VSCode Languages] registerInlineCompletionItemProvider:', selector);
+                // We don't implement inline completions yet, but we must return a disposable
+                return { dispose: () => { } };
             },
             registerHoverProvider: (selector, provider) => {
                 console.log('[VSCode Languages] registerHoverProvider:', selector);
@@ -1859,6 +2323,10 @@ class VSCodeAPI {
                     }
                 };
             },
+            registerCodeLensProvider: (selector, provider) => {
+                console.log('[VSCode Languages] registerCodeLensProvider:', selector);
+                return { dispose: () => { } };
+            },
             registerDocumentLinkProvider: (selector, provider) => {
                 console.log('[VSCode Languages] registerDocumentLinkProvider:', selector);
 
@@ -1889,6 +2357,11 @@ class VSCodeAPI {
             setLanguageConfiguration: (language, configuration) => {
                 console.log('[VSCode Languages] setLanguageConfiguration:', language);
                 return { dispose: () => { } };
+            },
+            getLanguages: () => {
+                // Return a promise that resolves to an array of language identifiers
+                // This is used by the Jupyter extension and likely others
+                return Promise.resolve(['python', 'javascript', 'json', 'typescript', 'markdown']);
             },
             createDiagnosticCollection: (name) => {
                 const diagnostics = new Map();
@@ -2265,9 +2738,17 @@ class VSCodeAPI {
      * Emit extension changes event
      */
     emitExtensionsChange() {
-        this._onDidChangeExtensions.emit('change', {
-            // Extension change details if needed
-        });
+        if (this._onDidChangeExtensions) {
+            this._onDidChangeExtensions.emit('change');
+        }
+    }
+
+    resolveWebviewView(viewId) {
+        if (this._cachedAPI && this._cachedAPI.window && this._cachedAPI.window._resolveWebviewView) {
+            this._cachedAPI.window._resolveWebviewView(viewId);
+        } else {
+            console.warn(`[VSCodeAPI] Cannot resolve webview view ${viewId}, API not ready or missing method.`);
+        }
     }
 
     /**

@@ -13,6 +13,15 @@
             "downloadUrl": "https://open-vsx.org/api/vscode/typescript-language-features/latest/file/vscode.typescript-language-features-1.95.3.vsix"
         },
         {
+            "id": "PKief.material-icon-theme",
+            "name": "Material Icon Theme",
+            "publisher": "PKief",
+            "description": "Material Design Icons for Visual Studio Code",
+            "version": "5.12.0",
+            "category": "Themes",
+            "downloadUrl": "https://open-vsx.org/api/PKief/material-icon-theme/5.12.0/file/PKief.material-icon-theme-5.12.0.vsix"
+        },
+        {
             "id": "dbaeumer.vscode-eslint",
             "name": "ESLint",
             "publisher": "dbaeumer",
@@ -29,24 +38,6 @@
             "version": "11.0.0",
             "category": "Formatters",
             "downloadUrl": "https://open-vsx.org/api/esbenp/prettier-vscode/latest/file/esbenp.prettier-vscode-11.0.0.vsix"
-        },
-        {
-            "id": "PKief.material-icon-theme",
-            "name": "Material Icon Theme",
-            "publisher": "PKief",
-            "description": "Material Design Icons for Visual Studio Code",
-            "version": "5.12.0",
-            "category": "Themes",
-            "downloadUrl": "https://open-vsx.org/api/PKief/material-icon-theme/5.12.0/file/PKief.material-icon-theme-5.12.0.vsix"
-        },
-        {
-            "id": "dracula-theme.theme-dracula",
-            "name": "Dracula Official",
-            "publisher": "dracula-theme",
-            "description": "Official Dracula Theme",
-            "version": "2.25.1",
-            "category": "Themes",
-            "downloadUrl": "https://open-vsx.org/api/dracula-theme/theme-dracula/latest/file/dracula-theme.theme-dracula-2.25.1.vsix"
         },
         {
             "id": "vscode.css-language-features",
@@ -110,24 +101,6 @@
             "version": "1.95.3",
             "category": "Programming Languages",
             "downloadUrl": "https://open-vsx.org/api/vscode/python/latest/file/vscode.python-1.95.3.vsix"
-        },
-        {
-            "id": "ms-toolsai.jupyter",
-            "name": "Jupyter",
-            "publisher": "ms-toolsai",
-            "description": "Jupyter notebook support, interactive programming and computing that supports IntelliSense, debugging and more.",
-            "version": "2025.9.1",
-            "category": "Notebooks",
-            "downloadUrl": "https://open-vsx.org/api/ms-toolsai/jupyter/latest/file/ms-toolsai.jupyter-2025.9.1.vsix"
-        },
-        {
-            "id": "quarto.quarto",
-            "name": "Quarto",
-            "publisher": "quarto",
-            "description": "Author Quarto documents in VS Code.",
-            "version": "1.126.0",
-            "category": "Notebooks",
-            "downloadUrl": "https://open-vsx.org/api/quarto/quarto/latest/file/quarto.quarto-1.126.0.vsix"
         }
     ],
     "instructions": "To add bundled extensions, download the .vsix files from the downloadUrl and place them in this directory with the naming format: {publisher}.{name}.vsix"

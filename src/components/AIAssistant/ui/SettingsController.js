@@ -225,6 +225,47 @@ class SettingsController {
         modelContainer.appendChild(modelSelect);
         container.appendChild(modelContainer);
 
+        modelContainer.appendChild(modelSelect);
+        container.appendChild(modelContainer);
+
+        // --- Editor Features Section ---
+        container.appendChild(sectionHeader('Editor Features'));
+
+        const editorFeaturesContainer = document.createElement('div');
+        editorFeaturesContainer.style.cssText = 'margin-bottom: 20px;';
+
+        const suggestionItem = document.createElement('div');
+        suggestionItem.className = 'settings-item';
+        suggestionItem.style.cssText = 'display: flex; align-items: center; padding: 4px 8px; border-radius: 4px; cursor: pointer; transition: background 0.1s; border: 1px solid transparent;';
+        suggestionItem.onmouseover = () => suggestionItem.style.background = 'var(--hover-color)';
+        suggestionItem.onmouseout = () => suggestionItem.style.background = 'transparent';
+
+        const sugCheck = document.createElement('input');
+        sugCheck.type = 'checkbox';
+        sugCheck.id = 'setting-inline-suggestions';
+        sugCheck.checked = SettingsManager.getSettings().inlineSuggestions || false;
+        sugCheck.style.marginRight = '8px';
+        sugCheck.style.accentColor = 'var(--peak-accent)';
+        sugCheck.style.cursor = 'pointer';
+
+        sugCheck.addEventListener('change', (e) => {
+            SettingsManager.updateSettings({ inlineSuggestions: e.target.checked });
+        });
+
+        const sugLabel = document.createElement('label');
+        sugLabel.htmlFor = sugCheck.id;
+        sugLabel.style.cssText = 'display: flex; align-items: center; cursor: pointer; flex: 1; font-size: 11px; color: var(--peak-primary); user-select: none;';
+        sugLabel.innerHTML = 'Enable Ghost Text Suggestions <span style="font-size:9px; color:var(--peak-secondary); margin-left:6px; opacity:0.8;">(Beta)</span>';
+
+        suggestionItem.appendChild(sugCheck);
+        suggestionItem.appendChild(sugLabel);
+        suggestionItem.addEventListener('click', (e) => {
+            if (e.target !== sugCheck && e.target !== sugLabel) sugCheck.click();
+        });
+
+        editorFeaturesContainer.appendChild(suggestionItem);
+        container.appendChild(editorFeaturesContainer);
+
         // --- Automation Rules Section ---
         container.appendChild(sectionHeader('Automation Rules'));
 
@@ -319,6 +360,12 @@ class SettingsController {
                         cb.checked = settings.automation[rule.key] === true;
                     }
                 });
+            }
+
+            // Sync Editor Features
+            const sugCheck = container.querySelector('#setting-inline-suggestions');
+            if (sugCheck) {
+                sugCheck.checked = settings.inlineSuggestions === true;
             }
         };
 

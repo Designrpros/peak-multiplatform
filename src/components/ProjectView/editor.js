@@ -30,6 +30,8 @@ const Lint = getModule('@codemirror/lint');
 
 // NEW: Inline Chat
 const { inlineChatField, inlineChatKeymap } = require('./InlineChat.js');
+// NEW: Inline Suggestions (Ghost Text)
+const { inlineSuggestionField, inlineSuggestionPlugin, inlineSuggestionKeymap } = require('./InlineSuggestions.js');
 
 // NEW: LSP Integration
 const LSPIntegration = require('./lsp-integration.js');
@@ -337,11 +339,11 @@ function setupCodeMirror(container, content, filePath) {
             const newText = update.state.doc.toString();
             saveContent(newText);
 
-            // Notify LSP of document changes
+
+            // Notify LSP/ExtensionHost of document changes (Sync all files)
             const languageId = LSPIntegration.getLanguageId(filePath);
-            if (languageId !== 'plaintext') {
-                LSPIntegration.notifyDocumentChange(filePath, newText);
-            }
+            LSPIntegration.notifyDocumentChange(filePath, newText);
+
         }
     });
 
@@ -353,7 +355,10 @@ function setupCodeMirror(container, content, filePath) {
         Search.search ? Search.search() : [],
         diagnosticsListener,
         inlineChatField,
-        inlineChatKeymap
+        inlineChatKeymap,
+        inlineSuggestionField,
+        inlineSuggestionPlugin,
+        inlineSuggestionKeymap
     ];
 
     if (Lint.lintGutter) extensions.push(Lint.lintGutter());
@@ -384,19 +389,19 @@ function setupCodeMirror(container, content, filePath) {
         console.error('[Editor] Failed to get language ID:', e);
     }
 
-    if (languageId !== 'plaintext') {
-        // Get document text for LSP didOpen notification
+    // Notify LSP/ExtensionHost that document is open
+    // We do this for ALL files so extensions can see them
+    try {
         const documentText = content;
+        const docLangId = languageId === 'plaintext' ? 'plaintext' : languageId;
+        LSPIntegration.notifyDocumentOpen(filePath, docLangId, documentText);
+        if (window.ipcRenderer) window.ipcRenderer.send('log:info', `[Editor] Sent lsp:didOpen for ${filePath} (${docLangId})`);
+    } catch (err) {
+        console.error('[Editor] Failed to notify LSP open:', err);
+    }
 
-        // Notify LSP that document is open
-        try {
-            LSPIntegration.notifyDocumentOpen(filePath, languageId, documentText);
-            if (window.ipcRenderer) window.ipcRenderer.send('log:info', `[Editor] Sent lsp:didOpen for ${filePath}`);
-        } catch (err) {
-            console.error('[Editor] Failed to notify LSP open:', err);
-        }
-
-        // Add LSP extensions
+    if (languageId !== 'plaintext') {
+        // Add LSP extensions only if language is supported
         extensions.push(LSPIntegration.createLSPAutocomplete(filePath, languageId));
         extensions.push(LSPIntegration.createLSPLinter(filePath, languageId));
         extensions.push(LSPIntegration.createLSPHover(filePath, languageId));
@@ -642,8 +647,82 @@ function scanFileForErrors(content, filePath) {
     }
 }
 
+
+// NEW: Factory for independent editor instances (e.g. Notebook Cells)
+function createEditorInstance(container, content, filePath, options = {}) {
+    if (!State.EditorState || !View.EditorView) {
+        container.innerHTML = `<div class="project-editor-placeholder error">CRITICAL ERROR: CodeMirror core components failed to load.</div>`;
+        return null;
+    }
+
+    const { onUpdate, isReadOnly, minimal, languageId, lineWrapping } = options;
+    const isDarkMode = window.matchMedia('(prefers-color-scheme: dark)').matches;
+
+    // Base extensions
+    const extensions = [
+        ...getBaseExtensions(),
+        // Use the compartment for the theme
+        themeCompartment ? themeCompartment.of(loadVSCodeTheme(isDarkMode)) : loadVSCodeTheme(isDarkMode),
+        inlineChatKeymap
+    ];
+
+    if (!minimal) {
+        extensions.push(
+            inlineChatField,
+            Search.search ? Search.search() : [],
+            // Add generic syntax linter
+            (Lint.linter ? Lint.linter(syntaxLinter) : [])
+        );
+        if (Lint.lintGutter) extensions.push(Lint.lintGutter());
+    }
+
+    // Language Support
+    if (languageId) {
+        // Direct language injection if provided (e.g. for specific cell types)
+        // ... (implementation needed if we pass direct language object)
+        // For now, allow filePath or fallback
+        extensions.push(getLanguageExtension(filePath || ('temp.' + languageId)));
+    } else {
+        extensions.push(getLanguageExtension(filePath));
+    }
+
+    // Read Only
+    if (isReadOnly) {
+        extensions.push(View.EditorView.editable.of(false));
+    }
+
+    // Line Wrapping
+    if (lineWrapping) {
+        extensions.push(View.EditorView.lineWrapping);
+    }
+
+    // Update Listener
+    if (onUpdate) {
+        extensions.push(View.EditorView.updateListener.of((update) => {
+            if (update.docChanged) {
+                onUpdate(update.state.doc.toString());
+            }
+        }));
+    }
+
+    const startState = State.EditorState.create({
+        doc: content,
+        extensions: extensions
+    });
+
+    const view = new View.EditorView({
+        state: startState,
+        parent: container
+    });
+
+    return view;
+}
+
+
+
 module.exports = {
     setupCodeMirror,
+    createEditorInstance, // Exported
     disposeEditor,
     setupDiffEditor,
     getDiffContent,

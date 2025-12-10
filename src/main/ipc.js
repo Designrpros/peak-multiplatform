@@ -37,6 +37,11 @@ function setupIpcHandlers(context) {
         return true;
     });
 
+    // --- FILESYSTEM HANDLERS (Moved to top for reliability) ---
+    console.log('[Main] Registering project:read-dir handler');
+    ipcMain.handle('project:read-dir', async (e, p) => { try { return (await fs.promises.readdir(p, { withFileTypes: true })).filter(i => !['.git', '.DS_Store'].includes(i.name)).map(i => ({ name: i.name, isDirectory: i.isDirectory(), path: path.join(p, i.name) })).sort((a, b) => (a.isDirectory === b.isDirectory ? a.name.localeCompare(b.name) : a.isDirectory ? -1 : 1)); } catch (e) { return null; } });
+    ipcMain.handle('project:read-file', async (e, p) => { try { return await fs.promises.readFile(p, 'utf8'); } catch (err) { return { error: err.message }; } });
+
     // --- MCP HANDLERS ---
     ipcMain.handle('mcp:connect-dynamic', async (event, config) => {
         try {
@@ -243,6 +248,19 @@ function setupIpcHandlers(context) {
         }
     });
 
+    ipcMain.handle('extensions:execute-command', async (event, command, ...args) => {
+        try {
+            if (!state.extensionHost) return { error: 'Extension host not initialized' };
+
+            console.log(`[Main] Executing command: ${command}`, args);
+            const result = await state.extensionHost.executeCommand(command, ...args);
+            return { success: true, result };
+        } catch (err) {
+            console.error(`[Main] Command ${command} execution failed:`, err);
+            return { error: err.message };
+        }
+    });
+
     ipcMain.handle('extensions:uninstall', async (event, extensionId) => {
         try {
             console.log('[Main] Uninstalling extension:', extensionId);
@@ -395,23 +413,94 @@ function setupIpcHandlers(context) {
         }
         return results;
     }
+    // Helper to sanitize objects for IPC (remove functions, circular refs)
+    function sanitizeForIPC(obj, seen = new WeakSet()) {
+        if (obj === null || typeof obj !== 'object') return obj;
+        if (obj instanceof Date) return obj;
+        if (obj instanceof RegExp) return obj;
+
+        // Handle specific VS Code types if they have toJSON
+        if (typeof obj.toJSON === 'function') return obj.toJSON();
+
+        if (seen.has(obj)) return null; // Break circular refs
+        seen.add(obj);
+
+        if (Array.isArray(obj)) {
+            return obj.map(item => sanitizeForIPC(item, seen));
+        }
+
+        const clone = {};
+        for (const key in obj) {
+            // function check
+            if (typeof obj[key] !== 'function') {
+                clone[key] = sanitizeForIPC(obj[key], seen);
+            }
+        }
+        return clone;
+    }
+
+    // --- DEBUGGING ---
+    ipcMain.handle('log-to-debug-file', async (event, message) => {
+        try {
+            const root = (state.extensionHost && state.extensionHost.workspaceRoot) || os.homedir();
+            const debugPath = path.join(root, 'debug.log');
+            fs.appendFileSync(debugPath, `[${new Date().toISOString()}] [Renderer] ${message}\n`);
+            return true;
+        } catch (e) {
+            console.error('Failed to write to debug log:', e);
+            return false;
+        }
+    });
+
+    // Helper to log to file from Main
+    function logToDebugFile(message) {
+        try {
+            const root = (state.extensionHost && state.extensionHost.workspaceRoot) || os.homedir();
+            const debugPath = path.join(root, 'debug.log');
+            fs.appendFileSync(debugPath, `[${new Date().toISOString()}] [Main] ${message}\n`);
+        } catch (e) { console.error('Failed to log to debug file:', e); }
+    }
+
     ipcMain.handle('lsp:completion', async (event, uri, position) => {
         try {
+            const logMsg = `lsp:completion called for ${uri} at ${JSON.stringify(position)}`;
+            console.log('[Main] ' + logMsg);
+            logToDebugFile(logMsg);
+
             const results = [];
 
             // 1. Get LSPClient Results
             if (state.extensionHost && state.extensionHost.lspClient) {
                 const lspResults = await state.extensionHost.lspClient.getCompletions(uri, position);
-                if (lspResults) results.push(...(Array.isArray(lspResults) ? lspResults : lspResults.items || []));
+                if (lspResults) {
+                    const count = Array.isArray(lspResults) ? lspResults.length : lspResults.items?.length;
+                    console.log(`[Main] LSPClient returned ${count} items`);
+                    logToDebugFile(`LSPClient returned ${count} items`);
+                    results.push(...(Array.isArray(lspResults) ? lspResults : lspResults.items || []));
+                }
             }
 
-            // 2. Get VSCodeAPI Results
-            const apiResults = await executeVSCodeProviders('provideCompletionItems', uri, position);
-            if (apiResults) results.push(...apiResults);
+            // 2. Get VSCodeAPI Results (pass context for completion)
+            const completionContext = { triggerKind: 0, triggerCharacter: undefined };
+            const apiResults = await executeVSCodeProviders('provideCompletionItems', uri, position, completionContext);
+            if (apiResults) {
+                console.log(`[Main] VSCodeAPI returned ${apiResults.length} items`);
+                logToDebugFile(`VSCodeAPI returned ${apiResults.length} items`);
+                results.push(...apiResults);
+            }
 
-            return results;
+            console.log(`[Main] Total completion items before sanitization: ${results.length}`);
+            logToDebugFile(`Total completion items before sanitization: ${results.length}`);
+
+            const sanitized = sanitizeForIPC(results);
+
+            console.log(`[Main] Sanitization complete. Returning ${sanitized ? sanitized.length : 0} items.`);
+            logToDebugFile(`Sanitization complete. Returning ${sanitized ? sanitized.length : 0} items.`);
+
+            return sanitized;
         } catch (err) {
             console.error('[Main] LSP completion failed:', err);
+            logToDebugFile(`LSP completion failed: ${err.message}`);
             return [];
         }
     });
@@ -421,12 +510,12 @@ function setupIpcHandlers(context) {
             // 1. Get LSPClient Results
             if (state.extensionHost && state.extensionHost.lspClient) {
                 const hover = await state.extensionHost.lspClient.getHover(uri, position);
-                if (hover) return hover; // Return first valid hover for now
+                if (hover) return sanitizeForIPC(hover);
             }
 
             // 2. Get VSCodeAPI Results
             const apiResults = await executeVSCodeProviders('provideHover', uri, position);
-            if (apiResults && apiResults.length > 0) return apiResults[0];
+            if (apiResults && apiResults.length > 0) return sanitizeForIPC(apiResults[0]);
 
             return null;
         } catch (err) {
@@ -548,6 +637,7 @@ function setupIpcHandlers(context) {
 
     ipcMain.handle('app:get-home-path', () => os.homedir());
     ipcMain.handle('app:open-path', async (event, targetPath) => shell.openPath(targetPath));
+    ipcMain.handle('app:open-url', async (event, url) => { await shell.openExternal(url); return { success: true }; });
     ipcMain.handle('project:reveal-in-finder', async (event, targetPath) => { if (targetPath) shell.showItemInFolder(targetPath); });
 
     ipcMain.handle('project:search', async (e, rootPath, query) => {
@@ -747,6 +837,151 @@ function setupIpcHandlers(context) {
     ipcMain.on('log:info', (event, ...args) => { console.log('[Renderer]', ...args); });
     ipcMain.handle('log-to-debug-file', async (event, msg) => { console.log('[DEBUG]', msg); return true; });
 
+    // --- NOTEBOOK KERNEL KERNEL HANDLERS (Persistent Python) ---
+    const notebookKernels = new Map(); // filePath -> { process, buffer }
+
+    ipcMain.on('notebook:execute-run', (event, filePath, code) => {
+        // --- 1. Shell Command Handling (! prefix) ---
+        if (code.trim().startsWith('!')) {
+            const cmd = code.trim().substring(1).trim();
+            console.log(`[Main] Executing Shell Command: ${cmd}`);
+
+            const { spawn } = require('child_process');
+            // Use shell: true to support pipes, redirects, etc.
+            const shellProc = spawn(cmd, { shell: true, cwd: path.dirname(filePath) });
+
+            shellProc.stdout.on('data', (data) => {
+                event.sender.send('notebook:cell-output', filePath, {
+                    output_type: 'stream',
+                    name: 'stdout',
+                    text: data.toString()
+                });
+            });
+
+            shellProc.stderr.on('data', (data) => {
+                event.sender.send('notebook:cell-output', filePath, {
+                    output_type: 'stream',
+                    name: 'stderr',
+                    text: data.toString()
+                });
+            });
+
+            shellProc.on('close', (code) => {
+                // Send completion signal
+                event.sender.send('notebook:cell-complete', filePath);
+            });
+
+            shellProc.on('error', (err) => {
+                event.sender.send('notebook:cell-output', filePath, {
+                    output_type: 'error',
+                    ename: 'Shell Error',
+                    evalue: err.message,
+                    traceback: []
+                });
+                event.sender.send('notebook:cell-complete', filePath);
+            });
+
+            return; // Skip Python kernel logic
+        }
+
+        // --- 2. Python Kernel Handling (Existing) ---
+
+        let kernel = notebookKernels.get(filePath);
+
+        // Spawn if needed
+        if (!kernel || kernel.process.exitCode !== null) {
+            console.log(`[Main] Spawning new Python kernel for ${filePath}`);
+            try {
+                // Use python3 -u (unbuffered) and -i (force interactive)
+                const { spawn } = require('child_process');
+                // We use -i to force interactive mode (keeps process alive), but we handle io manually
+                const p = spawn('python3', ['-u', '-i'], {
+                    stdio: ['pipe', 'pipe', 'pipe']
+                });
+
+                kernel = { process: p, buffer: '' };
+                notebookKernels.set(filePath, kernel);
+
+                p.on('error', (err) => {
+                    console.error(`[Main] Kernel Execution Error: ${err.message}`);
+                    event.sender.send('notebook:cell-output', filePath, {
+                        output_type: 'error',
+                        ename: 'Process Error',
+                        evalue: err.message,
+                        traceback: [err.message]
+                    });
+                });
+
+                p.stdout.on('data', (data) => {
+                    const str = data.toString();
+                    console.log(`[Main] Kernel Stdout Partial: ${str.length} chars (First 50: ${str.substring(0, 50).replace(/\n/g, '\\n')})`);
+                    if (str.includes('__PEAK_CELL_END__')) {
+                        const clean = str
+                            .replace('__PEAK_CELL_END__\n', '')
+                            .replace('__PEAK_CELL_END__', '')
+                            .replace(/^>>> /gm, '') // Remove prompts
+                            .replace(/^\.\.\. /gm, '');
+
+                        const fullOutput = kernel.buffer + clean;
+                        kernel.buffer = ''; // Reset buffer
+
+                        console.log(`[Main] Kernel Cell Complete. Total output: ${fullOutput.length} chars`);
+
+                        // Send Result
+                        event.sender.send('notebook:cell-output', filePath, {
+                            output_type: 'stream',
+                            name: 'stdout',
+                            text: fullOutput
+                        });
+                        event.sender.send('notebook:cell-complete', filePath);
+                    } else {
+                        // Filter banner/prompts from partials if possible, or just accumulate
+                        // The banner comes at startup. We might want to ignore it?
+                        // For now, accumulating is safer to avoid losing data.
+                        kernel.buffer += str;
+                    }
+                });
+
+                p.stderr.on('data', (data) => {
+                    const str = data.toString();
+                    // Ignore interactive prompts and startup banner
+                    if (/^>>>\s*/.test(str) || /^\.\.\.\s*/.test(str) || str.includes('Type "help", "copyright"')) {
+                        return;
+                    }
+
+                    console.log(`[Main] Kernel Stderr: ${str}`);
+                    event.sender.send('notebook:cell-output', filePath, {
+                        output_type: 'error',
+                        ename: 'Error',
+                        evalue: str,
+                        traceback: [str]
+                    });
+                });
+            } catch (e) {
+                console.error('[Main] Spawn Exception:', e);
+                event.sender.send('notebook:cell-output', filePath, { output_type: 'error', ename: 'Spawn Exception', evalue: e.message });
+                return;
+            }
+        }
+
+        // Prepare safe python wrapper
+        // We use exec() to run the code block, catching exceptions so the process doesn't die 
+        // and we can still print the sentinel.
+        const safeCode = `
+try:
+${code.split('\n').map(l => '    ' + l).join('\n')}
+except Exception as e:
+    print(e)
+finally:
+    print('__PEAK_CELL_END__')
+`;
+        // Write to stdin
+        console.log(`[Main] Sending code to kernel for ${filePath}`);
+        kernel.process.stdin.write(safeCode + '\n');
+    });
+
+    // Cleanup kernels on exit is handled by OS, but ideally we track window close.
+
     let eslintInstance = null;
     let eslintCwd = null;
 
@@ -897,8 +1132,7 @@ function setupIpcHandlers(context) {
         }
     });
 
-    ipcMain.handle('project:read-dir', async (e, p) => { try { return (await fs.promises.readdir(p, { withFileTypes: true })).filter(i => !['.git', '.DS_Store'].includes(i.name)).map(i => ({ name: i.name, isDirectory: i.isDirectory(), path: path.join(p, i.name) })).sort((a, b) => (a.isDirectory === b.isDirectory ? a.name.localeCompare(b.name) : a.isDirectory ? -1 : 1)); } catch (e) { return null; } });
-    ipcMain.handle('project:read-file', async (e, p) => { try { return await fs.promises.readFile(p, 'utf8'); } catch (err) { return { error: err.message }; } });
+
 
     // AI Tool Handlers
     ipcMain.on('project:view-file', async (event, filePath) => {
@@ -1409,6 +1643,31 @@ function setupIpcHandlers(context) {
         } catch (err) { return null; }
     });
 
+    ipcMain.on('vscode:resolve-webview-view', (e, viewId) => {
+        console.log(`[Main] Request to resolve webview view: ${viewId}`);
+        if (state.extensionHost) {
+            state.extensionHost.resolveWebviewView(viewId);
+        }
+    });
+
+    ipcMain.handle('vscode:activate-view', async (event, viewId) => {
+        if (state.extensionHost) {
+            await state.extensionHost.activateExtensionByView(viewId);
+            return true;
+        }
+        return false;
+    });
+
+    ipcMain.on('vscode:log', (event, { level, message }) => {
+        const prefix = `[Webview ${level.toUpperCase()}]`;
+        if (level === 'error') console.error(prefix, message);
+        else console.log(prefix, message);
+    }); ipcMain.on('vscode:request-views', (e) => {
+        if (state.extensionHost) {
+            state.extensionHost.sendRegisteredViews();
+        }
+    });
+
     ipcMain.on('log', (event, ...args) => console.log('[Renderer]', ...args));
 
     ipcMain.handle('dialog:open-file', async (event, options) => { return await dialog.showOpenDialog(options); });
@@ -1630,7 +1889,7 @@ function setupIpcHandlers(context) {
     ipcMain.on('show-block-context-menu', (e, d) => { Menu.buildFromTemplate([{ label: 'Delete Block', click: () => e.sender.send('delete-block-command', d) }]).popup({ window: BrowserWindow.fromWebContents(e.sender) }); });
     ipcMain.handle('select-image', async () => { const { canceled, filePaths } = await dialog.showOpenDialog({ properties: ['openFile'], filters: [{ name: 'Images', extensions: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'tiff', 'ico'] }] }); return canceled ? null : filePaths; });
 
-    ipcMain.on('terminal-create', (e, id, cwd) => {
+    ipcMain.on('terminal-create', (e, id, cwd, shellPath, shellArgs, env) => {
         console.log(`[Main] terminal-create request for ID: ${id}, CWD: ${cwd}`);
         if (!pty) {
             console.error('[Main] node-pty is not available!');
@@ -1638,8 +1897,17 @@ function setupIpcHandlers(context) {
         }
         if (state.ptyProcesses[id]) try { state.ptyProcesses[id].kill(); } catch (e) { }
         try {
-            const shell = os.platform() === 'win32' ? 'powershell.exe' : (process.env.SHELL || '/bin/bash');
-            const proc = pty.spawn(shell, [], { name: 'xterm-256color', cols: 80, rows: 30, cwd: cwd || os.homedir(), env: process.env });
+            // Determine shell: priority to custom options, then platform defaults
+            let shell = shellPath;
+            if (!shell) {
+                shell = os.platform() === 'win32' ? 'powershell.exe' : (process.env.SHELL || '/bin/bash');
+            }
+
+            const args = shellArgs || [];
+            // Merge custom env with process env
+            const processEnv = { ...process.env, ...env };
+
+            const proc = pty.spawn(shell, args, { name: 'xterm-256color', cols: 80, rows: 30, cwd: cwd || os.homedir(), env: processEnv });
             state.ptyProcesses[id] = proc;
             proc.on('data', d => { const mw = getMainWindow(); if (mw) mw.webContents.send('terminal-data', id, d); });
             proc.on('exit', () => delete state.ptyProcesses[id]);
